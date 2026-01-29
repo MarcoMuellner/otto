@@ -1,4 +1,8 @@
 # Logs
+.idea
+prompts
+opencode.json
+.githuman
 logs
 *.log
 npm-debug.log*
