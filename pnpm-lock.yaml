@@ -18,7 +18,112 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18
 
+  packages/agent:
+    devDependencies:
+      oxlint:
+        specifier: ^1.42.0
+        version: 1.42.0
+      prettier:
+        specifier: ^3.8.1
+        version: 3.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18
+
+  packages/audit:
+    devDependencies:
+      oxlint:
+        specifier: ^1.42.0
+        version: 1.42.0
+      prettier:
+        specifier: ^3.8.1
+        version: 3.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18
+
+  packages/configManager:
+    devDependencies:
+      oxlint:
+        specifier: ^1.42.0
+        version: 1.42.0
+      prettier:
+        specifier: ^3.8.1
+        version: 3.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18
+
+  packages/integrationManager:
+    devDependencies:
+      oxlint:
+        specifier: ^1.42.0
+        version: 1.42.0
+      prettier:
+        specifier: ^3.8.1
+        version: 3.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18
+
+  packages/knowledgeManager:
+    devDependencies:
+      oxlint:
+        specifier: ^1.42.0
+        version: 1.42.0
+      prettier:
+        specifier: ^3.8.1
+        version: 3.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18
+
   packages/server:
+    devDependencies:
+      oxlint:
+        specifier: ^1.42.0
+        version: 1.42.0
+      prettier:
+        specifier: ^3.8.1
+        version: 3.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18
+
+  packages/shared:
+    devDependencies:
+      oxlint:
+        specifier: ^1.42.0
+        version: 1.42.0
+      prettier:
+        specifier: ^3.8.1
+        version: 3.8.1
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18
+
+  packages/tuiClient:
     devDependencies:
       oxlint:
         specifier: ^1.42.0

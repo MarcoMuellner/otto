@@ -1,0 +1,19 @@
+{
+  "name": "@otto/knowledgeManager",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint .",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
+  },
+  "devDependencies": {
+    "oxlint": "^1.42.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.18"
+  }
+}
