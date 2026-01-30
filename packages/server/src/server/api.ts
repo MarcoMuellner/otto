@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 
 import { authPlugin, type AuthPluginOptions } from "@server/server/auth";
 
@@ -11,5 +12,15 @@ export const securedApiPlugin: FastifyPluginAsync<AuthPluginOptions> = async (
 ) => {
   await authPlugin(api, options);
 
-  api.get("/ping", async () => ({ ok: true }));
+  api.get(
+    "/ping",
+    {
+      schema: {
+        response: {
+          200: z.object({ ok: z.literal(true) }),
+        },
+      },
+    },
+    async () => ({ ok: true }),
+  );
 };
