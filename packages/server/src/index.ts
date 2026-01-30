@@ -1,4 +1,5 @@
 import { bootstrap } from "@server/server/bootstrap";
+import { installShutdownHandlers } from "@server/server/shutdown";
 import { logStartup } from "@server/server/startup";
 
 export interface StartServerOptions {
@@ -25,6 +26,7 @@ export function startServer(options: StartServerOptions) {
 export function runServer() {
   return startServer({ authToken: "test-token" }).then((runtime) => {
     logStartup({ host: DEFAULT_HOST, port: DEFAULT_PORT });
+    installShutdownHandlers(runtime.stop);
     return runtime;
   });
 }
