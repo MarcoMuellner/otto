@@ -15,5 +15,10 @@
     "prettier": "^3.8.1",
     "typescript": "^5.9.2",
     "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "fastify": "^5.7.2",
+    "fastify-type-provider-zod": "^6.1.0",
+    "zod": "^4.3.6"
   }
 }
