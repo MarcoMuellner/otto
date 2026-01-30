@@ -7,6 +7,7 @@
     "test": "pnpm -r test",
     "test:watch": "pnpm -r test:watch",
     "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
     "format": "pnpm -r format",
     "format:check": "pnpm -r format:check"
   },
