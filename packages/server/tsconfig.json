@@ -10,6 +10,7 @@
     "noEmit": true,
     "rootDir": "src",
     "baseUrl": ".",
+    "types": ["node"],
     "paths": {
       "@server/*": ["src/*"]
     }

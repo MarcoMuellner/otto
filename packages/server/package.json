@@ -13,6 +13,7 @@
     "format:check": "prettier . --check"
   },
   "devDependencies": {
+    "@types/node": "^25.1.0",
     "oxlint": "^1.42.0",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
