@@ -20,6 +20,7 @@
 
 - Match existing patterns in the local file or package before introducing new ones.
 - Prefer explicit, named imports over deep/default imports when possible.
+- Use per-package absolute import aliases: `@<package>/*` maps to that package's `src/*`.
 - Use early returns to avoid deep nesting.
 - Keep functions focused; extract helpers when logic grows.
 
@@ -44,6 +45,7 @@
 
 - Use deterministic tests; avoid network/time dependencies.
 - Name tests by behavior, not implementation details.
+- Package scaffolding baseline: `src/`, `tests/`, `tsconfig.json`, `vitest.config.ts`, and scripts (`lint`, `format`, `test`, `typecheck`).
 
 ## Adding new conventions
 
