@@ -76,12 +76,20 @@ Legend:
 
 ## Packages
 
+### Current package map (repo state)
+
+**Exists today:** `@otto/server` (Gateway), `@otto/agent`, `@otto/audit`, `@otto/configManager`, `@otto/knowledgeManager`, `@otto/integrationManager`, `@otto/shared`, `@otto/tuiClient`
+
+**Planned/needed:** `@otto/jobManager` (Scheduler), `@otto/channels`, `@otto/memory`, `@otto/dashboardClient` (Integrations leaf packages TBD)
+
 ### Core Runtime
 
-#### `@otto/server`
+#### `@otto/server` (Gateway)
+
 Entry point. Boots all subsystems, exposes WebSocket for clients.
 
 **Responsibilities:**
+
 - Initialize database connection
 - Start Job Manager, Config Manager, etc.
 - WebSocket endpoint for TUI/Dashboard
@@ -93,28 +101,33 @@ Entry point. Boots all subsystems, exposes WebSocket for clients.
 ---
 
 #### `@otto/agent`
+
 The brain. LangGraph-based orchestration of LLM calls and tool execution.
 
 **Responsibilities:**
+
 - LangGraph definition and execution
 - LLM provider abstraction (OpenAI, Mistral, Ollama)
 - Two-phase tool loading (classify → execute)
 - Stream responses to EventBus
 
 **Key exports:**
+
 ```typescript
 invokeAgent(opts: InvokeOptions): Promise<AgentResult>
 streamAgent(opts: StreamOptions): void  // emits to EventBus
 ```
 
-**Dependencies:** `@otto/shared`, `@otto/memory`, `@otto/config`, `@otto/knowledge`, `@otto/integrations/*`, `@otto/audit`
+**Dependencies:** `@otto/shared`, `@otto/memory`, `@otto/configManager`, `@otto/knowledgeManager`, `@otto/integrations/*` (TBD), `@otto/audit`
 
 ---
 
 #### `@otto/memory`
+
 Conversation persistence and context management.
 
 **Responsibilities:**
+
 - Store/retrieve conversation history
 - Summarize old conversations for context window
 - Long-term user facts (preferences, timezone, etc.)
@@ -122,6 +135,7 @@ Conversation persistence and context management.
 **Storage:** Markdown files + SQLite for metadata
 
 **Key exports:**
+
 ```typescript
 getConversationContext(sessionId: string): Promise<Message[]>
 saveMessage(sessionId: string, message: Message): Promise<void>
@@ -133,15 +147,18 @@ rememberFact(fact: string): Promise<void>
 
 ---
 
-#### `@otto/jobs`
+#### `@otto/jobManager`
+
 Cron-based scheduler for reminders and recurring tasks.
 
 **Responsibilities:**
+
 - Schedule/cancel jobs
 - Persist jobs to survive restarts
 - Execute jobs by calling Agent
 
 **Key exports:**
+
 ```typescript
 initJobs(): void
 scheduleJob(def: JobDefinition): Job
@@ -153,10 +170,12 @@ listJobs(): Job[]
 
 ---
 
-#### `@otto/config`
+#### `@otto/configManager`
+
 Configuration management. Supports modification via chat.
 
 **Responsibilities:**
+
 - Load config from file/database
 - Validate with Zod schema
 - Provide getters for other packages
@@ -164,6 +183,7 @@ Configuration management. Supports modification via chat.
 - Manage prompts storage
 
 **Key exports:**
+
 ```typescript
 getConfig(): OttoConfig
 updateConfig(patch: Partial<OttoConfig>): Promise<void>
@@ -175,35 +195,41 @@ updatePrompt(name: string, content: string): Promise<void>
 
 ---
 
-#### `@otto/knowledge`
+#### `@otto/knowledgeManager`
+
 Self-awareness. Tells Agent what Otto can do.
 
 **Responsibilities:**
+
 - Build capabilities manifest from enabled integrations
 - Provide detailed capability descriptions on demand
 - Read from docs/ for human-written descriptions
 
 **Key exports:**
+
 ```typescript
 getCapabilitiesManifest(): string  // ~100 tokens, always in context
 describeCapability(name: string): string
 listEnabledIntegrations(): Integration[]
 ```
 
-**Dependencies:** `@otto/shared`, `@otto/integrations/core`
+**Dependencies:** `@otto/shared`, `@otto/integrationManager`
 
 ---
 
 #### `@otto/audit`
+
 Logging and permission enforcement.
 
 **Responsibilities:**
+
 - Log every tool execution
 - Track token usage and costs
 - Enforce autonomy tiers (confirm before destructive actions)
 - Read permissions from config
 
 **Key exports:**
+
 ```typescript
 logToolUsage(tool: string, input: unknown, output: unknown, cost: Cost): void
 requiresConfirmation(tool: string): boolean
@@ -215,15 +241,18 @@ getAuditLog(filters?: AuditFilters): AuditEntry[]
 ---
 
 #### `@otto/channels`
+
 External messaging channels (WhatsApp, Signal, etc.).
 
 **Responsibilities:**
+
 - Connect to messaging platforms
 - Normalize incoming messages to `ChannelMessage` type
 - Route outgoing messages to correct channel
 - Handle media (voice notes, images, files)
 
 **Key exports:**
+
 ```typescript
 initChannels(): Promise<void>
 sendMessage(channel: string, to: string, content: MessageContent): Promise<void>
@@ -231,15 +260,16 @@ onMessage(handler: (msg: ChannelMessage) => void): void
 ```
 
 **Common interface:**
+
 ```typescript
 interface ChannelMessage {
-  id: string
-  channel: 'whatsapp' | 'signal' | 'tui' | 'dashboard'
-  from: string
-  content: string
-  media?: MediaAttachment[]
-  timestamp: Date
-  replyFn: (response: string) => Promise<void>
+  id: string;
+  channel: "whatsapp" | "signal" | "tui" | "dashboard";
+  from: string;
+  content: string;
+  media?: MediaAttachment[];
+  timestamp: Date;
+  replyFn: (response: string) => Promise<void>;
 }
 ```
 
@@ -249,15 +279,18 @@ interface ChannelMessage {
 
 ### Integrations
 
-#### `@otto/integrations/core`
+#### `@otto/integrationManager`
+
 Framework for building integrations.
 
 **Responsibilities:**
+
 - Define `Integration` and `Tool` interfaces
 - Registry for loading/enabling integrations
 - Autonomy tier definitions
 
 **Key exports:**
+
 ```typescript
 defineIntegration(config: IntegrationConfig): Integration
 getEnabledTools(): Tool[]
@@ -265,20 +298,21 @@ getToolsForDomain(domain: string): Tool[]
 ```
 
 **Integration interface:**
+
 ```typescript
 interface IntegrationConfig {
-  name: string
-  displayName: string
-  description: string
-  configSchema: ZodSchema
-  
-  setup: (config: Config) => Promise<Context>
-  teardown?: () => Promise<void>
-  
-  tools: Tool[]
-  capabilities: string[]  // For manifest
-  
-  autonomyTiers: Record<string, 1 | 2 | 3>
+  name: string;
+  displayName: string;
+  description: string;
+  configSchema: ZodSchema;
+
+  setup: (config: Config) => Promise<Context>;
+  teardown?: () => Promise<void>;
+
+  tools: Tool[];
+  capabilities: string[]; // For manifest
+
+  autonomyTiers: Record<string, 1 | 2 | 3>;
   // 1 = autonomous, 2 = confirm first, 3 = always ask
 }
 ```
@@ -286,9 +320,11 @@ interface IntegrationConfig {
 ---
 
 #### `@otto/integrations/google`
+
 Gmail and Google Calendar integration.
 
 **Tools:**
+
 - `gmail:list` — List recent emails
 - `gmail:read` — Read email content
 - `gmail:send` — Send email (Tier 2)
@@ -302,9 +338,11 @@ Gmail and Google Calendar integration.
 ---
 
 #### `@otto/integrations/tasks`
+
 Task management (Google Tasks or local).
 
 **Tools:**
+
 - `tasks:list` — List tasks
 - `tasks:create` — Create task
 - `tasks:complete` — Mark complete
@@ -313,9 +351,11 @@ Task management (Google Tasks or local).
 ---
 
 #### `@otto/integrations/filesystem`
+
 Sandboxed file access.
 
 **Tools:**
+
 - `fs:read` — Read file contents
 - `fs:write` — Write file (Tier 2)
 - `fs:list` — List directory
@@ -326,18 +366,21 @@ Sandboxed file access.
 
 ### Clients
 
-#### `@otto/clients/tui`
+#### `@otto/tuiClient`
+
 Terminal-based chat interface.
 
 **Tech:** ink (React for CLI)
 
 **Features:**
+
 - Streaming token display
 - Connection status
 - Confirmation prompts for Tier 2 actions
 - Command history
 
 **Key files:**
+
 ```
 src/
 ├── index.tsx       # Entry
@@ -352,12 +395,14 @@ src/
 
 ---
 
-#### `@otto/clients/dashboard`
+#### `@otto/dashboardClient`
+
 Web-based management UI.
 
 **Tech:** React + Vite + Tailwind
 
 **Features:**
+
 - Chat interface (same as TUI)
 - Job management
 - Audit log viewer
@@ -369,13 +414,17 @@ Web-based management UI.
 ### Shared
 
 #### `@otto/shared`
+
 Cross-cutting concerns used by all packages.
 
 **Contents:**
+
 - `db/` — SQLite connection, Drizzle schema, migrations
 - `events.ts` — EventBus (EventEmitter)
 - `logger.ts` — Pino structured logging
 - `types/` — Shared TypeScript types
+
+**Storage note:** Storage is not its own package; persistent storage lives in `@otto/shared`.
 
 ---
 
@@ -577,7 +626,7 @@ Both TUI and Dashboard use the same protocol.
 { type: 'done', messageId: string }
 
 // Request confirmation for Tier 2 action
-{ 
+{
   type: 'confirm_request',
   actionId: string,
   tool: string,
@@ -604,11 +653,11 @@ Both TUI and Dashboard use the same protocol.
 
 Tools are assigned autonomy tiers that determine whether Otto acts independently or asks first.
 
-| Tier | Behavior | Examples |
-|------|----------|----------|
-| **1** | Autonomous | Read email, list calendar, search memory |
-| **2** | Confirm first | Send email, create event, write file |
-| **3** | Always ask | Delete anything, financial actions |
+| Tier  | Behavior      | Examples                                 |
+| ----- | ------------- | ---------------------------------------- |
+| **1** | Autonomous    | Read email, list calendar, search memory |
+| **2** | Confirm first | Send email, create event, write file     |
+| **3** | Always ask    | Delete anything, financial actions       |
 
 Configured per-tool in integration definitions. User can override in config.
 
@@ -621,6 +670,7 @@ LLM context is expensive. Otto uses a two-phase approach to keep context small.
 ### Phase 1: Classify
 
 Small context (~100-200 tokens):
+
 - Capabilities manifest ("Otto can: EMAIL, CALENDAR, TASKS...")
 - User message
 
@@ -629,6 +679,7 @@ LLM determines which domain(s) are needed.
 ### Phase 2: Execute
 
 Load only relevant tools:
+
 - User asked about calendar → load only `@otto/integrations/google` calendar tools
 - Not the full 20+ tools from all integrations
 
@@ -639,6 +690,7 @@ Result: ~500-1000 tokens vs ~5000+ tokens, better accuracy.
 ## Implementation Phases
 
 ### Phase 0+1: Foundation + Talk to Otto
+
 **Goal:** Working chat via TUI
 
 ```
@@ -646,10 +698,11 @@ packages/
 ├── shared/         # Types, EventBus, basic setup
 ├── server/         # Fastify, WebSocket
 ├── agent/          # LangGraph, single LLM (no tools)
-└── clients/tui/    # Basic chat
+└── tuiClient/      # Basic chat
 ```
 
 ### Phase 2: Memory
+
 **Goal:** Conversations persist
 
 ```
@@ -659,43 +712,47 @@ packages/
 ```
 
 ### Phase 3: First Tool
+
 **Goal:** Otto can do something
 
 ```
 packages/
-├── integrations/
-│   ├── core/       # Framework
-│   └── filesystem/ # Read/write files
-└── audit/          # Log tool usage
+├── integrationManager/ # Framework
+└── audit/              # Log tool usage
 ```
 
+Integrations leaf packages (e.g., filesystem) are TBD.
+
 ### Phase 4: Knowledge
+
 **Goal:** Otto knows itself
 
 ```
 packages/
-├── knowledge/      # Capability manifest
-└── config/         # Config management
+├── knowledgeManager/ # Capability manifest
+└── configManager/    # Config management
 ```
 
 ### Phase 5: Jobs
+
 **Goal:** Reminders work
 
 ```
 packages/
-└── jobs/           # Croner scheduler
+└── jobManager/     # Croner scheduler
 ```
 
 ### Phase 6: External Integrations
+
 **Goal:** Gmail, Calendar
 
 ```
 packages/
-└── integrations/
-    └── google/     # OAuth, Gmail, Calendar tools
+└── integrations/google/     # OAuth, Gmail, Calendar tools (TBD)
 ```
 
 ### Phase 7: Channels
+
 **Goal:** WhatsApp works
 
 ```
@@ -704,38 +761,38 @@ packages/
 ```
 
 ### Phase 8: Dashboard
+
 **Goal:** Web UI
 
 ```
 packages/
-└── clients/
-    └── dashboard/  # React web app
+└── dashboardClient/  # React web app
 ```
 
 ---
 
 ## Tech Stack
 
-| Concern | Choice | Rationale |
-|---------|--------|-----------|
-| Runtime | Node.js 22+ | LangChain.js ecosystem, TypeScript |
-| Framework | Fastify | Fast, plugin-based, WebSocket support |
-| LLM Orchestration | LangGraph.js | Stateful agents, human-in-loop, streaming |
-| Database | SQLite + Drizzle | Single file, type-safe, no server |
-| Scheduler | Croner | Lightweight, in-process cron |
-| WhatsApp | Baileys | Unofficial but works |
-| TUI | ink | React patterns for terminal |
-| Dashboard | React + Vite | Standard, fast |
-| Logging | Pino | Structured, fast |
-| Validation | Zod | Runtime + TypeScript inference |
+| Concern           | Choice           | Rationale                                 |
+| ----------------- | ---------------- | ----------------------------------------- |
+| Runtime           | Node.js 22+      | LangChain.js ecosystem, TypeScript        |
+| Framework         | Fastify          | Fast, plugin-based, WebSocket support     |
+| LLM Orchestration | LangGraph.js     | Stateful agents, human-in-loop, streaming |
+| Database          | SQLite + Drizzle | Single file, type-safe, no server         |
+| Scheduler         | Croner           | Lightweight, in-process cron              |
+| WhatsApp          | Baileys          | Unofficial but works                      |
+| TUI               | ink              | React patterns for terminal               |
+| Dashboard         | React + Vite     | Standard, fast                            |
+| Logging           | Pino             | Structured, fast                          |
+| Validation        | Zod              | Runtime + TypeScript inference            |
 
 ### LLM Providers (user choice)
 
-| Provider | Models | Use Case |
-|----------|--------|----------|
-| OpenAI | gpt-4o, gpt-4o-mini | Best capability |
-| Mistral | mistral-small-latest | European, affordable |
-| Ollama | qwen2.5:3b, llama3.2:3b | Local, private |
+| Provider | Models                  | Use Case             |
+| -------- | ----------------------- | -------------------- |
+| OpenAI   | gpt-4o, gpt-4o-mini     | Best capability      |
+| Mistral  | mistral-small-latest    | European, affordable |
+| Ollama   | qwen2.5:3b, llama3.2:3b | Local, private       |
 
 ---
 
@@ -750,23 +807,17 @@ otto/
 ├── .gitignore
 │
 ├── packages/
-│   ├── server/
+│   ├── server/             # Gateway
 │   ├── agent/
 │   ├── memory/
-│   ├── jobs/
-│   ├── config/
-│   ├── knowledge/
+│   ├── jobManager/
+│   ├── configManager/
+│   ├── knowledgeManager/
 │   ├── audit/
 │   ├── channels/
-│   ├── integrations/
-│   │   ├── core/
-│   │   ├── google/
-│   │   ├── tasks/
-│   │   ├── filesystem/
-│   │   └── _template/
-│   ├── clients/
-│   │   ├── tui/
-│   │   └── dashboard/
+│   ├── integrationManager/
+│   ├── tuiClient/
+│   ├── dashboardClient/
 │   └── shared/
 │
 ├── data/                   # Runtime, gitignored
