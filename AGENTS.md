@@ -87,6 +87,7 @@ IMPORTANT!!: Conventions are centralized in `CONVENTIONS.md`. If you discover a 
 - Group imports by: Node built-ins, external deps, internal modules, relative modules.
 - Keep import order stable; sort alphabetically within each group if no local pattern exists.
 - Avoid circular imports; refactor module boundaries if needed.
+- When installing new dependencies, always use pnpm to install, do not directly edit `package.json`.
 
 ## Modules and file organization
 
