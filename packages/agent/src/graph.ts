@@ -130,6 +130,34 @@ export type PlannerOptions = {
   idGenerator?: () => string;
 };
 
+/**
+ * Data passed to the persist callback for audit logging.
+ *
+ * Contains all the relevant information from one agent turn that should be
+ * recorded for auditing: which conversation, what was decided, what tools
+ * were called, what policies were applied, and what response was generated.
+ */
+export type PersistInput = {
+  threadId: string;
+  intent?: AgentIntent;
+  toolCalls?: AgentToolCall[];
+  policyDecisions?: AgentPolicyDecision[];
+  toolResults?: AgentToolResult[];
+  assistantMessage: AgentMessage | null;
+};
+
+/**
+ * Callback function for persisting audit data after each agent turn.
+ *
+ * This is called after the response is composed but before the graph completes.
+ * The callback receives all audit-relevant data from the turn and can store it
+ * however the caller chooses (database, file, external service, etc.).
+ *
+ * The graph awaits this callback, so any async I/O will complete before the
+ * invoke() call returns.
+ */
+export type PersistFn = (data: PersistInput) => Promise<void>;
+
 /*
  * ============================================================================
  * AGENT LOOP OVERVIEW
@@ -173,10 +201,11 @@ export type PlannerOptions = {
  *    - Produces: assistantMessage (the final reply)
  *    - Purpose: generate the response the user sees
  *
- * 8. PERSIST (not yet implemented)
- *    - Receives: full state after response
- *    - Produces: saved messages, audit entries
- *    - Purpose: store conversation for future turns
+ * 8. PERSIST
+ *    - Receives: full state after response composition
+ *    - Produces: no state changes (side effect only)
+ *    - Purpose: record audit trail via injected callback
+ *    - Note: conversation history is handled by LangGraph checkpointer, not here
  *
  * ============================================================================
  */
@@ -628,6 +657,41 @@ export function composeResponse(
 }
 
 /**
+ * Step 8: PERSIST
+ *
+ * Records audit data for the completed turn.
+ *
+ * Input: Full state after response composition
+ * Output: No state changes (side effect only)
+ *
+ * This node extracts audit-relevant data from the state and passes it to
+ * the persist callback. The callback is awaited, so any async I/O completes
+ * before the graph finishes.
+ *
+ * If no persist callback is provided, this is a no-op.
+ *
+ * @param persist - Optional callback to store audit data.
+ */
+export function createPersistNode(persist?: PersistFn) {
+  return async (state: AgentGraphState): Promise<Partial<AgentGraphState>> => {
+    if (!persist) {
+      return {};
+    }
+
+    await persist({
+      threadId: state.threadId,
+      intent: state.intent,
+      toolCalls: state.toolCalls,
+      policyDecisions: state.policyDecisions,
+      toolResults: state.toolResults,
+      assistantMessage: state.assistantMessage,
+    });
+
+    return {};
+  };
+}
+
+/**
  * Step 7: COMPOSE RESPONSE (LLM-backed)
  *
  * Builds a response composer that calls the real LLM to generate the reply.
@@ -668,10 +732,10 @@ export function createResponseComposer(composer: ResponseComposerFn) {
  * This wires together all the steps:
  *   START → normalizeInput → assembleContext → classify
  *     ↓ (if tools needed)          ↓ (if no tools)
- *     plan → policyCheck →      composeResponse → END
+ *     plan → policyCheck →      composeResponse → persist → END
  *     executeTools ────────────────↗
  *
- * All dependencies (classifier, planner, policy, tools, composer) are
+ * All dependencies (classifier, planner, policy, tools, composer, persist) are
  * injected so the loop can be customized without changing the flow.
  *
  * @param options - Dependencies and configuration for the agent loop.
@@ -680,6 +744,7 @@ export function createResponseComposer(composer: ResponseComposerFn) {
  * @param options.tools - Map of tool handlers.
  * @param options.plan - Optional custom planner (defaults to empty plan).
  * @param options.composeResponse - Optional LLM composer (defaults to echo).
+ * @param options.persist - Optional audit callback (called after response).
  * @param options.checkpointer - Optional state persistence.
  */
 export function createAgentGraph(options: {
@@ -688,6 +753,7 @@ export function createAgentGraph(options: {
   tools: Record<string, ToolHandler>;
   plan?: PlannerFn;
   composeResponse?: ResponseComposerFn;
+  persist?: PersistFn;
   checkpointer?: BaseCheckpointSaver | false;
 }) {
   const classifyNode = classifyIntent(options.classify);
@@ -697,6 +763,7 @@ export function createAgentGraph(options: {
   const composeNode = options.composeResponse
     ? createResponseComposer(options.composeResponse)
     : composeResponse;
+  const persistNode = createPersistNode(options.persist);
 
   const graph = new StateGraph(AgentGraphStateAnnotation)
     .addNode("normalizeInput", normalizeInput)
@@ -706,6 +773,7 @@ export function createAgentGraph(options: {
     .addNode("policyCheck", policyNode)
     .addNode("executeTools", executeNode)
     .addNode("composeResponse", composeNode)
+    .addNode("persist", persistNode)
     .addEdge(START, "normalizeInput")
     .addEdge("normalizeInput", "assembleContext")
     .addEdge("assembleContext", "classify")
@@ -715,7 +783,8 @@ export function createAgentGraph(options: {
     .addEdge("plan", "policyCheck")
     .addEdge("policyCheck", "executeTools")
     .addEdge("executeTools", "composeResponse")
-    .addEdge("composeResponse", END);
+    .addEdge("composeResponse", "persist")
+    .addEdge("persist", END);
 
   if (options.checkpointer === undefined) {
     return graph.compile();
