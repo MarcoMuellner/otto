@@ -1,5 +1,24 @@
 import { z } from "zod";
 
+type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(JsonValueSchema),
+    z.record(z.string(), JsonValueSchema),
+  ]),
+);
+
 /** What kind of message role is present in the agent loop. */
 export const AgentMessageRoleSchema = z.enum([
   "system",
@@ -32,14 +51,14 @@ export const AgentMessageSchema = z.object({
 export const AgentToolCallSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  args: z.record(z.unknown()),
+  args: z.record(z.string(), JsonValueSchema),
 });
 
 /** What a tool execution result looks like in the loop. */
 export const AgentToolResultSchema = z.object({
   toolCallId: z.string().min(1),
   name: z.string().min(1),
-  output: z.unknown(),
+  output: JsonValueSchema,
   success: z.boolean(),
   error: z.string().min(1).optional(),
 });
@@ -84,7 +103,7 @@ export const AgentStateSchema = z.object({
   media: z.array(AgentMediaRefSchema).optional(),
   context: z
     .object({
-      profileFacts: z.record(z.unknown()).optional(),
+      profileFacts: z.record(z.string(), JsonValueSchema).optional(),
       ragSnippets: z.array(z.string()).optional(),
       recentSummary: z.string().optional(),
     })

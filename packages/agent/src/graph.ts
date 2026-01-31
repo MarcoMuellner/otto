@@ -3,35 +3,50 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import type { AgentInput, AgentMessage, AgentState } from "./types";
 
 const AgentGraphStateAnnotation = Annotation.Root({
-  input: Annotation<AgentInput | null>({
-    default: () => null,
+  input: Annotation<AgentInput>({
+    value: (_current, next) => next,
+    default: () => ({
+      threadId: "",
+      channel: "",
+      messages: [],
+    }),
   }),
   threadId: Annotation<string>({
+    value: (_current, next) => next,
     default: () => "",
   }),
   messages: Annotation<AgentMessage[]>({
-    reducer: (current, next) => current.concat(next),
+    value: (current = [], next = []) => current.concat(next),
     default: () => [],
   }),
   media: Annotation<AgentState["media"]>({
-    reducer: (current, next) => current.concat(next ?? []),
+    value: (current = [], next = []) => current.concat(next),
     default: () => [],
   }),
   context: Annotation<AgentState["context"]>({
+    value: (_current, next) => next,
     default: () => ({}),
   }),
   assistantMessage: Annotation<AgentMessage | null>({
+    value: (_current, next) => next,
     default: () => null,
   }),
 });
 
 export type AgentGraphState = typeof AgentGraphStateAnnotation.State;
 
-/** Normalizes inbound input into the agent state. */
+/**
+ * Translates the inbound invocation payload into core state fields for the loop.
+ *
+ * This provides a consistent state shape for downstream nodes regardless of
+ * channel or client, and it guards against missing required input.
+ *
+ * @param state - Current graph state containing the raw input payload.
+ */
 export function normalizeInput(
   state: AgentGraphState,
 ): Partial<AgentGraphState> {
-  if (!state.input) {
+  if (!state.input || state.input.messages.length === 0) {
     throw new Error("Agent input is required to start the graph.");
   }
 
@@ -42,7 +57,14 @@ export function normalizeInput(
   };
 }
 
-/** Assembles long-term context for downstream nodes. */
+/**
+ * Establishes the long-term context block for this turn.
+ *
+ * This is the handoff point for memory and RAG enrichment so later nodes can
+ * rely on a stable context shape.
+ *
+ * @param state - Current graph state with any preloaded context.
+ */
 export function assembleContext(
   state: AgentGraphState,
 ): Partial<AgentGraphState> {
@@ -51,7 +73,14 @@ export function assembleContext(
   };
 }
 
-/** Composes the assistant response for the current turn. */
+/**
+ * Produces the assistant response message for the current turn.
+ *
+ * This is a placeholder response composer until model-backed generation is
+ * wired into the loop.
+ *
+ * @param state - Current graph state containing the latest messages.
+ */
 export function composeResponse(
   state: AgentGraphState,
 ): Partial<AgentGraphState> {
@@ -72,7 +101,12 @@ export function composeResponse(
   };
 }
 
-/** Builds the reusable LangGraph agent loop. */
+/**
+ * Builds the reusable LangGraph agent loop with the core nodes wired together.
+ *
+ * This keeps the orchestration stable so the model, tools, and memory can be
+ * swapped without changing the execution flow.
+ */
 export function createAgentGraph() {
   const graph = new StateGraph(AgentGraphStateAnnotation)
     .addNode("normalizeInput", normalizeInput)
