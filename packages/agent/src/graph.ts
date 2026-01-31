@@ -4,8 +4,10 @@ import type {
   AgentInput,
   AgentIntent,
   AgentMessage,
+  AgentPolicyDecision,
   AgentState,
   AgentToolCall,
+  AgentToolResult,
 } from "./types";
 
 import { AgentIntentSchema } from "./types";
@@ -43,6 +45,14 @@ const AgentGraphStateAnnotation = Annotation.Root({
     value: (_current, next) => next,
     default: () => undefined,
   }),
+  policyDecisions: Annotation<AgentPolicyDecision[] | undefined>({
+    value: (_current, next) => next,
+    default: () => undefined,
+  }),
+  toolResults: Annotation<AgentToolResult[] | undefined>({
+    value: (_current, next) => next,
+    default: () => undefined,
+  }),
   assistantMessage: Annotation<AgentMessage | null>({
     value: (_current, next) => next,
     default: () => null,
@@ -62,6 +72,17 @@ export type ClassifierOptions = {
   invoke: (prompt: string) => Promise<{ content: string } | string>;
   allowedDomains?: string[];
 };
+
+export type PolicyCheckFn = (call: AgentToolCall) => {
+  decision: "allow" | "deny";
+  reason?: string;
+};
+
+export type ToolHandler = (call: AgentToolCall) => Promise<AgentToolResult>;
+
+export type PlannerFn = (
+  state: AgentGraphState,
+) => Partial<AgentGraphState> | Promise<Partial<AgentGraphState>>;
 
 /**
  * Builds a classifier function around a chat model.
@@ -197,6 +218,83 @@ export function planTools(state: AgentGraphState): Partial<AgentGraphState> {
 }
 
 /**
+ * Applies policy decisions to planned tool calls.
+ *
+ * This enforces centralized allow/deny rules before any tool executes.
+ *
+ * @param policyCheck - Policy evaluator for each tool call.
+ */
+export function applyPolicy(policyCheck: PolicyCheckFn) {
+  return (state: AgentGraphState): Partial<AgentGraphState> => {
+    const toolCalls = state.toolCalls ?? [];
+
+    if (toolCalls.length === 0) {
+      return {
+        policyDecisions: [],
+        toolCalls: [],
+      };
+    }
+
+    const decisions = toolCalls.map((call) => ({
+      toolCallId: call.id,
+      ...policyCheck(call),
+    }));
+
+    const allowedIds = new Set(
+      decisions
+        .filter((decision) => decision.decision === "allow")
+        .map((decision) => decision.toolCallId),
+    );
+
+    return {
+      policyDecisions: decisions,
+      toolCalls: toolCalls.filter((call) => allowedIds.has(call.id)),
+    };
+  };
+}
+
+/**
+ * Executes tool calls that passed policy checks.
+ *
+ * This produces tool results while keeping missing tool handlers visible.
+ *
+ * @param tools - Tool handlers keyed by tool name.
+ */
+export function executeTools(tools: Record<string, ToolHandler>) {
+  return async (state: AgentGraphState): Promise<Partial<AgentGraphState>> => {
+    const toolCalls = state.toolCalls ?? [];
+
+    if (toolCalls.length === 0) {
+      return {
+        toolResults: [],
+      };
+    }
+
+    const results = await Promise.all(
+      toolCalls.map(async (call) => {
+        const handler = tools[call.name];
+
+        if (!handler) {
+          return {
+            toolCallId: call.id,
+            name: call.name,
+            output: { error: "Tool not registered." },
+            success: false,
+            error: "Tool not registered.",
+          };
+        }
+
+        return handler(call);
+      }),
+    );
+
+    return {
+      toolResults: results,
+    };
+  };
+}
+
+/**
  * Produces the assistant response message for the current turn.
  *
  * This is a placeholder response composer until model-backed generation is
@@ -230,14 +328,24 @@ export function composeResponse(
  * This keeps the orchestration stable so the model, tools, and memory can be
  * swapped without changing the execution flow.
  */
-export function createAgentGraph(options: { classify: ClassifierFn }) {
+export function createAgentGraph(options: {
+  classify: ClassifierFn;
+  policyCheck: PolicyCheckFn;
+  tools: Record<string, ToolHandler>;
+  plan?: PlannerFn;
+}) {
   const classifyNode = classifyIntent(options.classify);
+  const planNode = options.plan ?? planTools;
+  const policyNode = applyPolicy(options.policyCheck);
+  const executeNode = executeTools(options.tools);
 
   const graph = new StateGraph(AgentGraphStateAnnotation)
     .addNode("normalizeInput", normalizeInput)
     .addNode("assembleContext", assembleContext)
     .addNode("classify", classifyNode)
-    .addNode("plan", planTools)
+    .addNode("plan", planNode)
+    .addNode("policyCheck", policyNode)
+    .addNode("executeTools", executeNode)
     .addNode("composeResponse", composeResponse)
     .addEdge(START, "normalizeInput")
     .addEdge("normalizeInput", "assembleContext")
@@ -245,7 +353,9 @@ export function createAgentGraph(options: { classify: ClassifierFn }) {
     .addConditionalEdges("classify", (state) =>
       state.intent?.needsTools ? "plan" : "composeResponse",
     )
-    .addEdge("plan", "composeResponse")
+    .addEdge("plan", "policyCheck")
+    .addEdge("policyCheck", "executeTools")
+    .addEdge("executeTools", "composeResponse")
     .addEdge("composeResponse", END);
 
   return graph.compile();

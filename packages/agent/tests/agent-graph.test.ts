@@ -7,6 +7,8 @@ describe("agent graph", () => {
     // Arrange
     const graph = createAgentGraph({
       classify: async () => ({ domains: [], needsTools: false }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {},
     });
     const input = {
       input: {
@@ -33,6 +35,8 @@ describe("agent graph", () => {
     // Arrange
     const graph = createAgentGraph({
       classify: async () => ({ domains: [], needsTools: false }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {},
     });
     const input = {
       input: {
@@ -59,6 +63,8 @@ describe("agent graph", () => {
     // Arrange
     const graph = createAgentGraph({
       classify: async () => ({ domains: ["calendar"], needsTools: true }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {},
     });
     const input = {
       input: {
