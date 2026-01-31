@@ -8,6 +8,7 @@ import type {
   AgentInput,
   AgentIntent,
   AgentMessage,
+  AgentOutput,
   AgentPolicyDecision,
   AgentState,
   AgentToolCall,
@@ -861,4 +862,79 @@ export function createAgentGraph(options: {
   }
 
   return graph.compile({ checkpointer: options.checkpointer });
+}
+
+/**
+ * An agent instance with a clean invoke API.
+ *
+ * Wraps the LangGraph state machine to provide a simple interface that
+ * accepts AgentInput and returns AgentOutput, hiding internal details.
+ */
+export type Agent = {
+  invoke: (input: AgentInput) => Promise<AgentOutput>;
+};
+
+/**
+ * Configuration options for creating an agent.
+ *
+ * Same as createAgentGraph options - all dependencies are injected.
+ */
+export type AgentOptions = {
+  classify: ClassifierFn;
+  policyCheck: PolicyCheckFn;
+  tools: Record<string, ToolHandler>;
+  plan?: PlannerFn;
+  composeResponse?: ResponseComposerFn;
+  learn?: LearnFn;
+  persist?: PersistFn;
+  checkpointer?: BaseCheckpointSaver | false;
+};
+
+/**
+ * Creates an agent with a clean invoke API.
+ *
+ * This is a convenience wrapper around createAgentGraph that:
+ * - Accepts AgentInput directly (no { input: ... } wrapping needed)
+ * - Automatically configures the checkpointer with the threadId
+ * - Returns AgentOutput directly (extracts from internal state)
+ *
+ * Use this instead of createAgentGraph when you want a simpler interface
+ * and don't need direct access to the LangGraph state machine.
+ *
+ * @param options - Dependencies and configuration for the agent.
+ * @param options.classify - Determines if tools are needed.
+ * @param options.policyCheck - Evaluates allow/deny for each tool call.
+ * @param options.tools - Map of tool handlers.
+ * @param options.plan - Optional custom planner (defaults to empty plan).
+ * @param options.composeResponse - Optional LLM composer (defaults to echo).
+ * @param options.learn - Optional callback to extract user knowledge.
+ * @param options.persist - Optional audit callback (called after learn).
+ * @param options.checkpointer - Optional state persistence.
+ */
+export function createAgent(options: AgentOptions): Agent {
+  const graph = createAgentGraph(options);
+
+  return {
+    invoke: async (input: AgentInput): Promise<AgentOutput> => {
+      const result = await graph.invoke(
+        { input },
+        { configurable: { thread_id: input.threadId } },
+      );
+
+      // Extract AgentOutput from internal state
+      const assistantMessage = result.assistantMessage ?? {
+        role: "assistant" as const,
+        content: "",
+      };
+
+      return {
+        threadId: result.threadId,
+        assistantMessage: {
+          ...assistantMessage,
+          role: "assistant" as const,
+        },
+        toolResults: result.toolResults ?? [],
+      };
+    },
+  };
 }

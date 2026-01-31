@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { createAgentGraph } from "@agent/graph";
+import { createAgent, createAgentGraph } from "@agent/graph";
 import type {
   LearnFn,
   LearnInput,
@@ -514,5 +514,137 @@ describe("agent graph", () => {
       // Assert - learn completes before persist starts
       expect(callOrder).toEqual(["learn", "persist"]);
     });
+  });
+});
+
+describe("createAgent", () => {
+  test("returns agent output with assistant message", async () => {
+    // Arrange
+    const agent = createAgent({
+      classify: async () => ({ domains: [], needsTools: false }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {},
+    });
+    const input = {
+      threadId: "thread-agent-1",
+      channel: "whatsapp",
+      messages: [{ role: "user" as const, content: "Hello" }],
+    };
+
+    // Act
+    const output = await agent.invoke(input);
+
+    // Assert
+    expect(output.threadId).toBe("thread-agent-1");
+    expect(output.assistantMessage.role).toBe("assistant");
+    expect(output.assistantMessage.content).toContain("Hello");
+  });
+
+  test("returns tool results in output", async () => {
+    // Arrange
+    const agent = createAgent({
+      classify: async () => ({ domains: ["files"], needsTools: true }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {
+        "fs.read": async (call) => ({
+          toolCallId: call.id,
+          name: call.name,
+          output: { content: "file data" },
+          success: true,
+        }),
+      },
+      plan: () => ({
+        toolCalls: [{ id: "c1", name: "fs.read", args: { path: "/a" } }],
+      }),
+    });
+    const input = {
+      threadId: "thread-agent-2",
+      channel: "direct",
+      messages: [{ role: "user" as const, content: "read file" }],
+    };
+
+    // Act
+    const output = await agent.invoke(input);
+
+    // Assert
+    expect(output.toolResults).toHaveLength(1);
+    expect(output.toolResults[0].name).toBe("fs.read");
+    expect(output.toolResults[0].success).toBe(true);
+  });
+
+  test("returns empty tool results when no tools used", async () => {
+    // Arrange
+    const agent = createAgent({
+      classify: async () => ({ domains: [], needsTools: false }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {},
+    });
+    const input = {
+      threadId: "thread-agent-3",
+      channel: "direct",
+      messages: [{ role: "user" as const, content: "Hello" }],
+    };
+
+    // Act
+    const output = await agent.invoke(input);
+
+    // Assert
+    expect(output.toolResults).toEqual([]);
+  });
+
+  test("uses threadId for checkpointer configuration", async () => {
+    // Arrange
+    const checkpointer = new MemorySaver();
+    const agent = createAgent({
+      classify: async () => ({ domains: [], needsTools: false }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {},
+      checkpointer,
+    });
+
+    // Act - invoke twice with same threadId
+    await agent.invoke({
+      threadId: "thread-agent-4",
+      channel: "direct",
+      messages: [{ role: "user" as const, content: "First message" }],
+    });
+    const output = await agent.invoke({
+      threadId: "thread-agent-4",
+      channel: "direct",
+      messages: [{ role: "user" as const, content: "Second message" }],
+    });
+
+    // Assert - second invoke should have access to conversation history
+    expect(output.threadId).toBe("thread-agent-4");
+    expect(output.assistantMessage.role).toBe("assistant");
+  });
+
+  test("calls learn and persist callbacks", async () => {
+    // Arrange
+    const callOrder: string[] = [];
+    const learn: LearnFn = async () => {
+      callOrder.push("learn");
+    };
+    const persist: PersistFn = async () => {
+      callOrder.push("persist");
+    };
+    const agent = createAgent({
+      classify: async () => ({ domains: [], needsTools: false }),
+      policyCheck: () => ({ decision: "allow" }),
+      tools: {},
+      learn,
+      persist,
+    });
+    const input = {
+      threadId: "thread-agent-5",
+      channel: "direct",
+      messages: [{ role: "user" as const, content: "Test callbacks" }],
+    };
+
+    // Act
+    await agent.invoke(input);
+
+    // Assert
+    expect(callOrder).toEqual(["learn", "persist"]);
   });
 });
