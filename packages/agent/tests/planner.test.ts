@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { AgentGraphState } from "@agent/graph";
-import { createModelPlanner } from "@agent/graph";
+import { createModelPlanner, createToolCallingPlanner } from "@agent/graph";
 
 describe("createModelPlanner", () => {
   test("creates tool calls with generated IDs", async () => {
@@ -79,5 +79,68 @@ describe("createModelPlanner", () => {
 
     // Assert
     expect(result.toolCalls).toBeUndefined();
+  });
+
+  test("maps tool calls from a tool-calling model", async () => {
+    // Arrange
+    const planner = createToolCallingPlanner({
+      tools: [
+        {
+          name: "fs.read",
+          tool: { name: "fs.read" },
+        },
+      ],
+      idGenerator: () => "call-42",
+      model: {
+        bindTools: () => ({
+          invoke: async () => ({
+            tool_calls: [{ name: "fs.read", args: { path: "/a" } }],
+          }),
+        }),
+      },
+    });
+    const state = {
+      intent: { domains: ["files"], needsTools: true },
+      messages: [{ role: "user", content: "read" }],
+    } as AgentGraphState;
+
+    // Act
+    const result = await planner(state);
+
+    // Assert
+    expect(result.toolCalls).toEqual([
+      { id: "call-42", name: "fs.read", args: { path: "/a" } },
+    ]);
+  });
+
+  test("rejects tool calls that are not in the tool bindings", async () => {
+    // Arrange
+    const planner = createToolCallingPlanner({
+      tools: [
+        {
+          name: "fs.read",
+          tool: { name: "fs.read" },
+        },
+      ],
+      model: {
+        bindTools: () => ({
+          invoke: async () => ({
+            tool_calls: [{ name: "fs.write", args: { path: "/b" } }],
+          }),
+        }),
+      },
+    });
+    const state = {
+      intent: { domains: ["files"], needsTools: true },
+      messages: [{ role: "user", content: "write" }],
+    } as AgentGraphState;
+
+    // Act
+    const runPlanner = () => planner(state);
+
+    // Assert
+    await expect(runPlanner).rejects.toThrow(
+      "Planner returned invalid tool JSON.",
+    );
   });
 });

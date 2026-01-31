@@ -94,6 +94,25 @@ export type ToolDefinition = {
   inputSchema: Record<string, JsonValue>;
 };
 
+export type ToolCallingModel = {
+  bindTools: (tools: unknown[]) => {
+    invoke: (
+      messages: AgentMessage[],
+    ) => Promise<{ tool_calls?: unknown; toolCalls?: unknown }>;
+  };
+};
+
+export type ToolBinding = {
+  name: string;
+  tool: unknown;
+};
+
+export type ToolCallingPlannerOptions = {
+  model: ToolCallingModel;
+  tools: ToolBinding[];
+  idGenerator?: () => string;
+};
+
 export type PlannerOptions = {
   invoke: (prompt: string) => Promise<{ content: string } | string>;
   tools: ToolDefinition[];
@@ -304,6 +323,63 @@ export function createModelPlanner(options: PlannerOptions): PlannerFn {
     return {
       toolCalls: parsed.data.toolCalls.map((call) => ({
         id: nextId(),
+        name: call.name,
+        args: call.args,
+      })),
+    };
+  };
+}
+
+/**
+ * Builds a planner that uses tool-calling responses from the model.
+ *
+ * This passes the bound tool catalog into the model and maps its tool calls
+ * into the agent's internal tool call structure.
+ *
+ * @param options - Model bindings, tool catalog, and ID generator.
+ */
+export function createToolCallingPlanner(
+  options: ToolCallingPlannerOptions,
+): PlannerFn {
+  const toolCallSchema = z.object({
+    name: z.string().min(1),
+    args: z.record(z.string(), JsonValueSchema),
+    id: z.string().min(1).optional(),
+  });
+
+  return async (state: AgentGraphState): Promise<Partial<AgentGraphState>> => {
+    if (!state.intent?.needsTools) {
+      return {};
+    }
+
+    const bound = options.model.bindTools(
+      options.tools.map((tool) => tool.tool),
+    );
+    const response = await bound.invoke(state.messages);
+    const rawToolCalls =
+      "tool_calls" in response ? response.tool_calls : response.toolCalls;
+
+    if (!rawToolCalls) {
+      throw new Error("Planner returned invalid tool JSON.");
+    }
+
+    const parsed = z.array(toolCallSchema).safeParse(rawToolCalls);
+
+    if (!parsed.success) {
+      throw new Error("Planner returned invalid tool JSON.");
+    }
+
+    const allowedNames = new Set(options.tools.map((tool) => tool.name));
+
+    if (parsed.data.some((call) => !allowedNames.has(call.name))) {
+      throw new Error("Planner returned invalid tool JSON.");
+    }
+
+    const nextId = options.idGenerator ?? (() => randomUUID());
+
+    return {
+      toolCalls: parsed.data.map((call) => ({
+        id: call.id ?? nextId(),
         name: call.name,
         args: call.args,
       })),
