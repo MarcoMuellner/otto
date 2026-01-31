@@ -45,6 +45,7 @@
 
 - Use deterministic tests; avoid network/time dependencies.
 - Name tests by behavior, not implementation details.
+- Follow AAA pattern in tests and label Arrange/Act/Assert with comments.
 - Package scaffolding baseline: `src/`, `tests/`, `tsconfig.json`, `vitest.config.ts`, and scripts (`lint`, `format`, `test`, `typecheck`).
 
 ## Adding new conventions
