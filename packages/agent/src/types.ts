@@ -70,6 +70,12 @@ export const AgentPolicyDecisionSchema = z.object({
   reason: z.string().min(1).optional(),
 });
 
+/** What the intent classification result looks like. */
+export const AgentIntentSchema = z.object({
+  domains: z.array(z.string()),
+  needsTools: z.boolean(),
+});
+
 /** What the inbound agent invocation payload looks like. */
 export const AgentInputSchema = z.object({
   threadId: z.string().min(1),
@@ -108,12 +114,7 @@ export const AgentStateSchema = z.object({
       recentSummary: z.string().optional(),
     })
     .optional(),
-  intent: z
-    .object({
-      domains: z.array(z.string()),
-      needsTools: z.boolean(),
-    })
-    .optional(),
+  intent: AgentIntentSchema.optional(),
   toolCalls: z.array(AgentToolCallSchema).optional(),
   toolResults: z.array(AgentToolResultSchema).optional(),
   policyDecisions: z.array(AgentPolicyDecisionSchema).optional(),
@@ -125,6 +126,7 @@ export type AgentMessage = z.infer<typeof AgentMessageSchema>;
 export type AgentToolCall = z.infer<typeof AgentToolCallSchema>;
 export type AgentToolResult = z.infer<typeof AgentToolResultSchema>;
 export type AgentPolicyDecision = z.infer<typeof AgentPolicyDecisionSchema>;
+export type AgentIntent = z.infer<typeof AgentIntentSchema>;
 export type AgentInput = z.infer<typeof AgentInputSchema>;
 export type AgentOutput = z.infer<typeof AgentOutputSchema>;
 export type AgentState = z.infer<typeof AgentStateSchema>;
