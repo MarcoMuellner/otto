@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
+
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
+import { z } from "zod";
 
 import type {
   AgentInput,
@@ -8,9 +11,10 @@ import type {
   AgentState,
   AgentToolCall,
   AgentToolResult,
+  JsonValue,
 } from "./types";
 
-import { AgentIntentSchema } from "./types";
+import { AgentIntentSchema, JsonValueSchema } from "./types";
 
 const AgentGraphStateAnnotation = Annotation.Root({
   input: Annotation<AgentInput>({
@@ -83,6 +87,18 @@ export type ToolHandler = (call: AgentToolCall) => Promise<AgentToolResult>;
 export type PlannerFn = (
   state: AgentGraphState,
 ) => Partial<AgentGraphState> | Promise<Partial<AgentGraphState>>;
+
+export type ToolDefinition = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, JsonValue>;
+};
+
+export type PlannerOptions = {
+  invoke: (prompt: string) => Promise<{ content: string } | string>;
+  tools: ToolDefinition[];
+  idGenerator?: () => string;
+};
 
 /**
  * Builds a classifier function around a chat model.
@@ -214,6 +230,84 @@ export function planTools(state: AgentGraphState): Partial<AgentGraphState> {
 
   return {
     toolCalls: [],
+  };
+}
+
+/**
+ * Builds a planner that selects tool calls from an LLM response.
+ *
+ * This injects the available tools into the prompt so the model can only
+ * choose from explicit capabilities.
+ *
+ * @param options - Model, tool catalog, and ID generator for tool calls.
+ */
+export function createModelPlanner(options: PlannerOptions): PlannerFn {
+  const toolPlanSchema = z.object({
+    toolCalls: z.array(
+      z.object({
+        name: z.string().min(1),
+        args: z.record(z.string(), JsonValueSchema),
+      }),
+    ),
+  });
+
+  return async (state: AgentGraphState): Promise<Partial<AgentGraphState>> => {
+    if (!state.intent?.needsTools) {
+      return {};
+    }
+
+    const lastUserMessage = [...state.messages]
+      .reverse()
+      .find((message) => message.role === "user");
+
+    if (!lastUserMessage) {
+      throw new Error("A user message is required for tool planning.");
+    }
+
+    const toolCatalog = options.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }));
+
+    const prompt = [
+      "Select tool calls for the user request using the allowed tools.",
+      "Return JSON only with key: toolCalls (array of {name, args}).",
+      `Tools: ${JSON.stringify(toolCatalog)}`,
+      `Message: ${lastUserMessage.content}`,
+    ].join("\n");
+
+    const response = await options.invoke(prompt);
+    const content = typeof response === "string" ? response : response.content;
+    let parsedJson: unknown;
+
+    try {
+      parsedJson = JSON.parse(content);
+    } catch {
+      throw new Error("Planner returned invalid tool JSON.");
+    }
+
+    const parsed = toolPlanSchema.safeParse(parsedJson);
+
+    if (!parsed.success) {
+      throw new Error("Planner returned invalid tool JSON.");
+    }
+
+    const allowedNames = new Set(options.tools.map((tool) => tool.name));
+
+    if (parsed.data.toolCalls.some((call) => !allowedNames.has(call.name))) {
+      throw new Error("Planner returned invalid tool JSON.");
+    }
+
+    const nextId = options.idGenerator ?? (() => randomUUID());
+
+    return {
+      toolCalls: parsed.data.toolCalls.map((call) => ({
+        id: nextId(),
+        name: call.name,
+        args: call.args,
+      })),
+    };
   };
 }
 
