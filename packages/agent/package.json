@@ -18,6 +18,8 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.1.2",
+    "@langchain/openai": "^1.2.4",
     "zod": "^4.3.6"
   }
 }
