@@ -1,7 +1,13 @@
 import { describe, expect, test } from "vitest";
 
 import { createAgentGraph } from "@agent/graph";
-import type { PersistFn, PersistInput, ResponseComposerFn } from "@agent/graph";
+import type {
+  LearnFn,
+  LearnInput,
+  PersistFn,
+  PersistInput,
+  ResponseComposerFn,
+} from "@agent/graph";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 
 describe("agent graph", () => {
@@ -361,6 +367,152 @@ describe("agent graph", () => {
 
       // Assert - persist should complete before invoke returns
       expect(callOrder).toEqual(["persist", "invoke-done"]);
+    });
+  });
+
+  describe("learn node", () => {
+    test("calls learn callback with conversation data after response", async () => {
+      // Arrange
+      let learnedData: LearnInput | null = null;
+      const learn: LearnFn = async (data) => {
+        learnedData = data;
+      };
+      const graph = createAgentGraph({
+        classify: async () => ({ domains: [], needsTools: false }),
+        policyCheck: () => ({ decision: "allow" }),
+        tools: {},
+        learn,
+      });
+      const input = {
+        input: {
+          threadId: "thread-learn-1",
+          channel: "direct",
+          messages: [{ role: "user", content: "My name is Marco" }],
+        },
+      };
+
+      // Act
+      await graph.invoke(input);
+
+      // Assert
+      expect(learnedData).not.toBeNull();
+      expect(learnedData?.threadId).toBe("thread-learn-1");
+      expect(learnedData?.messages).toHaveLength(2); // user + assistant
+      expect(learnedData?.assistantMessage?.role).toBe("assistant");
+    });
+
+    test("includes existing context in learn data for deduplication", async () => {
+      // Arrange
+      let learnedData: LearnInput | null = null;
+      const learn: LearnFn = async (data) => {
+        learnedData = data;
+      };
+      const graph = createAgentGraph({
+        classify: async () => ({ domains: [], needsTools: false }),
+        policyCheck: () => ({ decision: "allow" }),
+        tools: {},
+        learn,
+      });
+      const input = {
+        input: {
+          threadId: "thread-learn-2",
+          channel: "direct",
+          messages: [{ role: "user", content: "I prefer mornings" }],
+        },
+        context: {
+          profileFacts: { name: "Marco" },
+        },
+      };
+
+      // Act
+      await graph.invoke(input);
+
+      // Assert
+      expect(learnedData?.context?.profileFacts).toEqual({ name: "Marco" });
+    });
+
+    test("does not fail when learn callback is not provided", async () => {
+      // Arrange
+      const graph = createAgentGraph({
+        classify: async () => ({ domains: [], needsTools: false }),
+        policyCheck: () => ({ decision: "allow" }),
+        tools: {},
+        // No learn callback
+      });
+      const input = {
+        input: {
+          threadId: "thread-learn-3",
+          channel: "direct",
+          messages: [{ role: "user", content: "No learning" }],
+        },
+      };
+
+      // Act & Assert (should not throw)
+      const result = await graph.invoke(input);
+      expect(result.assistantMessage?.role).toBe("assistant");
+    });
+
+    test("runs learn before persist", async () => {
+      // Arrange
+      const callOrder: string[] = [];
+      const learn: LearnFn = async () => {
+        callOrder.push("learn");
+      };
+      const persist: PersistFn = async () => {
+        callOrder.push("persist");
+      };
+      const graph = createAgentGraph({
+        classify: async () => ({ domains: [], needsTools: false }),
+        policyCheck: () => ({ decision: "allow" }),
+        tools: {},
+        learn,
+        persist,
+      });
+      const input = {
+        input: {
+          threadId: "thread-learn-4",
+          channel: "direct",
+          messages: [{ role: "user", content: "Order test" }],
+        },
+      };
+
+      // Act
+      await graph.invoke(input);
+
+      // Assert - learn runs before persist
+      expect(callOrder).toEqual(["learn", "persist"]);
+    });
+
+    test("awaits learn callback before continuing", async () => {
+      // Arrange
+      const callOrder: string[] = [];
+      const learn: LearnFn = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        callOrder.push("learn");
+      };
+      const persist: PersistFn = async () => {
+        callOrder.push("persist");
+      };
+      const graph = createAgentGraph({
+        classify: async () => ({ domains: [], needsTools: false }),
+        policyCheck: () => ({ decision: "allow" }),
+        tools: {},
+        learn,
+        persist,
+      });
+      const input = {
+        input: {
+          threadId: "thread-learn-5",
+          channel: "direct",
+          messages: [{ role: "user", content: "Async test" }],
+        },
+      };
+
+      // Act
+      await graph.invoke(input);
+
+      // Assert - learn completes before persist starts
+      expect(callOrder).toEqual(["learn", "persist"]);
     });
   });
 });

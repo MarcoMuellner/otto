@@ -131,6 +131,32 @@ export type PlannerOptions = {
 };
 
 /**
+ * Data passed to the learn callback for extracting user knowledge.
+ *
+ * Contains the conversation data needed to identify facts, preferences,
+ * and habits worth remembering. The existing context is included so the
+ * callback can deduplicate against already-known information.
+ */
+export type LearnInput = {
+  threadId: string;
+  messages: AgentMessage[];
+  assistantMessage: AgentMessage | null;
+  context?: AgentState["context"];
+};
+
+/**
+ * Callback function for learning user knowledge from conversations.
+ *
+ * This is called after the response is composed but before audit persistence.
+ * The callback receives the conversation data and can extract facts, preferences,
+ * or habits to store in the user profile or knowledge base.
+ *
+ * The graph awaits this callback, so any async I/O (LLM calls, storage) will
+ * complete before moving to the persist node.
+ */
+export type LearnFn = (data: LearnInput) => Promise<void>;
+
+/**
  * Data passed to the persist callback for audit logging.
  *
  * Contains all the relevant information from one agent turn that should be
@@ -201,8 +227,14 @@ export type PersistFn = (data: PersistInput) => Promise<void>;
  *    - Produces: assistantMessage (the final reply)
  *    - Purpose: generate the response the user sees
  *
- * 8. PERSIST
+ * 8. LEARN
  *    - Receives: full state after response composition
+ *    - Produces: no state changes (side effect only)
+ *    - Purpose: extract user facts, preferences, habits via injected callback
+ *    - Note: skipped if no learn callback is provided
+ *
+ * 9. PERSIST
+ *    - Receives: full state after learn step
  *    - Produces: no state changes (side effect only)
  *    - Purpose: record audit trail via injected callback
  *    - Note: conversation history is handled by LangGraph checkpointer, not here
@@ -657,7 +689,40 @@ export function composeResponse(
 }
 
 /**
- * Step 8: PERSIST
+ * Step 8: LEARN
+ *
+ * Extracts user knowledge from the conversation for future context.
+ *
+ * Input: Full state after response composition
+ * Output: No state changes (side effect only)
+ *
+ * This node passes the conversation to the learn callback, which can extract
+ * facts, preferences, and habits worth remembering. The existing context is
+ * included so the callback can deduplicate against already-known information.
+ *
+ * If no learn callback is provided, this is a no-op.
+ *
+ * @param learn - Optional callback to extract and store user knowledge.
+ */
+export function createLearnNode(learn?: LearnFn) {
+  return async (state: AgentGraphState): Promise<Partial<AgentGraphState>> => {
+    if (!learn) {
+      return {};
+    }
+
+    await learn({
+      threadId: state.threadId,
+      messages: state.messages,
+      assistantMessage: state.assistantMessage,
+      context: state.context,
+    });
+
+    return {};
+  };
+}
+
+/**
+ * Step 9: PERSIST
  *
  * Records audit data for the completed turn.
  *
@@ -732,11 +797,11 @@ export function createResponseComposer(composer: ResponseComposerFn) {
  * This wires together all the steps:
  *   START → normalizeInput → assembleContext → classify
  *     ↓ (if tools needed)          ↓ (if no tools)
- *     plan → policyCheck →      composeResponse → persist → END
+ *     plan → policyCheck →      composeResponse → learn → persist → END
  *     executeTools ────────────────↗
  *
- * All dependencies (classifier, planner, policy, tools, composer, persist) are
- * injected so the loop can be customized without changing the flow.
+ * All dependencies (classifier, planner, policy, tools, composer, learn, persist)
+ * are injected so the loop can be customized without changing the flow.
  *
  * @param options - Dependencies and configuration for the agent loop.
  * @param options.classify - Determines if tools are needed.
@@ -744,7 +809,8 @@ export function createResponseComposer(composer: ResponseComposerFn) {
  * @param options.tools - Map of tool handlers.
  * @param options.plan - Optional custom planner (defaults to empty plan).
  * @param options.composeResponse - Optional LLM composer (defaults to echo).
- * @param options.persist - Optional audit callback (called after response).
+ * @param options.learn - Optional callback to extract user knowledge.
+ * @param options.persist - Optional audit callback (called after learn).
  * @param options.checkpointer - Optional state persistence.
  */
 export function createAgentGraph(options: {
@@ -753,6 +819,7 @@ export function createAgentGraph(options: {
   tools: Record<string, ToolHandler>;
   plan?: PlannerFn;
   composeResponse?: ResponseComposerFn;
+  learn?: LearnFn;
   persist?: PersistFn;
   checkpointer?: BaseCheckpointSaver | false;
 }) {
@@ -763,6 +830,7 @@ export function createAgentGraph(options: {
   const composeNode = options.composeResponse
     ? createResponseComposer(options.composeResponse)
     : composeResponse;
+  const learnNode = createLearnNode(options.learn);
   const persistNode = createPersistNode(options.persist);
 
   const graph = new StateGraph(AgentGraphStateAnnotation)
@@ -773,6 +841,7 @@ export function createAgentGraph(options: {
     .addNode("policyCheck", policyNode)
     .addNode("executeTools", executeNode)
     .addNode("composeResponse", composeNode)
+    .addNode("learn", learnNode)
     .addNode("persist", persistNode)
     .addEdge(START, "normalizeInput")
     .addEdge("normalizeInput", "assembleContext")
@@ -783,7 +852,8 @@ export function createAgentGraph(options: {
     .addEdge("plan", "policyCheck")
     .addEdge("policyCheck", "executeTools")
     .addEdge("executeTools", "composeResponse")
-    .addEdge("composeResponse", "persist")
+    .addEdge("composeResponse", "learn")
+    .addEdge("learn", "persist")
     .addEdge("persist", END);
 
   if (options.checkpointer === undefined) {
