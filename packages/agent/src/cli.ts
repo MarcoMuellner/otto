@@ -1,4 +1,12 @@
-import type { Agent } from "./graph";
+import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
+
+import {
+  createAgent,
+  createModelClassifier,
+  type Agent,
+  type PlannerFn,
+  type ToolHandler,
+} from "./graph";
 
 /**
  * Minimal interface for an LLM model that can be invoked with messages.
@@ -75,4 +83,75 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   });
 
   writer.write(`\nAssistant: ${output.assistantMessage.content}\n\n`);
+}
+
+/**
+ * Options for creating a CLI agent.
+ */
+export type CliAgentOptions = {
+  model: LlmModel;
+  checkpointer?: BaseCheckpointSaver;
+  tools?: Record<string, ToolHandler>;
+  plan?: PlannerFn;
+};
+
+/**
+ * Creates a fully-wired agent for CLI chat usage.
+ *
+ * This factory wires together:
+ * - LLM-backed classifier (decides if tools are needed)
+ * - LLM-backed response composer (generates assistant messages)
+ * - Permissive policy (allows all tool calls)
+ * - Optional checkpointer for conversation history
+ * - Optional tools and planner
+ *
+ * @param options - Model and optional configuration for the agent.
+ * @param options.model - LangChain-compatible chat model.
+ * @param options.checkpointer - Optional state persistence for conversation history.
+ * @param options.tools - Optional tool handlers.
+ * @param options.plan - Optional custom planner.
+ */
+export function createCliAgent(options: CliAgentOptions): Agent {
+  const { model, checkpointer, tools = {}, plan } = options;
+  const adapter = createLlmAdapter(model);
+
+  return createAgent({
+    classify: createModelClassifier({
+      invoke: adapter.invoke,
+      allowedDomains: [],
+    }),
+    policyCheck: () => ({ decision: "allow" }),
+    tools,
+    plan,
+    composeResponse: async ({ messages, toolResults }) => {
+      // Build conversation for the model
+      const systemMessage = {
+        role: "system",
+        content:
+          "You are Otto, a helpful personal assistant. Be concise and friendly.",
+      };
+
+      // Include tool results in context if present
+      let contextMessage = "";
+      if (toolResults && toolResults.length > 0) {
+        contextMessage = `\n\nTool results:\n${JSON.stringify(toolResults, null, 2)}`;
+      }
+
+      const messagesWithContext = [
+        systemMessage,
+        ...messages.map((m) => ({ role: m.role, content: m.content })),
+      ];
+
+      if (contextMessage) {
+        messagesWithContext.push({ role: "system", content: contextMessage });
+      }
+
+      const response = await model.invoke(messagesWithContext);
+      return {
+        role: "assistant",
+        content: String(response.content),
+      };
+    },
+    checkpointer: checkpointer ?? false,
+  });
 }

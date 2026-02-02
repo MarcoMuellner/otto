@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { createLlmAdapter, runCli } from "@agent/cli";
+import { createCliAgent, createLlmAdapter, runCli } from "@agent/cli";
 import type { Agent } from "@agent/graph";
 
 describe("createLlmAdapter", () => {
@@ -118,5 +118,115 @@ describe("runCli", () => {
 
     // Assert
     expect(mockAgent.invoke).toHaveBeenCalled();
+  });
+});
+
+describe("createCliAgent", () => {
+  test("creates an agent that can be invoked", async () => {
+    // Arrange
+    const mockModel = {
+      invoke: vi.fn().mockResolvedValue({
+        content: '{"domains": [], "needsTools": false}',
+      }),
+    };
+    // Second call for composer
+    mockModel.invoke.mockResolvedValueOnce({
+      content: '{"domains": [], "needsTools": false}',
+    });
+    mockModel.invoke.mockResolvedValueOnce({
+      content: "Hello! How can I help you?",
+    });
+
+    const agent = createCliAgent({ model: mockModel });
+
+    // Act
+    const output = await agent.invoke({
+      threadId: "test-thread",
+      channel: "cli",
+      messages: [{ role: "user", content: "Hello" }],
+    });
+
+    // Assert
+    expect(output.threadId).toBe("test-thread");
+    expect(output.assistantMessage.role).toBe("assistant");
+    expect(output.assistantMessage.content).toBe("Hello! How can I help you?");
+  });
+
+  test("uses provided checkpointer for conversation history", async () => {
+    // Arrange
+    const mockModel = {
+      invoke: vi.fn().mockResolvedValue({
+        content: '{"domains": [], "needsTools": false}',
+      }),
+    };
+    mockModel.invoke.mockResolvedValueOnce({
+      content: '{"domains": [], "needsTools": false}',
+    });
+    mockModel.invoke.mockResolvedValueOnce({
+      content: "First response",
+    });
+    mockModel.invoke.mockResolvedValueOnce({
+      content: '{"domains": [], "needsTools": false}',
+    });
+    mockModel.invoke.mockResolvedValueOnce({
+      content: "Second response",
+    });
+
+    const { MemorySaver } = await import("@langchain/langgraph-checkpoint");
+    const checkpointer = new MemorySaver();
+    const agent = createCliAgent({ model: mockModel, checkpointer });
+
+    // Act - two invocations with same threadId
+    await agent.invoke({
+      threadId: "persistent-thread",
+      channel: "cli",
+      messages: [{ role: "user", content: "First message" }],
+    });
+    const output = await agent.invoke({
+      threadId: "persistent-thread",
+      channel: "cli",
+      messages: [{ role: "user", content: "Second message" }],
+    });
+
+    // Assert
+    expect(output.assistantMessage.content).toBe("Second response");
+  });
+
+  test("allows all tool calls by default", async () => {
+    // Arrange
+    const mockModel = {
+      invoke: vi.fn(),
+    };
+    mockModel.invoke.mockResolvedValueOnce({
+      content: '{"domains": ["test"], "needsTools": true}',
+    });
+    mockModel.invoke.mockResolvedValueOnce({
+      content: "Tool result processed",
+    });
+
+    const toolHandler = vi.fn().mockResolvedValue({
+      toolCallId: "call-1",
+      name: "test.tool",
+      output: { result: "ok" },
+      success: true,
+    });
+
+    const agent = createCliAgent({
+      model: mockModel,
+      tools: { "test.tool": toolHandler },
+      plan: () => ({
+        toolCalls: [{ id: "call-1", name: "test.tool", args: {} }],
+      }),
+    });
+
+    // Act
+    await agent.invoke({
+      threadId: "tool-thread",
+      channel: "cli",
+      messages: [{ role: "user", content: "Run a tool" }],
+    });
+
+    // Assert - tool was called (not blocked by policy)
+    expect(toolHandler).toHaveBeenCalled();
   });
 });
