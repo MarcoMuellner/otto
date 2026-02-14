@@ -54,6 +54,24 @@ require_cmd() {
   fi
 }
 
+install_bridge_if_missing() {
+  if command -v opencode-telegram-bridge >/dev/null 2>&1; then
+    return 0
+  fi
+
+  info "Installing opencode-telegram-bridge..."
+  require_cmd node
+  require_cmd npm
+
+  if npm install -g opencode-telegram-bridge; then
+    success "  opencode-telegram-bridge installed"
+  else
+    error "Failed to install opencode-telegram-bridge."
+    error "Install manually: npm install -g opencode-telegram-bridge"
+    exit 1
+  fi
+}
+
 # --- Platform: Service Management --------------------------------------------
 # Each platform implements: svc_install, svc_uninstall, svc_start, svc_stop,
 # svc_restart, svc_is_running, svc_enable, svc_logs
@@ -364,10 +382,9 @@ cmd_setup() {
   info "Checking prerequisites..."
   require_cmd opencode
   success "  opencode: $(command -v opencode)"
-  if command -v opencode-telegram-bridge >/dev/null 2>&1; then
+  if bridge_requested; then
+    install_bridge_if_missing
     success "  opencode-telegram-bridge: $(command -v opencode-telegram-bridge)"
-  else
-    warn "  opencode-telegram-bridge not found (install later for Telegram support)"
   fi
   success "  platform: ${PLATFORM}"
   echo ""
@@ -433,22 +450,15 @@ EOF
 
   # Bridge setup (interactive wizard)
   if bridge_requested; then
-    if command -v opencode-telegram-bridge >/dev/null 2>&1; then
-      if bridge_service_installed; then
-        info "Telegram bridge appears configured; skipping bridge setup wizard."
-        info "Use 'otto bridge-setup' to reconfigure it."
-      else
-        info "Configuring Telegram bridge..."
-        info "You'll be prompted for TELEGRAM_BOT_TOKEN and TELEGRAM_ALLOWED_USER_ID."
-        bridge_setup
-      fi
-      echo ""
+    if bridge_service_installed; then
+      info "Telegram bridge appears configured; skipping bridge setup wizard."
+      info "Use 'otto bridge-setup' to reconfigure it."
     else
-      warn "Telegram bridge is enabled but 'opencode-telegram-bridge' is not installed."
-      warn "Install with: npm install -g opencode-telegram-bridge"
-      warn "Then run: otto bridge-setup"
-      echo ""
+      info "Configuring Telegram bridge..."
+      info "You'll be prompted for TELEGRAM_BOT_TOKEN and TELEGRAM_ALLOWED_USER_ID."
+      bridge_setup
     fi
+    echo ""
   else
     info "Telegram bridge setup skipped (OTTO_BRIDGE_ENABLED=0)."
     echo ""
