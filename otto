@@ -1,0 +1,434 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ==============================================================================
+# otto — Personal Assistant Management Script
+# Manages the OpenCode backend. Works on macOS (launchd) and Linux (systemd).
+# ==============================================================================
+
+OTTO_VERSION="0.1.0"
+
+# --- Configuration -----------------------------------------------------------
+OTTO_PORT="${OTTO_PORT:-4096}"
+OTTO_HOSTNAME="${OTTO_HOSTNAME:-0.0.0.0}"
+OTTO_HOME="${OTTO_HOME:-$HOME/.otto}"
+OTTO_INBOX="${OTTO_HOME}/inbox"
+OTTO_DATA="${OTTO_HOME}/data"
+OTTO_LOG_DIR="${OTTO_HOME}/logs"
+OTTO_SERVICE_NAME="otto"
+OTTO_AGENT="${OTTO_AGENT:-assistant}"
+
+# --- Platform Detection ------------------------------------------------------
+OS="$(uname -s)"
+case "$OS" in
+  Darwin) PLATFORM="macos" ;;
+  Linux)  PLATFORM="linux" ;;
+  *)      echo "Unsupported OS: $OS" >&2; exit 1 ;;
+esac
+
+# --- Colors & Output ---------------------------------------------------------
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[0;33m'
+BLUE=$'\033[0;34m'
+BOLD=$'\033[1m'
+NC=$'\033[0m'
+
+info()    { echo "${BLUE}[otto]${NC} $*"; }
+success() { echo "${GREEN}[otto]${NC} $*"; }
+warn()    { echo "${YELLOW}[otto]${NC} $*"; }
+error()   { echo "${RED}[otto]${NC} $*" >&2; }
+
+# --- Helpers -----------------------------------------------------------------
+require_cmd() {
+  if ! command -v "$1" &>/dev/null; then
+    error "Required command '$1' not found. Please install it first."
+    exit 1
+  fi
+}
+
+# --- Platform: Service Management --------------------------------------------
+# Each platform implements: svc_install, svc_uninstall, svc_start, svc_stop,
+# svc_restart, svc_is_running, svc_enable, svc_logs
+
+if [[ "$PLATFORM" == "macos" ]]; then
+
+  PLIST_LABEL="com.otto.assistant"
+  PLIST_FILE="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
+
+  svc_install() {
+    local opencode_path="$1"
+
+    mkdir -p "${HOME}/Library/LaunchAgents"
+
+    cat > "$PLIST_FILE" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${PLIST_LABEL}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${opencode_path}</string>
+        <string>serve</string>
+        <string>--port</string>
+        <string>${OTTO_PORT}</string>
+        <string>--hostname</string>
+        <string>${OTTO_HOSTNAME}</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${OTTO_HOME}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>${OTTO_LOG_DIR}/otto.log</string>
+    <key>StandardErrorPath</key>
+    <string>${OTTO_LOG_DIR}/otto.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OTTO_HOME</key>
+        <string>${OTTO_HOME}</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
+EOF
+    success "  Plist: $PLIST_FILE"
+  }
+
+  svc_uninstall() {
+    launchctl bootout "gui/$(id -u)" "$PLIST_FILE" 2>/dev/null || true
+    rm -f "$PLIST_FILE"
+  }
+
+  svc_start() {
+    launchctl bootstrap "gui/$(id -u)" "$PLIST_FILE"
+  }
+
+  svc_stop() {
+    launchctl bootout "gui/$(id -u)" "$PLIST_FILE" 2>/dev/null || true
+  }
+
+  svc_restart() {
+    svc_stop
+    sleep 1
+    svc_install "$(command -v opencode)"
+    svc_start
+  }
+
+  svc_is_running() {
+    launchctl print "gui/$(id -u)/${PLIST_LABEL}" &>/dev/null
+  }
+
+  svc_enable() {
+    # launchd services with RunAtLoad are auto-enabled
+    success "  Service will start on login (RunAtLoad)"
+  }
+
+  svc_logs() {
+    local lines="${1:-50}"
+    info "Tailing logs (Ctrl+C to stop)..."
+    echo ""
+    echo "=== stdout: ${OTTO_LOG_DIR}/otto.log ==="
+    tail -n "$lines" "${OTTO_LOG_DIR}/otto.log" 2>/dev/null || warn "No stdout log yet"
+    echo ""
+    echo "=== stderr: ${OTTO_LOG_DIR}/otto.err.log ==="
+    tail -n "$lines" "${OTTO_LOG_DIR}/otto.err.log" 2>/dev/null || warn "No stderr log yet"
+    echo ""
+    info "Following both logs..."
+    tail -f "${OTTO_LOG_DIR}/otto.log" "${OTTO_LOG_DIR}/otto.err.log" 2>/dev/null
+  }
+
+elif [[ "$PLATFORM" == "linux" ]]; then
+
+  SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
+  SERVICE_FILE="${SYSTEMD_USER_DIR}/${OTTO_SERVICE_NAME}.service"
+
+  svc_install() {
+    local opencode_path="$1"
+
+    mkdir -p "$SYSTEMD_USER_DIR"
+
+    cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=Otto — Personal Assistant (OpenCode Backend)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${opencode_path} serve --port ${OTTO_PORT} --hostname ${OTTO_HOSTNAME}
+WorkingDirectory=${OTTO_HOME}
+Restart=on-failure
+RestartSec=5
+Environment=OTTO_HOME=${OTTO_HOME}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=otto
+
+[Install]
+WantedBy=default.target
+EOF
+    success "  Service file: $SERVICE_FILE"
+  }
+
+  svc_uninstall() {
+    systemctl --user disable "$OTTO_SERVICE_NAME" 2>/dev/null || true
+    rm -f "$SERVICE_FILE"
+    systemctl --user daemon-reload
+  }
+
+  svc_start() {
+    systemctl --user start "$OTTO_SERVICE_NAME"
+  }
+
+  svc_stop() {
+    systemctl --user stop "$OTTO_SERVICE_NAME"
+  }
+
+  svc_restart() {
+    systemctl --user restart "$OTTO_SERVICE_NAME"
+  }
+
+  svc_is_running() {
+    systemctl --user is-active --quiet "$OTTO_SERVICE_NAME" 2>/dev/null
+  }
+
+  svc_enable() {
+    systemctl --user daemon-reload
+    systemctl --user enable "$OTTO_SERVICE_NAME"
+    success "  Service enabled (will start on boot)"
+
+    info "Enabling user lingering (services run even when logged out)..."
+    if loginctl enable-linger "$(whoami)" 2>/dev/null; then
+      success "  Lingering enabled for $(whoami)"
+    else
+      warn "  Could not enable lingering. Run: sudo loginctl enable-linger $(whoami)"
+    fi
+  }
+
+  svc_logs() {
+    local lines="${1:-50}"
+    journalctl --user -u "$OTTO_SERVICE_NAME" -n "$lines" --no-pager -f
+  }
+
+fi
+
+# --- Commands ----------------------------------------------------------------
+
+cmd_setup() {
+  info "Setting up Otto v${OTTO_VERSION} on ${PLATFORM}..."
+  echo ""
+
+  # Check prerequisites
+  info "Checking prerequisites..."
+  require_cmd opencode
+  success "  opencode: $(command -v opencode)"
+  success "  platform: ${PLATFORM}"
+  echo ""
+
+  # Create directory structure
+  info "Creating directory structure..."
+  mkdir -p "$OTTO_HOME" "$OTTO_INBOX" "$OTTO_DATA" "$OTTO_LOG_DIR"
+  success "  $OTTO_HOME"
+  success "  $OTTO_INBOX"
+  success "  $OTTO_DATA"
+  success "  $OTTO_LOG_DIR"
+  echo ""
+
+  # Resolve opencode path for service file
+  local opencode_path
+  opencode_path="$(command -v opencode)"
+
+  # Install platform service
+  info "Installing service..."
+  svc_install "$opencode_path"
+  echo ""
+
+  # Enable service
+  info "Enabling service..."
+  svc_enable
+  echo ""
+
+  # Write config file
+  info "Writing config to ${OTTO_HOME}/otto.conf..."
+  cat > "${OTTO_HOME}/otto.conf" <<EOF
+# Otto configuration
+OTTO_PORT=${OTTO_PORT}
+OTTO_HOSTNAME=${OTTO_HOSTNAME}
+OTTO_AGENT=${OTTO_AGENT}
+OTTO_VERSION=${OTTO_VERSION}
+PLATFORM=${PLATFORM}
+EOF
+  success "  Config written"
+  echo ""
+
+  # Summary
+  echo "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo "${BOLD}  Otto setup complete! (${PLATFORM})${NC}"
+  echo "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  echo "  Next steps:"
+  echo "    1. Start Otto:       otto start"
+  echo "    2. On your laptop:   alias otto=\"opencode attach http://$(hostname):${OTTO_PORT}\""
+  echo "    3. Try it:           otto"
+  echo ""
+}
+
+cmd_start() {
+  if svc_is_running; then
+    warn "Otto is already running."
+    cmd_status
+    return 0
+  fi
+  info "Starting Otto on port ${OTTO_PORT}..."
+  svc_start
+  sleep 2
+  if svc_is_running; then
+    success "Otto is running."
+    cmd_status
+  else
+    error "Failed to start Otto. Check logs: otto logs"
+    exit 1
+  fi
+}
+
+cmd_stop() {
+  if ! svc_is_running; then
+    warn "Otto is not running."
+    return 0
+  fi
+  info "Stopping Otto..."
+  svc_stop
+  success "Otto stopped."
+}
+
+cmd_restart() {
+  info "Restarting Otto..."
+  svc_restart
+  sleep 2
+  if svc_is_running; then
+    success "Otto restarted."
+    cmd_status
+  else
+    error "Failed to restart Otto. Check logs: otto logs"
+    exit 1
+  fi
+}
+
+cmd_status() {
+  echo ""
+  if svc_is_running; then
+    echo "  Status:   ${GREEN}● running${NC}"
+  else
+    echo "  Status:   ${RED}● stopped${NC}"
+  fi
+  echo "  Platform: ${PLATFORM}"
+  echo "  Port:     ${OTTO_PORT}"
+  echo "  Home:     ${OTTO_HOME}"
+  echo "  Connect:  opencode attach http://$(hostname):${OTTO_PORT}"
+  echo ""
+}
+
+cmd_logs() {
+  local lines="${1:-50}"
+  svc_logs "$lines"
+}
+
+cmd_run() {
+  if ! svc_is_running; then
+    error "Otto is not running. Start with: otto start"
+    exit 1
+  fi
+  local prompt="$*"
+  if [[ -z "$prompt" ]]; then
+    error "Usage: otto run <prompt>"
+    exit 1
+  fi
+  opencode run --attach "http://localhost:${OTTO_PORT}" --agent "$OTTO_AGENT" "$prompt"
+}
+
+cmd_uninstall() {
+  warn "This will stop Otto and remove the service."
+  read -rp "Continue? [y/N] " confirm
+  if [[ "$confirm" != [yY] ]]; then
+    info "Aborted."
+    return 0
+  fi
+
+  if svc_is_running; then
+    cmd_stop
+  fi
+
+  svc_uninstall
+
+  success "Service removed. Data in ${OTTO_HOME} was kept."
+  info "To fully remove: rm -rf ${OTTO_HOME}"
+}
+
+cmd_help() {
+  cat <<EOF
+
+${BOLD}otto${NC} — Personal Assistant Management (v${OTTO_VERSION})
+
+${BOLD}USAGE${NC}
+    otto <command> [args]
+
+${BOLD}COMMANDS${NC}
+    setup       Initial setup: create dirs, install service
+    start       Start the Otto backend
+    stop        Stop the Otto backend
+    restart     Restart the Otto backend
+    status      Show current status and connection info
+    logs [n]    Follow logs (default: last 50 lines)
+    run <msg>   Send a one-shot prompt to Otto
+    uninstall   Remove the service (keeps data)
+    help        Show this help
+
+${BOLD}CONFIGURATION${NC}
+    OTTO_PORT       Server port (default: 4096)
+    OTTO_HOSTNAME   Bind address (default: 0.0.0.0)
+    OTTO_HOME       Data directory (default: ~/.otto)
+    OTTO_AGENT      Agent to use (default: assistant)
+
+${BOLD}EXAMPLES${NC}
+    otto setup                          # First-time setup
+    otto start                          # Start the backend
+    otto run "What's on my calendar?"   # One-shot prompt
+    otto logs                           # Watch logs
+    otto stop                           # Stop the backend
+
+${BOLD}LAPTOP SETUP${NC}
+    Add to your ~/.zshrc:
+      alias otto="opencode attach http://orin:4096"
+
+EOF
+}
+
+# --- Main --------------------------------------------------------------------
+
+# Load config if it exists
+[[ -f "${OTTO_HOME}/otto.conf" ]] && source "${OTTO_HOME}/otto.conf"
+
+case "${1:-help}" in
+  setup)     cmd_setup ;;
+  start)     cmd_start ;;
+  stop)      cmd_stop ;;
+  restart)   cmd_restart ;;
+  status)    cmd_status ;;
+  logs)      shift; cmd_logs "$@" ;;
+  run)       shift; cmd_run "$@" ;;
+  uninstall) cmd_uninstall ;;
+  help|--help|-h) cmd_help ;;
+  *)
+    error "Unknown command: $1"
+    cmd_help
+    exit 1
+    ;;
+esac

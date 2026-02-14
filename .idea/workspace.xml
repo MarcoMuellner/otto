@@ -1,0 +1,507 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AIAssistantCustomInstructionsStorage">
+    <option name="instructions">
+      <map>
+        <entry key="AIAssistant.VCS.GenerateCommitMessage">
+          <value>
+            <AIAssistantStoredInstruction>
+              <option name="actionId" value="AIAssistant.VCS.GenerateCommitMessage" />
+              <option name="content" value="Avoid overly verbose descriptions or unnecessary details. Add semantic commit details like feat:, bug:, fix:, etc." />
+            </AIAssistantStoredInstruction>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="19739daf-2608-42db-91f3-0325d45e8272" name="Changes" comment="feat: add CLI chat entry point with agent integration&#10;&#10;- Introduced `chat.ts` as the CLI entry point for interacting with the Otto agent.&#10;- Added `createCliAgent` to streamline LangChain model integration, conversation history, and tool handling.&#10;- Integrated user input parsing, state persistence with `MemorySaver`, and interactive terminal commands.&#10;- Updated tests to cover `createCliAgent` functionality and CLI-specific configurations.&#10;- Modified `package.json` to include a script for running the new CLI chat feature.">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/CONVENTIONS.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/LICENSE" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/basic_requirements/otto-requirements.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/basic_requirements/otto-tech-stack.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/basic_requirements/otto_architecture.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/basic_requirements/otto_diagram.excalidraw" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/basic_requirements/otto_diagram.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/docs/agent-loop-spec.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/src/bin/chat.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/src/cli.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/src/graph.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/src/model.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/src/types.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tests/agent-graph.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tests/agent-types.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tests/classifier.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tests/cli.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tests/model-factory.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tests/planner.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tests/policy-tools.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/types.d.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/agent/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/audit/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/audit/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/audit/src/sum.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/audit/tests/sum.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/audit/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/audit/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/configManager/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/configManager/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/configManager/src/sum.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/configManager/tests/sum.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/configManager/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/configManager/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/integrationManager/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/integrationManager/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/integrationManager/src/sum.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/integrationManager/tests/sum.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/integrationManager/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/integrationManager/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/knowledgeManager/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/knowledgeManager/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/knowledgeManager/src/sum.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/knowledgeManager/tests/sum.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/knowledgeManager/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/knowledgeManager/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/api.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/app.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/auth.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/bootstrap.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/discovery.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/openapi.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/port.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/shutdown.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/startup.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/server/ws.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/src/sum.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/auth.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/bootstrap.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/discovery.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/entry.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/index.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/openapi.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/port.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/server.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/shutdown.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/startup.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/sum.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tests/ws.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/server/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/shared/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/shared/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/shared/src/sum.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/shared/tests/sum.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/shared/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/shared/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/tuiClient/package.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/tuiClient/src/index.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/tuiClient/src/sum.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/tuiClient/tests/sum.test.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/tuiClient/tsconfig.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/tuiClient/vitest.config.ts" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pnpm-lock.yaml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pnpm-workspace.yaml" beforeDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ChangesViewManager">
+    <option name="groupingKeys">
+      <option value="directory" />
+      <option value="repository" />
+    </option>
+  </component>
+  <component name="EmbeddingIndexingInfo">
+    <option name="cachedIndexableFilesCount" value="108" />
+    <option name="fileBasedEmbeddingIndicesEnabled" value="true" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;MarcoMuellner&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;git@github.com:MarcoMuellner/otto.git&quot;,
+    &quot;accountId&quot;: &quot;2c02093e-c06b-4709-8bfe-1d6045643f04&quot;
+  }
+}</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
+  <component name="ProjectId" id="38vzzEPK1oKsGVBiQxRIj1u68zJ" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;javascript.preferred.runtime.type.id&quot;: &quot;node&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;npm.agent &gt; chat.executor&quot;: &quot;Run&quot;,
+    &quot;npm.server &gt; start.executor&quot;: &quot;Run&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;ts.external.directory.path&quot;: &quot;/Users/marco/Documents/code/private/otto/packages/server/node_modules/typescript/lib&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/agents" />
+    </key>
+  </component>
+  <component name="RunManager" selected="npm.agent &gt; chat">
+    <configuration name="agent &gt; chat" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
+      <package-json value="$PROJECT_DIR$/packages/agent/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="chat" />
+      </scripts>
+      <node-interpreter value="project" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <configuration name="server &gt; start" type="js.build_tools.npm" temporary="true" nameIsGenerated="true">
+      <package-json value="$PROJECT_DIR$/packages/server/package.json" />
+      <command value="run" />
+      <scripts>
+        <script value="start" />
+      </scripts>
+      <node-interpreter value="project" />
+      <envs />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="npm.agent &gt; chat" />
+        <item itemvalue="npm.server &gt; start" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-WS-253.29346.242" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="19739daf-2608-42db-91f3-0325d45e8272" name="Changes" comment="" />
+      <created>1769695092920</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1769695092920</updated>
+      <workItem from="1769695093998" duration="24789000" />
+      <workItem from="1771077813822" duration="1586000" />
+    </task>
+    <task id="LOCAL-00001" summary="feat: initialize monorepo with pnpm and basic settings">
+      <option name="closed" value="true" />
+      <created>1769700986920</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1769700986920</updated>
+    </task>
+    <task id="LOCAL-00002" summary="chore: remove client package and add meta documentation files">
+      <option name="closed" value="true" />
+      <created>1769775644145</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1769775644145</updated>
+    </task>
+    <task id="LOCAL-00003" summary="feat: add requirements and tech stack documentation for Otto">
+      <option name="closed" value="true" />
+      <created>1769775652976</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1769775652976</updated>
+    </task>
+    <task id="LOCAL-00004" summary="feat: setup server package with TypeScript configuration and dependencies">
+      <option name="closed" value="true" />
+      <created>1769775765425</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1769775765425</updated>
+    </task>
+    <task id="LOCAL-00005" summary="feat: add sum utility with tests and vitest configuration for server package">
+      <option name="closed" value="true" />
+      <created>1769775918485</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1769775918485</updated>
+    </task>
+    <task id="LOCAL-00006" summary="feat: update architecture documentation with detailed package responsibilities and updated naming conventions">
+      <option name="closed" value="true" />
+      <created>1769776299676</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1769776299676</updated>
+    </task>
+    <task id="LOCAL-00007" summary="feat: setup new packages with TypeScript, vitest, and shared utilities&#10;&#10;Added `agent`, `audit`, `configManager`, `integrationManager`, `knowledgeManager`, `shared`, and `tuiClient` packages. Configured TypeScript, linting, formatting, and testing using vitest for consistency across the monorepo.">
+      <option name="closed" value="true" />
+      <created>1769776733989</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1769776733989</updated>
+    </task>
+    <task id="LOCAL-00008" summary="docs: update conventions with import aliases and package scaffolding guidelines">
+      <option name="closed" value="true" />
+      <created>1769777550858</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1769777550858</updated>
+    </task>
+    <task id="LOCAL-00009" summary="feat: add Fastify, Zod, and related dependencies to server package">
+      <option name="closed" value="true" />
+      <created>1769777700329</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1769777700329</updated>
+    </task>
+    <task id="LOCAL-00010" summary="feat: implement Fastify server with auth plugin and secured API routes&#10;&#10;- Added `authPlugin` for token-based authentication.&#10;- Created `securedApiPlugin` for secured routes like `/api/ping`.&#10;- Exposed `/health` as a public route.&#10;- Included tests covering authentication and route access.">
+      <option name="closed" value="true" />
+      <created>1769782417892</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1769782417892</updated>
+    </task>
+    <task id="LOCAL-00011" summary="feat: extend server with mDNS discovery, OpenAPI docs, and WebSocket support&#10;&#10;- Added `discovery.ts` to enable mDNS for local server discovery via `bonjour-service`.&#10;- Integrated OpenAPI documentation with Swagger and Swagger UI in `openapi.ts`.&#10;- Implemented WebSocket plugin for real-time communication with token-based authentication.&#10;- Updated `app.ts` and other components to register and configure the new features.&#10;- Added comprehensive unit tests for discovery, OpenAPI, WebSocket, and utility functions.&#10;- Installed new dependencies, including `@fastify/swagger`, `@fastify/websocket`, and `bonjour-service`.">
+      <option name="closed" value="true" />
+      <created>1769783216333</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1769783216333</updated>
+    </task>
+    <task id="LOCAL-00012" summary="feat: add bootstrap function to initialize server and discovery services&#10;&#10;- Introduced `bootstrap.ts` to start the server and mDNS-based service discovery.&#10;- Added `BootstrapOptions` and `ServerRuntime` interfaces to structure startup and shutdown processes.&#10;- Created unit tests in `bootstrap.test.ts` to validate server initialization and graceful shutdown.">
+      <option name="closed" value="true" />
+      <created>1769783456029</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1769783456029</updated>
+    </task>
+    <task id="LOCAL-00013" summary="feat: add startServer function with defaults and unit tests&#10;&#10;- Implemented `startServer` to initialize the server with default host and port.&#10;- Added `index.test.ts` to validate server startup with mocked bootstrap calls.">
+      <option name="closed" value="true" />
+      <created>1769783819330</created>
+      <option name="number" value="00013" />
+      <option name="presentableId" value="LOCAL-00013" />
+      <option name="project" value="LOCAL" />
+      <updated>1769783819330</updated>
+    </task>
+    <task id="LOCAL-00014" summary="feat: add Node.js version constraint and experimental start script&#10;&#10;- Added `engines` field to enforce Node.js version &gt;=24.&#10;- Introduced `start` script using `--experimental-strip-types` for TypeScript startup.">
+      <option name="closed" value="true" />
+      <created>1769783880943</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1769783880943</updated>
+    </task>
+    <task id="LOCAL-00015" summary="feat: add dynamic port allocation, startup logging, and test coverage&#10;&#10;- Introduced `findAvailablePort` to dynamically resolve the next available TCP port.&#10;- Added `logStartup` for printing the startup banner and connection details.&#10;- Enhanced `bootstrap` to use dynamic port allocation during server startup.&#10;- Updated `index.ts` to support server startup with logging and a default test token.&#10;- Added comprehensive unit tests for port allocation, startup logging, and server runtime behavior.&#10;- Integrated `tsx` for TypeScript-friendly startup and updated scripts accordingly.">
+      <option name="closed" value="true" />
+      <created>1769785684468</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1769785684468</updated>
+    </task>
+    <task id="LOCAL-00016" summary="feat: add graceful server shutdown with signal handlers and tests&#10;&#10;- Introduced `installShutdownHandlers` to handle `SIGINT` and `SIGTERM` signals for clean server shutdown.&#10;- Integrated shutdown handlers in server runtime within `index.ts`.&#10;- Added unit tests to validate signal handling and resource cleanup.">
+      <option name="closed" value="true" />
+      <created>1769787467671</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1769787467671</updated>
+    </task>
+    <task id="LOCAL-00017" summary="feat: add `@types/node` dependency and update pnpm lockfile&#10;&#10;- Added `@types/node@^25.1.0` to `devDependencies` in `packages/server`.&#10;- Updated TypeScript configuration to include `node` types in `tsconfig.json`.&#10;- Updated `pnpm-lock.yaml` to reflect changes in dependencies.">
+      <option name="closed" value="true" />
+      <created>1769788064753</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1769788064753</updated>
+    </task>
+    <task id="LOCAL-00018" summary="feat: replace `sum` module with agent loop types and documentation&#10;&#10;- Removed `sum` utility and corresponding tests.&#10;- Introduced detailed `Agent` loop type definitions in `types.ts`.&#10;- Added a technical specification for the agent loop in `agent-loop-spec.md`.&#10;- Integrated `zod` dependency for schema validation and updated `pnpm-lock.yaml`.&#10;- Implemented unit tests for `Agent` types with `vitest`.&#10;- Updated `CONVENTIONS.md` to recommend AAA pattern in tests.">
+      <option name="closed" value="true" />
+      <created>1769859074442</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1769859074442</updated>
+    </task>
+    <task id="LOCAL-00019" summary="feat: implement LangGraph-based agent loop with model factory and tests&#10;&#10;- Added `graph.ts` to define the reusable LangGraph-based agent loop.&#10;- Implemented `model.ts` to create chat models using validated configuration with `zod`.&#10;- Introduced unit tests for graph and model functionalities in `agent-graph.test.ts` and `model-factory.test.ts`.&#10;- Updated `pnpm-lock.yaml` to include dependencies for `@langchain/langgraph`, `@langchain/openai`, and `zod`.&#10;- Updated `package.json` to reflect new dependencies.&#10;- Exported new modules in `index.ts`.">
+      <option name="closed" value="true" />
+      <created>1769859751886</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1769859751886</updated>
+    </task>
+    <task id="LOCAL-00020" summary="feat: improve annotation reducers and validation for agent loop stability&#10;&#10;- Refactored annotations in `graph.ts` to use `value` functions for consistent state updates.&#10;- Enhanced input validation in `normalizeInput` and other core methods to handle edge cases.&#10;- Introduced `JsonValueSchema` in `types.ts` for stricter type validation of JSON-like objects.&#10;- Updated `ModelConfigSchema` and `AgentToolCallSchema` to ensure compatibility with new validation rules.">
+      <option name="closed" value="true" />
+      <created>1769860147997</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1769860147997</updated>
+    </task>
+    <task id="LOCAL-00021" summary="feat: integrate intent classification and tool planning into agent graph&#10;&#10;- Added `createModelClassifier` to classify intents with domain and tool needs validation.&#10;- Integrated intent classification and tool planning nodes into `createAgentGraph`.&#10;- Enhanced agent state with `intent` and `toolCalls` fields in `graph.ts`.&#10;- Added unit tests for intent classification and planning in `classifier.test.ts` and `agent-graph.test.ts`.&#10;- Updated `types.ts` with `AgentIntentSchema` for structured intent handling.">
+      <option name="closed" value="true" />
+      <created>1769861002299</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1769861002299</updated>
+    </task>
+    <task id="LOCAL-00022" summary="feat: add policy evaluation and tool execution to agent graph&#10;&#10;- Introduced `applyPolicy` and `executeTools` functions in `graph.ts` for policy enforcement and tool execution.&#10;- Enhanced `createAgentGraph` to include policy checks and execution nodes.&#10;- Updated `AgentGraphState` with `policyDecisions` and `toolResults` annotations.&#10;- Added new unit tests in `policy-tools.test.ts` for policy application and tool execution.&#10;- Updated `agent-graph.test.ts` to reflect changes in agent graph behavior.">
+      <option name="closed" value="true" />
+      <created>1769861451665</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1769861451665</updated>
+    </task>
+    <task id="LOCAL-00023" summary="feat: add tool planning and validation with unit tests&#10;&#10;- Introduced `createModelPlanner` function in `graph.ts` to handle tool planning based on model responses.&#10;- Added strict validation for tool calls using `zod` schemas and ensured only allowed tools are invoked.&#10;- Enhanced `types.ts` with `ToolDefinition`, `PlannerOptions`, and exported `JsonValueSchema`.&#10;- Included extensive unit tests in `planner.test.ts` to verify tool planning, validation, and ID generation logic.">
+      <option name="closed" value="true" />
+      <created>1769861636364</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1769861636364</updated>
+    </task>
+    <task id="LOCAL-00024" summary="feat: add `createToolCallingPlanner` with tool mapping and validation&#10;&#10;- Introduced `createToolCallingPlanner` in `graph.ts` to enable tool mapping from model responses.&#10;- Added validation for tool calls using `zod` schemas to ensure only valid and allowed tools are invoked.&#10;- Enhanced `planner.test.ts` with unit tests for tool mapping, rejection of invalid tool calls, and ID generation.">
+      <option name="closed" value="true" />
+      <created>1769861758326</created>
+      <option name="number" value="00024" />
+      <option name="presentableId" value="LOCAL-00024" />
+      <option name="project" value="LOCAL" />
+      <updated>1769861758326</updated>
+    </task>
+    <task id="LOCAL-00025" summary="feat: enable state persistence and enhanced response composition in agent graph&#10;&#10;- Added `@langchain/langgraph-checkpoint` dependency for state checkpointing.&#10;- Introduced `checkpointer` integration in `createAgentGraph` for state persistence.&#10;- Enhanced response composition with a model-backed `ResponseComposerFn` and tool result context.&#10;- Added detailed documentation for the agent loop workflow in `graph.ts`.&#10;- Updated unit tests in `agent-graph.test.ts` for state persistence and response composition.">
+      <option name="closed" value="true" />
+      <created>1769889375647</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1769889375647</updated>
+    </task>
+    <task id="LOCAL-00026" summary="feat: add persist callback support in agent graph&#10;&#10;- Introduced `PersistFn` and `PersistInput` types for audit logging after each agent turn.&#10;- Enhanced `createAgentGraph` with an optional `persist` callback for audit data recording.&#10;- Added `createPersistNode` to handle audit persistence after response composition.&#10;- Updated node workflow to include a new persist stage before graph completion.&#10;- Included new unit tests in `agent-graph.test.ts` to validate persist behavior and scenarios.">
+      <option name="closed" value="true" />
+      <created>1769890208966</created>
+      <option name="number" value="00026" />
+      <option name="presentableId" value="LOCAL-00026" />
+      <option name="project" value="LOCAL" />
+      <updated>1769890208966</updated>
+    </task>
+    <task id="LOCAL-00027" summary="feat: introduce learn callback for extracting user knowledge&#10;&#10;- Added `LearnFn` and `LearnInput` types to support user knowledge extraction.&#10;- Introduced `createLearnNode` in the agent graph workflow to call the `learn` callback after response composition.&#10;- Updated `createAgentGraph` to include a configurable `learn` step with context deduplication support.&#10;- Enhanced workflow to process `LEARN` before `PERSIST`.&#10;- Added unit tests in `agent-graph.test.ts` to validate learning behavior, context handling, and execution order.">
+      <option name="closed" value="true" />
+      <created>1769890371021</created>
+      <option name="number" value="00027" />
+      <option name="presentableId" value="LOCAL-00027" />
+      <option name="project" value="LOCAL" />
+      <updated>1769890371021</updated>
+    </task>
+    <task id="LOCAL-00028" summary="feat: add `createAgent` with simplified invoke API and unit tests&#10;&#10;- Introduced `createAgent` as a wrapper for `createAgentGraph`, providing a cleaner invoke API for agent interaction.&#10;- Added `Agent` and `AgentOptions` types, enabling easy configuration and direct input/output handling.&#10;- Enhanced `invoke` method to support `threadId`-based state persistence and tool result extraction.&#10;- Included extensive unit tests in `agent-graph.test.ts` for API validation, tool handling, callbacks, and state management.">
+      <option name="closed" value="true" />
+      <created>1769890509558</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1769890509558</updated>
+    </task>
+    <task id="LOCAL-00029" summary="feat: add CLI adapter and runner with unit tests&#10;&#10;- Introduced `createLlmAdapter` to bridge LangChain chat models to the custom invoke API.&#10;- Implemented `runCli` for processing single CLI interactions with agents.&#10;- Added type definitions for `LlmModel`, `LlmAdapter`, `Writer`, and `RunCliOptions`.&#10;- Included comprehensive tests for both `createLlmAdapter` and `runCli` in `cli.test.ts`.">
+      <option name="closed" value="true" />
+      <created>1770019304915</created>
+      <option name="number" value="00029" />
+      <option name="presentableId" value="LOCAL-00029" />
+      <option name="project" value="LOCAL" />
+      <updated>1770019304915</updated>
+    </task>
+    <task id="LOCAL-00030" summary="feat: add CLI chat entry point with agent integration&#10;&#10;- Introduced `chat.ts` as the CLI entry point for interacting with the Otto agent.&#10;- Added `createCliAgent` to streamline LangChain model integration, conversation history, and tool handling.&#10;- Integrated user input parsing, state persistence with `MemorySaver`, and interactive terminal commands.&#10;- Updated tests to cover `createCliAgent` functionality and CLI-specific configurations.&#10;- Modified `package.json` to include a script for running the new CLI chat feature.">
+      <option name="closed" value="true" />
+      <created>1770019646252</created>
+      <option name="number" value="00030" />
+      <option name="presentableId" value="LOCAL-00030" />
+      <option name="project" value="LOCAL" />
+      <updated>1770019646252</updated>
+    </task>
+    <option name="localTasksCounter" value="31" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="docs: update conventions with import aliases and package scaffolding guidelines" />
+    <MESSAGE value="feat: add Fastify, Zod, and related dependencies to server package" />
+    <MESSAGE value="feat: implement Fastify server with auth plugin and secured API routes&#10;&#10;- Added `authPlugin` for token-based authentication.&#10;- Created `securedApiPlugin` for secured routes like `/api/ping`.&#10;- Exposed `/health` as a public route.&#10;- Included tests covering authentication and route access." />
+    <MESSAGE value="feat: extend server with mDNS discovery, OpenAPI docs, and WebSocket support&#10;&#10;- Added `discovery.ts` to enable mDNS for local server discovery via `bonjour-service`.&#10;- Integrated OpenAPI documentation with Swagger and Swagger UI in `openapi.ts`.&#10;- Implemented WebSocket plugin for real-time communication with token-based authentication.&#10;- Updated `app.ts` and other components to register and configure the new features.&#10;- Added comprehensive unit tests for discovery, OpenAPI, WebSocket, and utility functions.&#10;- Installed new dependencies, including `@fastify/swagger`, `@fastify/websocket`, and `bonjour-service`." />
+    <MESSAGE value="feat: add bootstrap function to initialize server and discovery services&#10;&#10;- Introduced `bootstrap.ts` to start the server and mDNS-based service discovery.&#10;- Added `BootstrapOptions` and `ServerRuntime` interfaces to structure startup and shutdown processes.&#10;- Created unit tests in `bootstrap.test.ts` to validate server initialization and graceful shutdown." />
+    <MESSAGE value="feat: add `startServer` function with defaults and unit tests&#10;&#10;- Introduced `startServer` function to initialize the server with default host and port settings.&#10;- Created `index.test.ts` with unit tests to verify server startup behavior and configuration." />
+    <MESSAGE value="feat: add startServer function with defaults and unit tests&#10;&#10;- Implemented `startServer` to initialize the server with default host and port.&#10;- Added `index.test.ts` to validate server startup with mocked bootstrap calls." />
+    <MESSAGE value="feat: add Node.js version constraint and experimental start script&#10;&#10;- Added `engines` field to enforce Node.js version &gt;=24.&#10;- Introduced `start` script using `--experimental-strip-types` for TypeScript startup." />
+    <MESSAGE value="feat: add dynamic port allocation, startup logging, and test coverage&#10;&#10;- Introduced `findAvailablePort` to dynamically resolve the next available TCP port.&#10;- Added `logStartup` for printing the startup banner and connection details.&#10;- Enhanced `bootstrap` to use dynamic port allocation during server startup.&#10;- Updated `index.ts` to support server startup with logging and a default test token.&#10;- Added comprehensive unit tests for port allocation, startup logging, and server runtime behavior.&#10;- Integrated `tsx` for TypeScript-friendly startup and updated scripts accordingly." />
+    <MESSAGE value="feat: add graceful server shutdown with signal handlers and tests&#10;&#10;- Introduced `installShutdownHandlers` to handle `SIGINT` and `SIGTERM` signals for clean server shutdown.&#10;- Integrated shutdown handlers in server runtime within `index.ts`.&#10;- Added unit tests to validate signal handling and resource cleanup." />
+    <MESSAGE value="feat: add `@types/node` dependency and update pnpm lockfile&#10;&#10;- Added `@types/node@^25.1.0` to `devDependencies` in `packages/server`.&#10;- Updated TypeScript configuration to include `node` types in `tsconfig.json`.&#10;- Updated `pnpm-lock.yaml` to reflect changes in dependencies." />
+    <MESSAGE value="feat: replace `sum` module with agent loop types and documentation&#10;&#10;- Removed `sum` utility and corresponding tests.&#10;- Introduced detailed `Agent` loop type definitions in `types.ts`.&#10;- Added a technical specification for the agent loop in `agent-loop-spec.md`.&#10;- Integrated `zod` dependency for schema validation and updated `pnpm-lock.yaml`.&#10;- Implemented unit tests for `Agent` types with `vitest`.&#10;- Updated `CONVENTIONS.md` to recommend AAA pattern in tests." />
+    <MESSAGE value="feat: implement LangGraph-based agent loop with model factory and tests&#10;&#10;- Added `graph.ts` to define the reusable LangGraph-based agent loop.&#10;- Implemented `model.ts` to create chat models using validated configuration with `zod`.&#10;- Introduced unit tests for graph and model functionalities in `agent-graph.test.ts` and `model-factory.test.ts`.&#10;- Updated `pnpm-lock.yaml` to include dependencies for `@langchain/langgraph`, `@langchain/openai`, and `zod`.&#10;- Updated `package.json` to reflect new dependencies.&#10;- Exported new modules in `index.ts`." />
+    <MESSAGE value="feat: improve annotation reducers and validation for agent loop stability&#10;&#10;- Refactored annotations in `graph.ts` to use `value` functions for consistent state updates.&#10;- Enhanced input validation in `normalizeInput` and other core methods to handle edge cases.&#10;- Introduced `JsonValueSchema` in `types.ts` for stricter type validation of JSON-like objects.&#10;- Updated `ModelConfigSchema` and `AgentToolCallSchema` to ensure compatibility with new validation rules." />
+    <MESSAGE value="feat: add intent classification and tool planning to agent graph&#10;&#10;- Implemented `createModelClassifier` for classifying user intents into domains and tool needs.&#10;- Added `classifyIntent` and `planTools` to handle intent decision and tool preparation in `graph.ts`.&#10;- Updated `createAgentGraph` to integrate intent classification and conditional tool planning.&#10;- Introduced unit tests for `createModelClassifier`, intent validation, and tool planning behaviors.&#10;- Enhanced `AgentIntentSchema` and related types in `types.ts` for improved validation and structure." />
+    <MESSAGE value="feat: integrate intent classification and tool planning into agent graph&#10;&#10;- Added `createModelClassifier` to classify intents with domain and tool needs validation.&#10;- Integrated intent classification and tool planning nodes into `createAgentGraph`.&#10;- Enhanced agent state with `intent` and `toolCalls` fields in `graph.ts`.&#10;- Added unit tests for intent classification and planning in `classifier.test.ts` and `agent-graph.test.ts`.&#10;- Updated `types.ts` with `AgentIntentSchema` for structured intent handling." />
+    <MESSAGE value="feat: add policy evaluation and tool execution to agent graph&#10;&#10;- Introduced `applyPolicy` and `executeTools` functions in `graph.ts` for policy enforcement and tool execution.&#10;- Enhanced `createAgentGraph` to include policy checks and execution nodes.&#10;- Updated `AgentGraphState` with `policyDecisions` and `toolResults` annotations.&#10;- Added new unit tests in `policy-tools.test.ts` for policy application and tool execution.&#10;- Updated `agent-graph.test.ts` to reflect changes in agent graph behavior." />
+    <MESSAGE value="feat: add tool planning and validation with unit tests&#10;&#10;- Introduced `createModelPlanner` function in `graph.ts` to handle tool planning based on model responses.&#10;- Added strict validation for tool calls using `zod` schemas and ensured only allowed tools are invoked.&#10;- Enhanced `types.ts` with `ToolDefinition`, `PlannerOptions`, and exported `JsonValueSchema`.&#10;- Included extensive unit tests in `planner.test.ts` to verify tool planning, validation, and ID generation logic." />
+    <MESSAGE value="feat: add `createToolCallingPlanner` with tool mapping and validation&#10;&#10;- Introduced `createToolCallingPlanner` in `graph.ts` to enable tool mapping from model responses.&#10;- Added validation for tool calls using `zod` schemas to ensure only valid and allowed tools are invoked.&#10;- Enhanced `planner.test.ts` with unit tests for tool mapping, rejection of invalid tool calls, and ID generation." />
+    <MESSAGE value="feat: enable state persistence and enhanced response composition in agent graph&#10;&#10;- Added `@langchain/langgraph-checkpoint` dependency for state checkpointing.&#10;- Introduced `checkpointer` integration in `createAgentGraph` for state persistence.&#10;- Enhanced response composition with a model-backed `ResponseComposerFn` and tool result context.&#10;- Added detailed documentation for the agent loop workflow in `graph.ts`.&#10;- Updated unit tests in `agent-graph.test.ts` for state persistence and response composition." />
+    <MESSAGE value="feat: add persist callback support in agent graph&#10;&#10;- Introduced `PersistFn` and `PersistInput` types for audit logging after each agent turn.&#10;- Enhanced `createAgentGraph` with an optional `persist` callback for audit data recording.&#10;- Added `createPersistNode` to handle audit persistence after response composition.&#10;- Updated node workflow to include a new persist stage before graph completion.&#10;- Included new unit tests in `agent-graph.test.ts` to validate persist behavior and scenarios." />
+    <MESSAGE value="feat: introduce learn callback for extracting user knowledge&#10;&#10;- Added `LearnFn` and `LearnInput` types to support user knowledge extraction.&#10;- Introduced `createLearnNode` in the agent graph workflow to call the `learn` callback after response composition.&#10;- Updated `createAgentGraph` to include a configurable `learn` step with context deduplication support.&#10;- Enhanced workflow to process `LEARN` before `PERSIST`.&#10;- Added unit tests in `agent-graph.test.ts` to validate learning behavior, context handling, and execution order." />
+    <MESSAGE value="feat: add `createAgent` with simplified invoke API and unit tests&#10;&#10;- Introduced `createAgent` as a wrapper for `createAgentGraph`, providing a cleaner invoke API for agent interaction.&#10;- Added `Agent` and `AgentOptions` types, enabling easy configuration and direct input/output handling.&#10;- Enhanced `invoke` method to support `threadId`-based state persistence and tool result extraction.&#10;- Included extensive unit tests in `agent-graph.test.ts` for API validation, tool handling, callbacks, and state management." />
+    <MESSAGE value="feat: add CLI adapter and runner with unit tests&#10;&#10;- Introduced `createLlmAdapter` to bridge LangChain chat models to the custom invoke API.&#10;- Implemented `runCli` for processing single CLI interactions with agents.&#10;- Added type definitions for `LlmModel`, `LlmAdapter`, `Writer`, and `RunCliOptions`.&#10;- Included comprehensive tests for both `createLlmAdapter` and `runCli` in `cli.test.ts`." />
+    <MESSAGE value="feat: add CLI chat entry point with agent integration&#10;&#10;- Introduced `chat.ts` as the CLI entry point for interacting with the Otto agent.&#10;- Added `createCliAgent` to streamline LangChain model integration, conversation history, and tool handling.&#10;- Integrated user input parsing, state persistence with `MemorySaver`, and interactive terminal commands.&#10;- Updated tests to cover `createCliAgent` functionality and CLI-specific configurations.&#10;- Modified `package.json` to include a script for running the new CLI chat feature." />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: add CLI chat entry point with agent integration&#10;&#10;- Introduced `chat.ts` as the CLI entry point for interacting with the Otto agent.&#10;- Added `createCliAgent` to streamline LangChain model integration, conversation history, and tool handling.&#10;- Integrated user input parsing, state persistence with `MemorySaver`, and interactive terminal commands.&#10;- Updated tests to cover `createCliAgent` functionality and CLI-specific configurations.&#10;- Modified `package.json` to include a script for running the new CLI chat feature." />
+  </component>
+</project>

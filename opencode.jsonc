@@ -1,0 +1,116 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // ─── Model ────────────────────────────────────────────────────────
+  // Primary model for Otto. Sonnet 4.5 is the sweet spot for an
+  // always-on assistant: capable enough, fast, cheaper than Opus.
+  "model": "anthropic/claude-sonnet-4-5",
+
+  // Cheap model for auto-generated session titles
+  "small_model": "anthropic/claude-haiku-4-5",
+
+  // ─── Server (opencode serve) ──────────────────────────────────────
+  // Listens on all interfaces so the laptop can reach it over LAN.
+  // Port 4096 as decided in the otto management script.
+  "server": {
+    "port": 4096,
+    "hostname": "0.0.0.0"
+  },
+
+  // ─── Plugins ──────────────────────────────────────────────────────
+  // agent-memory: Letta-style persistent memory blocks (persona, human, project)
+  //   - Stores markdown files in ~/.config/opencode/memory/
+  //   - Injects memory into system prompt automatically
+  //   - Gives Otto 3 tools: memory_list, memory_set, memory_replace
+  "plugin": [
+    "opencode-agent-memory"
+  ],
+
+  // ─── Custom Agent: assistant ──────────────────────────────────────
+  // Otto's primary persona. The system prompt is loaded from a
+  // separate markdown file for easier editing.
+  "agent": {
+    "assistant": {
+      "model": "anthropic/claude-sonnet-4-5",
+      "description": "Otto — your 24/7 personal assistant",
+      "mode": "primary",
+      "color": "#4ECDC4",
+      "prompt": "agents/assistant.md",
+      "temperature": 0.3,
+      "steps": 25,
+      "permission": {
+        "bash": "allow",
+        "edit": "allow",
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "todoread": "allow",
+        "todowrite": "allow",
+        // Allow Otto to read/write outside the project dir
+        // (needed for ~/.otto/data/, Obsidian vault, etc.)
+        "external_directory": "allow",
+        // Allow memory plugin tools without confirmation
+        "memory_*": "allow"
+      }
+    },
+    // Disable the default build/plan agents — Otto isn't a coding assistant
+    "build": {
+      "disable": true
+    },
+    "plan": {
+      "disable": true
+    }
+  },
+
+  // Default to the assistant agent
+  "default_agent": "assistant",
+
+  // ─── Instructions ─────────────────────────────────────────────────
+  // Additional context files that get loaded into every session.
+  // The memory plugin handles its own injection, but these are
+  // static references Otto should always know about.
+  "instructions": [
+    "AGENTS.md"
+  ],
+
+  // ─── Permissions (global defaults) ────────────────────────────────
+  // Since Otto runs headless on the Orin via cron and `opencode run`,
+  // it can't ask for confirmation. Allow everything by default.
+  "permission": "allow",
+
+  // ─── MCP Servers ──────────────────────────────────────────────────
+  // Placeholder for Phase 1+ MCP servers. Uncomment as we build them.
+  "mcp": {
+    // Phase 1: Reminders
+    // "reminders": {
+    //   "type": "local",
+    //   "command": ["node", "/home/marco/.otto/mcp/reminders/dist/index.js"],
+    //   "enabled": true
+    // },
+    //
+    // Phase 2: Obsidian notes (community MCP server)
+    // "obsidian": {
+    //   "type": "local",
+    //   "command": ["npx", "@smithery/cli", "run", "@smithery/obsidian-mcp"],
+    //   "environment": {
+    //     "OBSIDIAN_VAULT_PATH": "/home/marco/Obsidian"
+    //   },
+    //   "enabled": true
+    // },
+    //
+    // Phase 3: Google Calendar
+    // "gcal": {
+    //   "type": "local",
+    //   "command": ["npx", "@anthropic/google-calendar-mcp"],
+    //   "enabled": true
+    // }
+  },
+
+  // ─── Misc ─────────────────────────────────────────────────────────
+  "share": "disabled",
+  "autoupdate": false,
+  "snapshot": false
+}
