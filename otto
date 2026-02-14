@@ -6,7 +6,7 @@ set -euo pipefail
 # Manages the OpenCode backend. Works on macOS (launchd) and Linux (systemd).
 # ==============================================================================
 
-OTTO_VERSION="0.1.0"
+OTTO_VERSION="0.2.0"
 
 # --- Configuration -----------------------------------------------------------
 OTTO_PORT="${OTTO_PORT:-4096}"
@@ -14,9 +14,13 @@ OTTO_HOSTNAME="${OTTO_HOSTNAME:-0.0.0.0}"
 OTTO_HOME="${OTTO_HOME:-$HOME/.otto}"
 OTTO_INBOX="${OTTO_HOME}/inbox"
 OTTO_DATA="${OTTO_HOME}/data"
+OTTO_SCRIPTS="${OTTO_HOME}/scripts"
 OTTO_LOG_DIR="${OTTO_HOME}/logs"
 OTTO_SERVICE_NAME="otto"
 OTTO_AGENT="${OTTO_AGENT:-assistant}"
+OTTO_BRIDGE_SERVICE_NAME="otto-telegram-bridge"
+OTTO_BRIDGE_ENABLED="${OTTO_BRIDGE_ENABLED:-1}"
+OTTO_BRIDGE_MAC_LABEL="com.opencode.telegram-bridge"
 
 # Resolve directory where the otto script and its companion files live
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -223,6 +227,133 @@ EOF
 
 fi
 
+# --- Telegram Bridge Management ----------------------------------------------
+
+bridge_requested() {
+  [[ "$OTTO_BRIDGE_ENABLED" == "1" ]]
+}
+
+bridge_service_installed() {
+  if [[ "$PLATFORM" == "linux" ]]; then
+    local load_state
+    load_state="$(systemctl --user show -p LoadState --value "$OTTO_BRIDGE_SERVICE_NAME" 2>/dev/null || true)"
+    [[ -n "$load_state" && "$load_state" != "not-found" ]]
+  else
+    [[ -f "${HOME}/Library/LaunchAgents/${OTTO_BRIDGE_MAC_LABEL}.plist" ]]
+  fi
+}
+
+bridge_is_running() {
+  if ! bridge_service_installed; then
+    return 1
+  fi
+
+  if [[ "$PLATFORM" == "linux" ]]; then
+    systemctl --user is-active --quiet "$OTTO_BRIDGE_SERVICE_NAME" 2>/dev/null
+  else
+    launchctl print "gui/$(id -u)/${OTTO_BRIDGE_MAC_LABEL}" &>/dev/null
+  fi
+}
+
+bridge_start() {
+  if ! bridge_requested; then
+    return 0
+  fi
+
+  if ! bridge_service_installed; then
+    warn "Telegram bridge service not installed. Run: otto bridge-setup"
+    return 0
+  fi
+
+  if bridge_is_running; then
+    success "Telegram bridge is already running."
+    return 0
+  fi
+
+  info "Starting Telegram bridge..."
+  if [[ "$PLATFORM" == "linux" ]]; then
+    systemctl --user start "$OTTO_BRIDGE_SERVICE_NAME"
+  else
+    local plist
+    plist="${HOME}/Library/LaunchAgents/${OTTO_BRIDGE_MAC_LABEL}.plist"
+    launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null || true
+    launchctl enable "gui/$(id -u)/${OTTO_BRIDGE_MAC_LABEL}" 2>/dev/null || true
+    launchctl kickstart -k "gui/$(id -u)/${OTTO_BRIDGE_MAC_LABEL}"
+  fi
+
+  sleep 1
+  if bridge_is_running; then
+    success "Telegram bridge started."
+  else
+    warn "Telegram bridge failed to start. Check bridge logs."
+  fi
+}
+
+bridge_stop() {
+  if ! bridge_requested; then
+    return 0
+  fi
+
+  if ! bridge_service_installed; then
+    return 0
+  fi
+
+  if ! bridge_is_running; then
+    return 0
+  fi
+
+  info "Stopping Telegram bridge..."
+  if [[ "$PLATFORM" == "linux" ]]; then
+    systemctl --user stop "$OTTO_BRIDGE_SERVICE_NAME"
+  else
+    local plist
+    plist="${HOME}/Library/LaunchAgents/${OTTO_BRIDGE_MAC_LABEL}.plist"
+    launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || \
+      launchctl bootout "gui/$(id -u)/${OTTO_BRIDGE_MAC_LABEL}" 2>/dev/null || true
+  fi
+  success "Telegram bridge stopped."
+}
+
+bridge_restart() {
+  if ! bridge_requested; then
+    return 0
+  fi
+
+  if ! bridge_service_installed; then
+    warn "Telegram bridge service not installed. Run: otto bridge-setup"
+    return 0
+  fi
+
+  info "Restarting Telegram bridge..."
+  if [[ "$PLATFORM" == "linux" ]]; then
+    systemctl --user restart "$OTTO_BRIDGE_SERVICE_NAME"
+  else
+    launchctl kickstart -k "gui/$(id -u)/${OTTO_BRIDGE_MAC_LABEL}"
+  fi
+  sleep 1
+  if bridge_is_running; then
+    success "Telegram bridge restarted."
+  else
+    warn "Telegram bridge restart failed. Check bridge logs."
+  fi
+}
+
+bridge_setup() {
+  require_cmd opencode-telegram-bridge
+  info "Running Telegram bridge setup wizard..."
+  opencode-telegram-bridge setup
+}
+
+bridge_logs() {
+  local lines="${1:-50}"
+  if [[ "$PLATFORM" == "linux" ]]; then
+    journalctl --user -u "$OTTO_BRIDGE_SERVICE_NAME" -n "$lines" --no-pager -f
+  else
+    tail -n "$lines" "${HOME}/Library/Logs/opencode-telegram-bridge.log" 2>/dev/null || \
+      warn "No bridge log yet at ~/Library/Logs/opencode-telegram-bridge.log"
+  fi
+}
+
 # --- Commands ----------------------------------------------------------------
 
 cmd_setup() {
@@ -233,15 +364,21 @@ cmd_setup() {
   info "Checking prerequisites..."
   require_cmd opencode
   success "  opencode: $(command -v opencode)"
+  if command -v opencode-telegram-bridge >/dev/null 2>&1; then
+    success "  opencode-telegram-bridge: $(command -v opencode-telegram-bridge)"
+  else
+    warn "  opencode-telegram-bridge not found (install later for Telegram support)"
+  fi
   success "  platform: ${PLATFORM}"
   echo ""
 
   # Create directory structure
   info "Creating directory structure..."
-  mkdir -p "$OTTO_HOME" "$OTTO_INBOX" "$OTTO_DATA" "$OTTO_LOG_DIR"
+  mkdir -p "$OTTO_HOME" "$OTTO_INBOX" "$OTTO_DATA" "$OTTO_SCRIPTS" "$OTTO_LOG_DIR"
   success "  $OTTO_HOME"
   success "  $OTTO_INBOX"
   success "  $OTTO_DATA"
+  success "  $OTTO_SCRIPTS"
   success "  $OTTO_LOG_DIR"
   echo ""
 
@@ -301,37 +438,41 @@ EOF
   echo ""
   echo "  Next steps:"
   echo "    1. Start Otto:       otto start"
-  echo "    2. On your laptop:   alias otto=\"opencode attach http://$(hostname):${OTTO_PORT}\""
-  echo "    3. Try it:           otto"
+  echo "    2. Setup bridge:     otto bridge-setup"
+  echo "    3. On your laptop:   alias otto=\"opencode attach http://$(hostname):${OTTO_PORT}\""
+  echo "    4. Try it:           otto"
   echo ""
 }
 
 cmd_start() {
   if svc_is_running; then
     warn "Otto is already running."
-    cmd_status
-    return 0
-  fi
-  info "Starting Otto on port ${OTTO_PORT}..."
-  svc_start
-  sleep 2
-  if svc_is_running; then
-    success "Otto is running."
-    cmd_status
   else
-    error "Failed to start Otto. Check logs: otto logs"
-    exit 1
+    info "Starting Otto on port ${OTTO_PORT}..."
+    svc_start
+    sleep 2
+    if svc_is_running; then
+      success "Otto is running."
+    else
+      error "Failed to start Otto. Check logs: otto logs"
+      exit 1
+    fi
   fi
+
+  bridge_start
+  cmd_status
 }
 
 cmd_stop() {
-  if ! svc_is_running; then
+  if svc_is_running; then
+    info "Stopping Otto..."
+    svc_stop
+    success "Otto stopped."
+  else
     warn "Otto is not running."
-    return 0
   fi
-  info "Stopping Otto..."
-  svc_stop
-  success "Otto stopped."
+
+  bridge_stop
 }
 
 cmd_restart() {
@@ -340,11 +481,13 @@ cmd_restart() {
   sleep 2
   if svc_is_running; then
     success "Otto restarted."
-    cmd_status
   else
     error "Failed to restart Otto. Check logs: otto logs"
     exit 1
   fi
+
+  bridge_restart
+  cmd_status
 }
 
 cmd_status() {
@@ -358,12 +501,43 @@ cmd_status() {
   echo "  Port:     ${OTTO_PORT}"
   echo "  Home:     ${OTTO_HOME}"
   echo "  Connect:  opencode attach http://$(hostname):${OTTO_PORT}"
+  if ! bridge_requested; then
+    echo "  Telegram: ${YELLOW}● management disabled${NC} (OTTO_BRIDGE_ENABLED=0)"
+  else
+    if bridge_service_installed; then
+      if bridge_is_running; then
+        echo "  Telegram: ${GREEN}● running${NC}"
+      else
+        echo "  Telegram: ${YELLOW}● installed, stopped${NC}"
+      fi
+    else
+      echo "  Telegram: ${YELLOW}● not configured${NC} (run: otto bridge-setup)"
+    fi
+  fi
   echo ""
 }
 
 cmd_logs() {
-  local lines="${1:-50}"
-  svc_logs "$lines"
+  local target="${1:-otto}"
+  local lines="${2:-50}"
+
+  if [[ "$target" =~ ^[0-9]+$ ]]; then
+    lines="$target"
+    target="otto"
+  fi
+
+  case "$target" in
+    otto)
+      svc_logs "$lines"
+      ;;
+    bridge)
+      bridge_logs "$lines"
+      ;;
+    *)
+      error "Usage: otto logs [otto|bridge] [lines]"
+      exit 1
+      ;;
+  esac
 }
 
 cmd_run() {
@@ -391,10 +565,19 @@ cmd_uninstall() {
     cmd_stop
   fi
 
+  bridge_stop
+
   svc_uninstall
 
-  success "Service removed. Data in ${OTTO_HOME} was kept."
+  success "Otto service removed. Data in ${OTTO_HOME} was kept."
+  if bridge_service_installed; then
+    warn "Telegram bridge service was not removed. Manage it with: opencode-telegram-bridge setup"
+  fi
   info "To fully remove: rm -rf ${OTTO_HOME}"
+}
+
+cmd_bridge_setup() {
+  bridge_setup
 }
 
 cmd_help() {
@@ -407,11 +590,12 @@ ${BOLD}USAGE${NC}
 
 ${BOLD}COMMANDS${NC}
     setup       Initial setup: create dirs, install service
+    bridge-setup  Run Telegram bridge setup wizard
     start       Start the Otto backend
     stop        Stop the Otto backend
     restart     Restart the Otto backend
     status      Show current status and connection info
-    logs [n]    Follow logs (default: last 50 lines)
+    logs [target] [n]  Follow logs for otto|bridge (default: otto 50)
     run <msg>   Send a one-shot prompt to Otto
     uninstall   Remove the service (keeps data)
     help        Show this help
@@ -421,12 +605,15 @@ ${BOLD}CONFIGURATION${NC}
     OTTO_HOSTNAME   Bind address (default: 0.0.0.0)
     OTTO_HOME       Data directory (default: ~/.otto)
     OTTO_AGENT      Agent to use (default: assistant)
+    OTTO_BRIDGE_ENABLED  Start/stop bridge with Otto (1 or 0, default: 1)
 
 ${BOLD}EXAMPLES${NC}
     otto setup                          # First-time setup
     otto start                          # Start the backend
     otto run "What's on my calendar?"   # One-shot prompt
-    otto logs                           # Watch logs
+    otto logs                           # Watch Otto logs
+    otto logs bridge 100                # Watch Telegram bridge logs
+    otto bridge-setup                   # Configure Telegram bridge service
     otto stop                           # Stop the backend
 
 ${BOLD}LAPTOP SETUP${NC}
@@ -443,6 +630,7 @@ EOF
 
 case "${1:-help}" in
   setup)     cmd_setup ;;
+  bridge-setup) cmd_bridge_setup ;;
   start)     cmd_start ;;
   stop)      cmd_stop ;;
   restart)   cmd_restart ;;

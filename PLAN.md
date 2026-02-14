@@ -15,7 +15,7 @@ Your Home Network
   │                                                  │
   │  systemd user service:                           │
   │  └── opencode serve (:4096, 0.0.0.0)            │
-  │      ├── MCP: reminders     (Phase 1)            │
+  │      ├── MCP: reminders adapter (Phase 1)        │
   │      ├── MCP: obsidian      (Phase 2)            │
   │      ├── MCP: gmail         (Phase 3)            │
   │      └── MCP: calendar      (Phase 3)            │
@@ -24,7 +24,7 @@ Your Home Network
   │  └── Obsidian vault sync    (Phase 2)            │
   │                                                  │
   │  cron jobs:                                      │
-  │  ├── */5 * * * *  check-reminders.sh  (Phase 1)  │
+  │  ├── */15 * * * * check-reminders.sh  (Phase 1, optional escalation) │
   │  ├── 0 */2 * * *  check-mail.sh       (Phase 3)  │
   │  └── 0 7 * * *    morning-briefing.sh  (Phase 3)  │
   │                                                  │
@@ -46,11 +46,11 @@ Your Home Network
   │  syncthing (vault)   │
   └──────────────────────┘
           ▲
-          │ ntfy.sh push notifications
+          │ Telegram bot + ntfy escalations
           ▼
   ┌──────────────────────┐
   │  Phone               │
-  │  ntfy app            │
+  │  Telegram + ntfy app │
   └──────────────────────┘
 ```
 
@@ -58,7 +58,7 @@ Your Home Network
 
 - The Orin is the brain. All state, MCP servers, cron jobs, and sessions live there.
 - The laptop is just a thin client via `opencode attach`.
-- When the laptop is closed, notifications reach the phone via ntfy.sh.
+- When the laptop is closed, reminders arrive via provider-native mobile notifications; Telegram is the primary direct chat channel; ntfy.sh is used for escalations/briefings.
 - No public internet exposure — everything stays on the LAN.
 - No auth needed on the local network.
 
@@ -77,17 +77,17 @@ All Otto files live under `~/.otto/` which doubles as the OpenCode project direc
 ├── .opencode/
 │   └── memory/                   ← agent-memory plugin storage
 │       ├── persona.md            ← Who Otto is
-│       ├── human.md              ← What Otto knows about Marco
+│       ├── human.md              ← What Otto knows about the user
 │       └── project.md            ← Current context
-├── data/                         ← SQLite databases
-│   └── reminders.db              ← (Phase 1)
+├── data/                         ← Local data/cache (optional)
+│   └── reminders-cache.db        ← (optional Phase 1 cache/archive)
 ├── mcp/                          ← Custom MCP servers
-│   └── reminders/                ← (Phase 1)
+│   └── reminders/                ← (Phase 1 adapter)
 │       ├── src/
 │       ├── dist/
 │       └── package.json
 ├── scripts/                      ← Cron scripts
-│   ├── check-reminders.sh        ← (Phase 1)
+│   ├── check-reminders.sh        ← (Phase 1 escalation, optional)
 │   ├── check-mail.sh             ← (Phase 3)
 │   └── morning-briefing.sh       ← (Phase 3)
 ├── inbox/                        ← Syncthing shared folder for ad-hoc files
@@ -120,27 +120,30 @@ Running `otto setup` copies the config files from the repo into `~/.otto/`.
 | Primary model | `anthropic/claude-sonnet-4-5` | Sweet spot: capable, fast, cheaper than Opus |
 | Cheap model | `anthropic/claude-haiku-4-5` | Session titles, routine checks |
 | Memory plugin | `opencode-agent-memory` | Letta-style markdown blocks, zero deps, fully local, ARM-compatible |
-| Reminder storage | SQLite via `better-sqlite3` | Single file, zero infra, survives reboots |
+| Reminder backend | Google Tasks (primary) / Todoist (optional) | Better native reminder UX, reliable mobile delivery, completion tracking |
+| Direct messaging | Telegram via `opencode-telegram-bridge` | Two-way assistant chat, proactive push, allowlist controls |
 | MCP servers | TypeScript + Node.js | Matches OpenCode ecosystem |
 | Note sync | Syncthing | Bidirectional, real-time, self-hosted, set-and-forget |
 | Push notifications | ntfy.sh | Simple HTTP POST, free, phone app, self-hostable |
 | Service management | systemd user service (Linux) / launchd (macOS) | Auto-start, auto-restart, lingering support |
-| Cron approach | Bash guard + `opencode run --attach` | Near-zero cost: SQLite check is instant, only invokes LLM when needed |
+| Reminder polling | Optional cron escalation + `opencode run --attach` | Escalate only overdue/high-priority reminders without replacing native notifications |
 
 
 ## Decisions Made
 
 1. **Project-level config, not global.** `opencode.jsonc` lives in `~/.otto/` (the working directory), not `~/.config/opencode/`. This isolates Otto from any other OpenCode usage on the same machine.
 
-2. **Cron + bash guard, not a daemon.** Cron runs every 5 minutes. A bash script checks SQLite directly (`sqlite3` query — instant, zero API cost). Only if reminders are due does it call `opencode run --attach`, which reuses the warm `opencode serve` process and its MCP connections.
+2. **Managed reminder backend, not local-first reminder state.** Use Google Tasks (or Todoist) as source of truth for reminders so delivery, snooze, and completion work natively on mobile.
 
-3. **ntfy.sh for notifications.** Desktop notifications (`notify-send`) don't work when the laptop is closed. ntfy.sh pushes to the phone via a simple `curl` POST. Can be self-hosted later.
+3. **Native reminders first, ntfy.sh for escalation.** Provider notifications handle routine reminder delivery. ntfy is reserved for selective escalations and briefings.
 
-4. **`opencode-agent-memory` for memory.** Chosen over `opencode-mem` (requires API keys + sqlite-vec compilation) and `opencode-supermemory` (cloud-based). It stores curated markdown blocks with YAML frontmatter — perfect for a personal assistant's identity and context.
+4. **Telegram bridge for direct communication.** `opencode-telegram-bridge` provides two-way messaging, proactive push, allowlist enforcement, and persistent sessions without exposing a public webhook endpoint.
 
-5. **Cross-platform management script.** The `otto` script detects macOS (launchd) vs Linux (systemd) and handles service management accordingly. Tested on both.
+5. **`opencode-agent-memory` for memory.** Chosen over `opencode-mem` (requires API keys + sqlite-vec compilation) and `opencode-supermemory` (cloud-based). It stores curated markdown blocks with YAML frontmatter — perfect for a personal assistant's identity and context.
 
-6. **Permissions set to `allow`.** Since Otto runs headless via cron and `opencode run`, it can't prompt for confirmation. All tool permissions are pre-approved.
+6. **Cross-platform management script.** The `otto` script detects macOS (launchd) vs Linux (systemd) and handles service management accordingly. Tested on both.
+
+7. **Permissions set to `allow`.** Since Otto runs headless via cron and `opencode run`, it can't prompt for confirmation. All tool permissions are pre-approved.
 
 
 ---
@@ -193,103 +196,96 @@ alias otto="opencode attach http://orin:4096"
 ---
 
 
-## Phase 1: Reminders (~4 hours)
+## Phase 1: Reminders (managed backend) (~3-4 hours)
 
-**Goal:** "Otto, remind me to call the electrician tomorrow at 3pm"
+**Goal:** "Otto, remind me to call the electrician tomorrow at 3pm" with reliable native phone notifications and completion tracking.
 
-### 1.1 Reminder MCP Server
+### 1.1 Reminder backend choice
 
-TypeScript MCP server using `better-sqlite3`. Lives in `~/.otto/mcp/reminders/`.
+Use a managed reminders system as the source of truth.
 
-**SQLite schema:**
+**Primary:** Google Tasks (integrates naturally with Google account and mobile ecosystem)
 
-```sql
-CREATE TABLE reminders (
-  id          TEXT PRIMARY KEY,
-  title       TEXT NOT NULL,
-  body        TEXT,
-  due_at      DATETIME NOT NULL,
-  recurrence  TEXT,                              -- null | 'daily' | 'weekly' | 'monthly'
-  status      TEXT DEFAULT 'pending',            -- pending | delivered | completed | snoozed
-  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-  delivered_at DATETIME,
-  completed_at DATETIME,
-  snoozed_until DATETIME,
-  tags        TEXT                               -- JSON array
-);
+**Alternative:** Todoist (excellent UX and natural-language recurrence)
 
-CREATE INDEX idx_reminders_due ON reminders(status, due_at);
-```
+Otto remains the orchestration layer and natural-language interface; reminder state lives in the provider.
 
-**MCP tools:**
+### 1.2 Reminder MCP adapter
+
+Implement or configure a reminder MCP adapter that maps Otto tools to the provider API.
+
+**MCP tools (stable interface):**
 
 | Tool | Description |
 |---|---|
-| `add_reminder` | Create a reminder with title, optional body, due date/time, optional recurrence and tags |
-| `list_reminders` | List reminders filtered by status, date range, or tags |
-| `complete_reminder` | Mark a reminder as completed |
-| `snooze_reminder` | Snooze a reminder by a given duration (e.g. "1h", "tomorrow 9am") |
-| `delete_reminder` | Permanently remove a reminder |
-| `check_due_reminders` | Return all pending reminders that are currently due or overdue |
+| `add_reminder` | Create reminder/task with title, optional notes, due date/time, recurrence |
+| `list_reminders` | List reminders by status/date range/list |
+| `complete_reminder` | Mark reminder/task done in provider |
+| `snooze_reminder` | Shift due time by duration or target datetime |
+| `delete_reminder` | Remove reminder/task |
+| `check_due_reminders` | Return reminders currently due/overdue |
 
-**Recurrence:** Start simple — enum values (`daily`, `weekly`, `monthly`). When a recurring reminder is delivered, calculate the next occurrence and create it. Add cron expressions later only if needed (YAGNI).
+Keep this interface provider-agnostic so backend can switch later without changing prompt behavior.
 
-**Database location:** `~/.otto/data/reminders.db`
+### 1.3 Delivery model
 
-### 1.2 Cron + Bash Guard
+- **Primary delivery:** provider-native notifications (Google/Todoist mobile notifications)
+- **Secondary delivery:** `ntfy` for escalations, summaries, and headless briefings
 
-```bash
-# ~/.otto/scripts/check-reminders.sh
-#!/bin/bash
-DB="$HOME/.otto/data/reminders.db"
-PORT="${OTTO_PORT:-4096}"
+This avoids duplicating reminder delivery logic in cron while keeping Otto proactive.
 
-# Quick SQLite check — instant, zero API cost
-DUE_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM reminders WHERE status='pending' AND due_at <= datetime('now')")
+### 1.4 Polling and escalation (optional but useful)
 
-if [[ "$DUE_COUNT" -gt 0 ]]; then
-  opencode run \
-    --attach "http://localhost:${PORT}" \
-    --agent assistant \
-    "You have ${DUE_COUNT} due reminder(s). Check them with check_due_reminders, notify me via ntfy, and mark them as delivered."
-fi
-```
+Use a lightweight cron check for overdue follow-up/escalation only (not primary delivery):
 
-Cron entry: `*/5 * * * * ~/.otto/scripts/check-reminders.sh`
+- If an important reminder is overdue and still not completed, Otto sends a selective `ntfy` nudge.
+- Avoid noisy repeat notifications.
 
-### 1.3 ntfy.sh Notifications
+### 1.5 Config updates
 
-Otto uses bash to send notifications:
+- Enable provider MCP(s) in `opencode.jsonc` (Google Tasks and/or Todoist integration path).
+- Keep reminders adapter tool names (`add_reminder`, `list_reminders`, etc.) stable.
+
+### 1.6 Telegram bridge (direct assistant communication)
+
+Use `opencode-telegram-bridge` as the direct user communication channel:
 
 ```bash
-curl -d "⏰ Call the electrician" ntfy.sh/otto-marcos
+npm install -g opencode-telegram-bridge
+opencode-telegram-bridge setup
 ```
 
-This is built into the assistant prompt — Otto knows to use `curl` + ntfy when running headless. No separate MCP server needed initially; it's just a bash command.
+Required env vars:
 
-**Phone setup:** Install ntfy app → subscribe to `otto-marcos` topic.
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_ALLOWED_USER_ID`
+- `OPENCODE_SERVER_URL` (usually `http://127.0.0.1:4096`)
 
-**Optional later:** Self-host ntfy on the Orin for full privacy.
+Operational notes:
 
-### 1.4 Config Update
+- Run as a user service (`systemd` on Linux / `launchd` on macOS).
+- Keep strict allowlist to block unknown Telegram users.
+- Keep token out of git (`.env`/service env only).
+- Prefer polling mode via the bridge defaults (no public webhook needed).
 
-Uncomment the reminders MCP server in `opencode.jsonc`:
+### 1.7 Hardening checklist
 
-```jsonc
-"reminders": {
-  "type": "local",
-  "command": ["node", "/home/marco/.otto/mcp/reminders/dist/index.js"],
-  "enabled": true
-}
-```
+- [ ] Bot token stored only in service env file with strict file permissions
+- [ ] `TELEGRAM_ALLOWED_USER_ID` set and verified
+- [ ] OpenCode server bound to local network policy (localhost where possible)
+- [ ] Quiet hours + anti-spam escalation policy defined in assistant behavior
+- [ ] Service health checks/logs verified (`journalctl`/`launchctl`)
 
 ### Phase 1 Verification
 
-- [ ] `otto` → "Remind me to buy milk tomorrow at 10am" → reminder created in SQLite
-- [ ] `otto` → "What are my reminders?" → lists pending reminders
-- [ ] Wait for cron to fire → ntfy push arrives on phone
-- [ ] `otto` → "Complete the milk reminder" → marked as completed
-- [ ] Snooze a reminder → verify new due time
+- [ ] `otto` → "Remind me to buy milk tomorrow at 10am" → reminder appears in provider app
+- [ ] Native phone notification fires at due time
+- [ ] `otto` → "What are my reminders?" → Otto lists provider reminders accurately
+- [ ] `otto` → "Complete the milk reminder" → completion state updates in provider
+- [ ] Snooze/reschedule via Otto → updated due time visible in provider
+- [ ] Telegram bot receives `"what's next today?"` and replies via OpenCode bridge
+- [ ] Otto can proactively push a Telegram alert for overdue/high-priority item
+- [ ] (Optional) Overdue escalation via `ntfy` works without spam
 
 
 ---
@@ -353,9 +349,9 @@ Config update:
 ---
 
 
-## Phase 3: Mail & Calendar (~4 hours)
+## Phase 3: Mail, Calendar, and Communications (~4-5 hours)
 
-**Goal:** "Otto, any urgent emails?" / "What's on my calendar today?"
+**Goal:** "Otto, any urgent emails?" / "What's on my calendar today?" / "Text me when something needs attention."
 
 ### 3.1 Gmail MCP Server
 
@@ -397,11 +393,11 @@ PORT="${OTTO_PORT:-4096}"
 opencode run \
   --attach "http://localhost:${PORT}" \
   --agent assistant \
-  "Good morning. Prepare my daily briefing:
-   1. Today's calendar events
-   2. Urgent or unread emails (last 12h)
-   3. Any due or overdue reminders
-   Send the summary via ntfy."
+   "Good morning. Prepare my daily briefing:
+    1. Today's calendar events
+    2. Urgent or unread emails (last 12h)
+    3. Any due or overdue reminders
+    Send the summary via Telegram (fallback to ntfy if unavailable)."
 ```
 
 Cron: `0 7 * * * ~/.otto/scripts/morning-briefing.sh`
@@ -417,7 +413,7 @@ opencode run \
   --attach "http://localhost:${PORT}" \
   --agent assistant \
   --model anthropic/claude-haiku-4-5 \
-  "Check for urgent unread emails in the last 2 hours. Only notify me via ntfy if something genuinely needs my attention. Be selective."
+  "Check for urgent unread emails in the last 2 hours. Notify via Telegram first (fallback ntfy) only if something genuinely needs my attention. Be selective."
 ```
 
 Cron: `0 */2 * * * ~/.otto/scripts/check-mail.sh`
@@ -428,7 +424,7 @@ Note: Uses Haiku for cost efficiency on routine checks.
 
 - [ ] "Otto, what's on my calendar today?" → lists events
 - [ ] "Otto, any urgent emails?" → summarizes inbox
-- [ ] Morning briefing arrives on phone at 7:00 AM via ntfy
+- [ ] Morning briefing arrives on phone at 7:00 AM via Telegram (fallback ntfy)
 - [ ] "Otto, create a meeting with X on Thursday at 2pm" → event created
 - [ ] "Otto, draft a reply to the last email from Y" → draft composed (not sent without confirmation)
 
@@ -442,16 +438,16 @@ Note: Uses Haiku for cost efficiency on routine checks.
 
 ### 4.1 Memory Seeding
 
-Seed Otto's memory blocks on first run:
+Seed memory with adaptive defaults (no hardcoded user identity):
 
 **persona.md:**
 ```yaml
 ---
 type: persona
 ---
-You are Otto, Marco's personal AI assistant. You're concise, proactive, and technical.
-You run 24/7 on a Jetson Orin in Stanzach, Austria.
-You prefer action over discussion. When you can solve something, just do it.
+You are Otto, a world-class personal assistant.
+Be concise, proactive, and high-judgment.
+Protect the user's time and convert intent into execution.
 ```
 
 **human.md:**
@@ -459,13 +455,22 @@ You prefer action over discussion. When you can solve something, just do it.
 ---
 type: human
 ---
-Marco is a Tribe Lead Engineer at FAIRTIQ starting April 2026.
-Lives in Stanzach, Austria (Europe/Vienna timezone).
-Interests: woodworking, 3D printing, skiing, chess.
-Communication style: direct, technical, no fluff.
+preferred_assistant_persona:
+  role: unknown
+  tone: unknown
+  directness: unknown
+  verbosity: unknown
+  challenge_level: unknown
+  proactivity: unknown
+user_profile:
+  identity: unknown
+  role_profession: unknown
+  current_focus: unknown
+  top_priorities: []
+  constraints: []
 ```
 
-Otto updates these blocks as it learns more through conversation.
+On first interactive run, Otto asks for missing persona/profile data, stores it, and updates over time.
 
 ### 4.2 Session Continuity
 
@@ -488,7 +493,7 @@ Prepare my daily briefing:
 2. Unread emails that need attention
 3. Due or overdue reminders
 4. Any notes I created yesterday
-Format it concisely. If running headless, send via ntfy.
+Format it concisely. If running headless, send via Telegram (fallback ntfy).
 ```
 
 **`/remind`** — `commands/remind.md`:
@@ -587,9 +592,9 @@ Syncthing's `~/.otto/inbox/` as a drop folder. Otto periodically checks for new 
 | Phase | What | Time | Value | Status |
 |---|---|---|---|---|
 | 0 | Infrastructure + `otto` script | 1–2h | Can talk to Otto | ✅ Done |
-| 1 | Reminders + ntfy notifications | ~4h | First real capability | 🔜 Next |
+| 1 | Managed reminders (Google Tasks/Todoist) + escalation | ~3-4h | First real capability with strong mobile UX | 🔜 Next |
 | 2 | Obsidian notes via Syncthing | 2–3h | Knowledge management | Planned |
-| 3 | Gmail + Calendar + morning briefing | ~4h | Daily awareness | Planned |
+| 3 | Gmail + Calendar + Telegram communications + morning briefing | ~4-5h | Daily awareness + direct assistant channel | Planned |
 | 4 | Memory seeding + session continuity + commands | 2–3h | Feels personal | Planned |
 | 5 | Local LLM, webhooks, voice, home automation | Backlog | Nice-to-haves | Ideas |
 
@@ -601,9 +606,10 @@ Each phase is independently useful. You can stop after any phase and have a work
 | Activity | Model | Frequency | Est. tokens/call | Monthly cost |
 |---|---|---|---|---|
 | Interactive chat | Sonnet 4.5 | ~20/day | ~2K in + 1K out | ~$15–25 |
-| Reminder check | Haiku 4.5 (or none) | 288/day (every 5 min) | ~500 (only when due) | ~$1–3 |
+| Telegram bridge runtime | Bot API (no LLM by itself) | Continuous | N/A | ~$0 |
+| Reminder escalation check (optional) | Haiku 4.5 (or none) | 96/day (every 15 min) | ~500 (only when overdue/high-priority) | ~$0–2 |
 | Mail check | Haiku 4.5 | 12/day | ~1K | ~$1 |
 | Morning briefing | Sonnet 4.5 | 1/day | ~3K | ~$2 |
 | **Total estimate** | | | | **~$20–30/month** |
 
-Bash guard on the reminder cron means most invocations cost zero (SQLite check only). Local LLM (Phase 5) would reduce costs further.
+With managed reminders, most routine delivery happens outside LLM calls; Otto is mainly used for orchestration and selective escalation. Local LLM (Phase 5) can reduce cron/triage costs further.
