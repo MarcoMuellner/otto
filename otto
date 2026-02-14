@@ -18,6 +18,9 @@ OTTO_LOG_DIR="${OTTO_HOME}/logs"
 OTTO_SERVICE_NAME="otto"
 OTTO_AGENT="${OTTO_AGENT:-assistant}"
 
+# Resolve directory where the otto script and its companion files live
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # --- Platform Detection ------------------------------------------------------
 OS="$(uname -s)"
 case "$OS" in
@@ -240,6 +243,28 @@ cmd_setup() {
   success "  $OTTO_INBOX"
   success "  $OTTO_DATA"
   success "  $OTTO_LOG_DIR"
+  echo ""
+
+  # Deploy OpenCode config files into OTTO_HOME (project-level config)
+  info "Deploying OpenCode configuration..."
+  local config_files=("opencode.jsonc" "AGENTS.md")
+  for f in "${config_files[@]}"; do
+    if [[ -f "${SCRIPT_DIR}/${f}" ]]; then
+      cp "${SCRIPT_DIR}/${f}" "${OTTO_HOME}/${f}"
+      success "  ${OTTO_HOME}/${f}"
+    else
+      warn "  Missing: ${SCRIPT_DIR}/${f} — skipping"
+    fi
+  done
+
+  # Deploy agent prompt
+  if [[ -d "${SCRIPT_DIR}/agents" ]]; then
+    mkdir -p "${OTTO_HOME}/agents"
+    cp "${SCRIPT_DIR}/agents/"*.md "${OTTO_HOME}/agents/" 2>/dev/null
+    success "  ${OTTO_HOME}/agents/"
+  else
+    warn "  Missing: ${SCRIPT_DIR}/agents/ — skipping"
+  fi
   echo ""
 
   # Resolve opencode path for service file

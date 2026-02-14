@@ -4,22 +4,14 @@
   // ─── Model ────────────────────────────────────────────────────────
   // Primary model for Otto. Sonnet 4.5 is the sweet spot for an
   // always-on assistant: capable enough, fast, cheaper than Opus.
-  "model": "anthropic/claude-sonnet-4-5",
+  "model": "openai/gpt-5.3-codex",
 
   // Cheap model for auto-generated session titles
-  "small_model": "anthropic/claude-haiku-4-5",
-
-  // ─── Server (opencode serve) ──────────────────────────────────────
-  // Listens on all interfaces so the laptop can reach it over LAN.
-  // Port 4096 as decided in the otto management script.
-  "server": {
-    "port": 4096,
-    "hostname": "0.0.0.0"
-  },
+  "small_model": "openai/gpt-5.3-codex",
 
   // ─── Plugins ──────────────────────────────────────────────────────
   // agent-memory: Letta-style persistent memory blocks (persona, human, project)
-  //   - Stores markdown files in ~/.config/opencode/memory/
+  //   - Stores markdown files in .opencode/memory/ (project-level)
   //   - Injects memory into system prompt automatically
   //   - Gives Otto 3 tools: memory_list, memory_set, memory_replace
   "plugin": [
@@ -31,7 +23,7 @@
   // separate markdown file for easier editing.
   "agent": {
     "assistant": {
-      "model": "anthropic/claude-sonnet-4-5",
+      "model": "openai/gpt-5.3-codex",
       "description": "Otto — your 24/7 personal assistant",
       "mode": "primary",
       "color": "#4ECDC4",
