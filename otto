@@ -15,6 +15,7 @@ OTTO_HOME="${OTTO_HOME:-$HOME/.otto}"
 OTTO_INBOX="${OTTO_HOME}/inbox"
 OTTO_DATA="${OTTO_HOME}/data"
 OTTO_SCRIPTS="${OTTO_HOME}/scripts"
+OTTO_SECRETS="${OTTO_HOME}/secrets"
 OTTO_LOG_DIR="${OTTO_HOME}/logs"
 OTTO_SERVICE_NAME="otto"
 OTTO_AGENT="${OTTO_AGENT:-assistant}"
@@ -70,6 +71,114 @@ install_bridge_if_missing() {
     error "Install manually: npm install -g opencode-telegram-bridge"
     exit 1
   fi
+}
+
+detect_shell_rc_file() {
+  local shell_name
+  shell_name="$(basename "${SHELL:-}")"
+
+  case "$shell_name" in
+    zsh)
+      echo "${HOME}/.zshrc"
+      ;;
+    bash)
+      echo "${HOME}/.bashrc"
+      ;;
+    *)
+      if [[ -f "${HOME}/.zshrc" ]]; then
+        echo "${HOME}/.zshrc"
+      else
+        echo "${HOME}/.bashrc"
+      fi
+      ;;
+  esac
+}
+
+upsert_shell_export() {
+  local rc_file="$1"
+  local var_name="$2"
+  local value="$3"
+  local escaped_value
+  escaped_value="${value//\\/\\\\}"
+  escaped_value="${escaped_value//\"/\\\"}"
+
+  touch "$rc_file"
+
+  if grep -Eq "^[[:space:]]*export[[:space:]]+${var_name}=" "$rc_file"; then
+    local tmp
+    tmp="$(mktemp)"
+    awk -v var_name="$var_name" -v new_value="$escaped_value" '
+      BEGIN { replaced = 0 }
+      {
+        if (!replaced && $0 ~ "^[[:space:]]*export[[:space:]]+" var_name "=") {
+          print "export " var_name "=\"" new_value "\""
+          replaced = 1
+        } else {
+          print $0
+        }
+      }
+      END {
+        if (!replaced) {
+          print "export " var_name "=\"" new_value "\""
+        }
+      }
+    ' "$rc_file" > "$tmp"
+    mv "$tmp" "$rc_file"
+  else
+    cat >> "$rc_file" <<EOF
+export ${var_name}="${escaped_value}"
+EOF
+  fi
+}
+
+configure_google_env_vars() {
+  local rc_file
+  local current_client_id="${GOOGLE_CLIENT_ID:-}"
+  local current_client_secret="${GOOGLE_CLIENT_SECRET:-}"
+  local current_oauth_path="${GOOGLE_OAUTH_CREDENTIALS:-${OTTO_SECRETS}/gcp-oauth.keys.json}"
+  local input_client_id
+  local input_client_secret
+  local input_oauth_path
+
+  rc_file="$(detect_shell_rc_file)"
+
+  info "Configuring Google credentials in ${rc_file}..."
+
+  read -rp "Google OAuth Client ID [${current_client_id}]: " input_client_id
+  if [[ -z "$input_client_id" ]]; then
+    input_client_id="$current_client_id"
+  fi
+
+  if [[ -n "$current_client_secret" ]]; then
+    read -rsp "Google OAuth Client Secret [hidden, press enter to keep]: " input_client_secret
+    echo ""
+  else
+    read -rsp "Google OAuth Client Secret: " input_client_secret
+    echo ""
+  fi
+  if [[ -z "$input_client_secret" ]]; then
+    input_client_secret="$current_client_secret"
+  fi
+
+  read -rp "Path to Google OAuth credentials JSON [${current_oauth_path}]: " input_oauth_path
+  if [[ -z "$input_oauth_path" ]]; then
+    input_oauth_path="$current_oauth_path"
+  fi
+
+  if [[ -n "$input_oauth_path" && -f "$input_oauth_path" ]]; then
+    cp "$input_oauth_path" "${OTTO_SECRETS}/gcp-oauth.keys.json"
+    chmod 600 "${OTTO_SECRETS}/gcp-oauth.keys.json"
+    input_oauth_path="${OTTO_SECRETS}/gcp-oauth.keys.json"
+    success "  OAuth credentials copied to ${input_oauth_path}"
+  elif [[ -n "$input_oauth_path" ]]; then
+    warn "  Credentials file not found at ${input_oauth_path}; keeping path as-is"
+  fi
+
+  upsert_shell_export "$rc_file" "GOOGLE_CLIENT_ID" "$input_client_id"
+  upsert_shell_export "$rc_file" "GOOGLE_CLIENT_SECRET" "$input_client_secret"
+  upsert_shell_export "$rc_file" "GOOGLE_OAUTH_CREDENTIALS" "$input_oauth_path"
+  success "  Google environment variables updated"
+  info "Reload your shell after setup: source ${rc_file}"
 }
 
 # --- Platform: Service Management --------------------------------------------
@@ -391,12 +500,17 @@ cmd_setup() {
 
   # Create directory structure
   info "Creating directory structure..."
-  mkdir -p "$OTTO_HOME" "$OTTO_INBOX" "$OTTO_DATA" "$OTTO_SCRIPTS" "$OTTO_LOG_DIR"
+  mkdir -p "$OTTO_HOME" "$OTTO_INBOX" "$OTTO_DATA" "$OTTO_SCRIPTS" "$OTTO_SECRETS" "$OTTO_LOG_DIR"
   success "  $OTTO_HOME"
   success "  $OTTO_INBOX"
   success "  $OTTO_DATA"
   success "  $OTTO_SCRIPTS"
+  success "  $OTTO_SECRETS"
   success "  $OTTO_LOG_DIR"
+  echo ""
+
+  # Configure Google environment exports (idempotent upsert)
+  configure_google_env_vars
   echo ""
 
   # Deploy OpenCode config files into OTTO_HOME (project-level config)

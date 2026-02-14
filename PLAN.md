@@ -248,6 +248,8 @@ Use a lightweight cron check for overdue follow-up/escalation only (not primary 
 
 ### 1.6 Telegram bridge (direct assistant communication)
 
+Status: ✅ Done
+
 Use `opencode-telegram-bridge` as the direct user communication channel:
 
 ```bash
@@ -283,7 +285,7 @@ Operational notes:
 - [ ] `otto` → "What are my reminders?" → Otto lists provider reminders accurately
 - [ ] `otto` → "Complete the milk reminder" → completion state updates in provider
 - [ ] Snooze/reschedule via Otto → updated due time visible in provider
-- [ ] Telegram bot receives `"what's next today?"` and replies via OpenCode bridge
+- [x] Telegram bot receives `"what's next today?"` and replies via OpenCode bridge
 - [ ] Otto can proactively push a Telegram alert for overdue/high-priority item
 - [ ] (Optional) Overdue escalation via `ntfy` works without spam
 

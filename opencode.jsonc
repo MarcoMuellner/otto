@@ -74,31 +74,29 @@
   "permission": "allow",
 
   // ─── MCP Servers ──────────────────────────────────────────────────
-  // Placeholder for Phase 1+ MCP servers. Uncomment as we build them.
+  // Google-first setup:
+  // - Gmail via google-workspace MCP
+  // - Calendar via google-calendar MCP
   "mcp": {
-    // Phase 1: Reminders
-    // "reminders": {
-    //   "type": "local",
-    //   "command": ["node", "/home/marco/.otto/mcp/reminders/dist/index.js"],
-    //   "enabled": true
-    // },
-    //
-    // Phase 2: Obsidian notes (community MCP server)
-    // "obsidian": {
-    //   "type": "local",
-    //   "command": ["npx", "@smithery/cli", "run", "@smithery/obsidian-mcp"],
-    //   "environment": {
-    //     "OBSIDIAN_VAULT_PATH": "/home/marco/Obsidian"
-    //   },
-    //   "enabled": true
-    // },
-    //
-    // Phase 3: Google Calendar
-    // "gcal": {
-    //   "type": "local",
-    //   "command": ["npx", "@anthropic/google-calendar-mcp"],
-    //   "enabled": true
-    // }
+    "gmail": {
+      "type": "local",
+      "command": ["npx", "-y", "@dguido/google-workspace-mcp"],
+      "environment": {
+        "GOOGLE_CLIENT_ID": "{env:GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "{env:GOOGLE_CLIENT_SECRET}",
+        "GOOGLE_WORKSPACE_SERVICES": "gmail"
+      },
+      "enabled": true
+    },
+    "gcal": {
+      "type": "local",
+      "command": ["npx", "-y", "@cocal/google-calendar-mcp"],
+      "environment": {
+        "GOOGLE_OAUTH_CREDENTIALS": "{env:GOOGLE_OAUTH_CREDENTIALS}",
+        "ENABLED_TOOLS": "list-calendars,list-events,search-events,get-event,get-freebusy,get-current-time,create-event,update-event,delete-event,respond-to-event"
+      },
+      "enabled": true
+    }
   },
 
   // ─── Misc ─────────────────────────────────────────────────────────
