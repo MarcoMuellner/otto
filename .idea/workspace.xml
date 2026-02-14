@@ -18,9 +18,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="19739daf-2608-42db-91f3-0325d45e8272" name="Changes" comment="feat: replace Anthropic models with OpenAI GPT-5.3 Codex and update config deployment&#10;&#10;- Replaced Anthropic models (`claude-sonnet-4-5` and `claude-haiku-4-5`) with OpenAI GPT-5.3 Codex in all configurations.&#10;- Enhanced Otto script to deploy `opencode.jsonc` and related agent files to project-level config directory.&#10;- Adjusted plugin memory storage to use `.opencode/memory/` for project-level isolation.">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-    </list>
+    <list default="true" id="19739daf-2608-42db-91f3-0325d45e8272" name="Changes" comment="feat: add comprehensive architecture and deployment plan for Otto&#10;&#10;- Introduced `PLAN.md` with detailed architecture, phases, file structure, and deployment steps for Otto.&#10;- Documented technology choices, project directory conventions, and key design decisions.&#10;- Outlined future phases and backlog for extending Otto's capabilities, including reminders, notes, and calendar integration." />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -136,7 +134,7 @@
       <option name="presentableId" value="Default" />
       <updated>1769695092920</updated>
       <workItem from="1769695093998" duration="24789000" />
-      <workItem from="1771077813822" duration="2815000" />
+      <workItem from="1771077813822" duration="3455000" />
     </task>
     <task id="LOCAL-00001" summary="feat: initialize monorepo with pnpm and basic settings">
       <option name="closed" value="true" />
@@ -394,14 +392,21 @@
       <option name="project" value="LOCAL" />
       <updated>1771080239785</updated>
     </task>
-    <option name="localTasksCounter" value="33" />
+    <task id="LOCAL-00033" summary="feat: add comprehensive architecture and deployment plan for Otto&#10;&#10;- Introduced `PLAN.md` with detailed architecture, phases, file structure, and deployment steps for Otto.&#10;- Documented technology choices, project directory conventions, and key design decisions.&#10;- Outlined future phases and backlog for extending Otto's capabilities, including reminders, notes, and calendar integration.">
+      <option name="closed" value="true" />
+      <created>1771081427441</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1771081427441</updated>
+    </task>
+    <option name="localTasksCounter" value="34" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="feat: implement Fastify server with auth plugin and secured API routes&#10;&#10;- Added `authPlugin` for token-based authentication.&#10;- Created `securedApiPlugin` for secured routes like `/api/ping`.&#10;- Exposed `/health` as a public route.&#10;- Included tests covering authentication and route access." />
     <MESSAGE value="feat: extend server with mDNS discovery, OpenAPI docs, and WebSocket support&#10;&#10;- Added `discovery.ts` to enable mDNS for local server discovery via `bonjour-service`.&#10;- Integrated OpenAPI documentation with Swagger and Swagger UI in `openapi.ts`.&#10;- Implemented WebSocket plugin for real-time communication with token-based authentication.&#10;- Updated `app.ts` and other components to register and configure the new features.&#10;- Added comprehensive unit tests for discovery, OpenAPI, WebSocket, and utility functions.&#10;- Installed new dependencies, including `@fastify/swagger`, `@fastify/websocket`, and `bonjour-service`." />
     <MESSAGE value="feat: add bootstrap function to initialize server and discovery services&#10;&#10;- Introduced `bootstrap.ts` to start the server and mDNS-based service discovery.&#10;- Added `BootstrapOptions` and `ServerRuntime` interfaces to structure startup and shutdown processes.&#10;- Created unit tests in `bootstrap.test.ts` to validate server initialization and graceful shutdown." />
     <MESSAGE value="feat: add `startServer` function with defaults and unit tests&#10;&#10;- Introduced `startServer` function to initialize the server with default host and port settings.&#10;- Created `index.test.ts` with unit tests to verify server startup behavior and configuration." />
@@ -426,6 +431,7 @@
     <MESSAGE value="feat: add CLI chat entry point with agent integration&#10;&#10;- Introduced `chat.ts` as the CLI entry point for interacting with the Otto agent.&#10;- Added `createCliAgent` to streamline LangChain model integration, conversation history, and tool handling.&#10;- Integrated user input parsing, state persistence with `MemorySaver`, and interactive terminal commands.&#10;- Updated tests to cover `createCliAgent` functionality and CLI-specific configurations.&#10;- Modified `package.json` to include a script for running the new CLI chat feature." />
     <MESSAGE value="chore: remove deprecated `otto-requirements.md` and `otto-tech-stack.md`&#10;&#10;- Deleted outdated `otto-requirements.md` and `otto-tech-stack.md` documents from the repository.&#10;- These files are no longer relevant as their content has been integrated into other parts of the documentation or workflows." />
     <MESSAGE value="feat: replace Anthropic models with OpenAI GPT-5.3 Codex and update config deployment&#10;&#10;- Replaced Anthropic models (`claude-sonnet-4-5` and `claude-haiku-4-5`) with OpenAI GPT-5.3 Codex in all configurations.&#10;- Enhanced Otto script to deploy `opencode.jsonc` and related agent files to project-level config directory.&#10;- Adjusted plugin memory storage to use `.opencode/memory/` for project-level isolation." />
-    <option name="LAST_COMMIT_MESSAGE" value="feat: replace Anthropic models with OpenAI GPT-5.3 Codex and update config deployment&#10;&#10;- Replaced Anthropic models (`claude-sonnet-4-5` and `claude-haiku-4-5`) with OpenAI GPT-5.3 Codex in all configurations.&#10;- Enhanced Otto script to deploy `opencode.jsonc` and related agent files to project-level config directory.&#10;- Adjusted plugin memory storage to use `.opencode/memory/` for project-level isolation." />
+    <MESSAGE value="feat: add comprehensive architecture and deployment plan for Otto&#10;&#10;- Introduced `PLAN.md` with detailed architecture, phases, file structure, and deployment steps for Otto.&#10;- Documented technology choices, project directory conventions, and key design decisions.&#10;- Outlined future phases and backlog for extending Otto's capabilities, including reminders, notes, and calendar integration." />
+    <option name="LAST_COMMIT_MESSAGE" value="feat: add comprehensive architecture and deployment plan for Otto&#10;&#10;- Introduced `PLAN.md` with detailed architecture, phases, file structure, and deployment steps for Otto.&#10;- Documented technology choices, project directory conventions, and key design decisions.&#10;- Outlined future phases and backlog for extending Otto's capabilities, including reminders, notes, and calendar integration." />
   </component>
 </project>
