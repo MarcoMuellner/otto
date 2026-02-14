@@ -204,9 +204,12 @@ if [[ "$PLATFORM" == "macos" ]]; then
     <string>${PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>-lc</string>
-        <string>${opencode_path} serve --port ${OTTO_PORT} --hostname ${OTTO_HOSTNAME}</string>
+        <string>${opencode_path}</string>
+        <string>serve</string>
+        <string>--port</string>
+        <string>${OTTO_PORT}</string>
+        <string>--hostname</string>
+        <string>${OTTO_HOSTNAME}</string>
     </array>
     <key>WorkingDirectory</key>
     <string>${OTTO_HOME}</string>
@@ -221,6 +224,13 @@ if [[ "$PLATFORM" == "macos" ]]; then
     <string>${OTTO_LOG_DIR}/otto.log</string>
     <key>StandardErrorPath</key>
     <string>${OTTO_LOG_DIR}/otto.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OTTO_HOME</key>
+        <string>${OTTO_HOME}</string>
+        <key>PATH</key>
+        <string>${PATH}</string>
+    </dict>
 </dict>
 </plist>
 EOF
@@ -287,10 +297,12 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -lc '${opencode_path} serve --port ${OTTO_PORT} --hostname ${OTTO_HOSTNAME}'
+ExecStart=${opencode_path} serve --port ${OTTO_PORT} --hostname ${OTTO_HOSTNAME}
 WorkingDirectory=${OTTO_HOME}
 Restart=on-failure
 RestartSec=5
+Environment=OTTO_HOME=${OTTO_HOME}
+Environment=PATH=${PATH}
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=otto
@@ -316,6 +328,8 @@ EOF
   }
 
   svc_restart() {
+    svc_install "$(command -v opencode)"
+    systemctl --user daemon-reload
     systemctl --user restart "$OTTO_SERVICE_NAME"
   }
 
