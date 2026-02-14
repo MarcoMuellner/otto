@@ -431,6 +431,29 @@ EOF
   success "  Config written"
   echo ""
 
+  # Bridge setup (interactive wizard)
+  if bridge_requested; then
+    if command -v opencode-telegram-bridge >/dev/null 2>&1; then
+      if bridge_service_installed; then
+        info "Telegram bridge appears configured; skipping bridge setup wizard."
+        info "Use 'otto bridge-setup' to reconfigure it."
+      else
+        info "Configuring Telegram bridge..."
+        info "You'll be prompted for TELEGRAM_BOT_TOKEN and TELEGRAM_ALLOWED_USER_ID."
+        bridge_setup
+      fi
+      echo ""
+    else
+      warn "Telegram bridge is enabled but 'opencode-telegram-bridge' is not installed."
+      warn "Install with: npm install -g opencode-telegram-bridge"
+      warn "Then run: otto bridge-setup"
+      echo ""
+    fi
+  else
+    info "Telegram bridge setup skipped (OTTO_BRIDGE_ENABLED=0)."
+    echo ""
+  fi
+
   # Summary
   echo "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo "${BOLD}  Otto setup complete! (${PLATFORM})${NC}"
@@ -438,9 +461,8 @@ EOF
   echo ""
   echo "  Next steps:"
   echo "    1. Start Otto:       otto start"
-  echo "    2. Setup bridge:     otto bridge-setup"
-  echo "    3. On your laptop:   alias otto=\"opencode attach http://$(hostname):${OTTO_PORT}\""
-  echo "    4. Try it:           otto"
+  echo "    2. On your laptop:   alias otto=\"opencode attach http://$(hostname):${OTTO_PORT}\""
+  echo "    3. Try it:           otto"
   echo ""
 }
 
