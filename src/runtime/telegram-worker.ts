@@ -30,10 +30,10 @@ const waitForShutdownSignal = async (): Promise<NodeJS.Signals> => {
  */
 export const runTelegramWorker = async (logger: Logger): Promise<void> => {
   const config = resolveTelegramWorkerConfig()
-  const worker = startTelegramWorker(logger, config)
+  const worker = await startTelegramWorker(logger, config)
 
   const signal = await waitForShutdownSignal()
   logger.info({ signal }, "Telegram worker shutdown signal received")
 
-  worker.stop()
+  await worker.stop()
 }

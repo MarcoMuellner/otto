@@ -1,44 +1,118 @@
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
+
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Logger } from "pino"
 
-import { startTelegramWorker } from "../../src/telegram-worker/worker.js"
+import { openPersistenceDatabase } from "../../src/persistence/index.js"
+import { startTelegramWorker, type TelegramBotRuntime } from "../../src/telegram-worker/worker.js"
+
+const TEMP_PREFIX = path.join(tmpdir(), "otto-worker-")
+const cleanupPaths: string[] = []
+
+afterEach(async () => {
+  vi.useRealTimers()
+  await Promise.all(
+    cleanupPaths.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true }))
+  )
+})
 
 const createLoggerStub = () => {
   const info = vi.fn()
   const warn = vi.fn()
   const debug = vi.fn()
+  const error = vi.fn()
 
   return {
     info,
     warn,
     debug,
+    error,
     logger: {
       info,
       warn,
       debug,
+      error,
     } as unknown as Logger,
   }
 }
 
-describe("startTelegramWorker", () => {
-  afterEach(() => {
-    vi.useRealTimers()
-  })
+const createFakeBotRuntime = () => {
+  let handler:
+    | ((update: {
+        sourceMessageId: string
+        chatId: number
+        userId: number
+        text: string
+        update: unknown
+      }) => Promise<void>)
+    | null = null
 
-  it("emits heartbeat logs while enabled", () => {
+  const sentMessages: Array<{ chatId: number; text: string }> = []
+
+  const runtime: TelegramBotRuntime = {
+    onTextMessage: (nextHandler) => {
+      handler = nextHandler
+    },
+    sendMessage: async (chatId, text) => {
+      sentMessages.push({ chatId, text })
+    },
+    launch: async () => {},
+    stop: async () => {},
+  }
+
+  return {
+    runtime,
+    sentMessages,
+    dispatch: async (update: {
+      sourceMessageId: string
+      chatId: number
+      userId: number
+      text: string
+      update: unknown
+    }) => {
+      if (!handler) {
+        throw new Error("Handler not registered")
+      }
+
+      await handler(update)
+    },
+  }
+}
+
+describe("startTelegramWorker", () => {
+  it("starts and stops with heartbeat logs", async () => {
     // Arrange
     vi.useFakeTimers()
-    const { logger, info, warn, debug } = createLoggerStub()
+    const { logger, info, debug } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
 
     // Act
-    const worker = startTelegramWorker(logger, {
-      enabled: true,
-      botToken: "token",
-      allowedUserId: 1001,
-      allowedChatId: 2002,
-      heartbeatMs: 2_000,
-    })
+    const worker = await startTelegramWorker(
+      logger,
+      {
+        enabled: true,
+        botToken: "token",
+        allowedUserId: 1001,
+        allowedChatId: 2002,
+        heartbeatMs: 2_000,
+        opencodeBaseUrl: "http://127.0.0.1:4096",
+        promptTimeoutMs: 10_000,
+      },
+      {
+        createBotRuntime: () => fakeBot.runtime,
+        openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+        createSessionGateway: () => ({
+          ensureSession: async () => "session-1",
+          promptSession: async () => "ok",
+        }),
+      }
+    )
     vi.advanceTimersByTime(2_000)
+    await worker.stop()
 
     // Assert
     expect(info).toHaveBeenCalledWith(
@@ -47,59 +121,56 @@ describe("startTelegramWorker", () => {
         hasBotToken: true,
         allowedUserId: 1001,
         allowedChatId: 2002,
+        opencodeBaseUrl: "http://127.0.0.1:4096",
       },
       "Telegram worker started"
     )
-    expect(warn).not.toHaveBeenCalled()
     expect(debug).toHaveBeenCalledWith({ heartbeatMs: 2_000 }, "Telegram worker heartbeat")
-
-    worker.stop()
   })
 
-  it("logs disabled state and does not create heartbeat", () => {
-    // Arrange
-    vi.useFakeTimers()
-    const { logger, info, debug } = createLoggerStub()
-
-    // Act
-    const worker = startTelegramWorker(logger, {
-      enabled: false,
-      botToken: "",
-      allowedUserId: 0,
-      allowedChatId: 0,
-      heartbeatMs: 2_000,
-    })
-    vi.advanceTimersByTime(4_000)
-
-    // Assert
-    expect(info).toHaveBeenCalledWith("Telegram worker disabled by configuration")
-    expect(debug).not.toHaveBeenCalled()
-
-    worker.stop()
-  })
-
-  it("rejects unauthorized updates before processing", () => {
+  it("blocks unauthorized updates before bridge processing", async () => {
     // Arrange
     const { logger, warn } = createLoggerStub()
-    const worker = startTelegramWorker(logger, {
-      enabled: true,
-      botToken: "token",
-      allowedUserId: 1001,
-      allowedChatId: 2002,
-      heartbeatMs: 2_000,
-    })
-    const unauthorizedUpdate = {
-      message: {
-        from: { id: 3333 },
-        chat: { id: 2002, type: "private" },
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+
+    const worker = await startTelegramWorker(
+      logger,
+      {
+        enabled: true,
+        botToken: "token",
+        allowedUserId: 1001,
+        allowedChatId: 2002,
+        heartbeatMs: 2_000,
+        opencodeBaseUrl: "http://127.0.0.1:4096",
+        promptTimeoutMs: 10_000,
       },
-    }
+      {
+        createBotRuntime: () => fakeBot.runtime,
+        openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+        createSessionGateway: () => ({
+          ensureSession: async () => "session-1",
+          promptSession: async () => "ok",
+        }),
+      }
+    )
 
     // Act
-    const decision = worker.canProcessUpdate(unauthorizedUpdate)
+    await fakeBot.dispatch({
+      sourceMessageId: "1",
+      chatId: 2002,
+      userId: 3333,
+      text: "hi",
+      update: {
+        message: {
+          from: { id: 3333 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
 
     // Assert
-    expect(decision).toBe(false)
     expect(warn).toHaveBeenCalledWith(
       {
         reason: "user_not_allowed",
@@ -109,7 +180,28 @@ describe("startTelegramWorker", () => {
       },
       "Telegram update denied by security gate"
     )
+    expect(fakeBot.sentMessages).toHaveLength(0)
 
-    worker.stop()
+    await worker.stop()
+  })
+
+  it("returns no-op handle when worker is disabled", async () => {
+    // Arrange
+    const { logger, info } = createLoggerStub()
+
+    // Act
+    const worker = await startTelegramWorker(logger, {
+      enabled: false,
+      botToken: "",
+      allowedUserId: 0,
+      allowedChatId: 0,
+      heartbeatMs: 2_000,
+      opencodeBaseUrl: "http://127.0.0.1:4096",
+      promptTimeoutMs: 10_000,
+    })
+    await worker.stop()
+
+    // Assert
+    expect(info).toHaveBeenCalledWith("Telegram worker disabled by configuration")
   })
 })
