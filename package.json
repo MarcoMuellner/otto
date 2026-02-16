@@ -1,0 +1,28 @@
+{
+  "name": "otto",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint src",
+    "lint:fix": "oxlint src --fix",
+    "format": "prettier --write \"src/**/*.ts\" package.json tsconfig.json .prettierrc.json .oxlintrc.json",
+    "format:check": "prettier --check \"src/**/*.ts\" package.json tsconfig.json .prettierrc.json .oxlintrc.json",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "oxlint": "^1.47.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
