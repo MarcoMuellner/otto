@@ -99,7 +99,7 @@ install_release() {
 
 run_setup() {
   require_cmd node
-  node "${CURRENT_LINK}/dist/index.mjs" setup
+  NODE_ENV=production node "${CURRENT_LINK}/dist/index.mjs" setup
 }
 
 install_service_linux() {
@@ -123,6 +123,7 @@ Restart=on-failure
 RestartSec=5
 Environment=HOME=${HOME}
 Environment=PATH=${PATH}
+Environment=NODE_ENV=production
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=otto
@@ -170,6 +171,8 @@ install_service_macos() {
     <string>${HOME}</string>
     <key>PATH</key>
     <string>${PATH}</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
   </dict>
   <key>StandardOutPath</key>
   <string>${HOME}/.local/share/otto/logs/service.log</string>
