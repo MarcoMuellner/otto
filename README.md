@@ -25,6 +25,26 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - The file is auto-created with defaults if it does not exist
 - Runtime behavior is file-first: edit this config to customize host/port/workspace
 
+## Install (Release Artifact)
+
+- Stable install (recommended):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | bash -s -- --repo <owner>/<repo>
+```
+
+- Nightly install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | bash -s -- --repo <owner>/<repo> --nightly
+```
+
+- Installed control binary: `ottoctl`
+  - `ottoctl start`
+  - `ottoctl stop`
+  - `ottoctl update` (defaults to latest stable)
+  - `ottoctl update --nightly` (latest nightly)
+
 ## Scripts
 
 - `pnpm run setup`: create config/workspace and deploy OpenCode assets into `ottoHome`

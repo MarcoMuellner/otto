@@ -1,0 +1,330 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OTTO_ROOT="${OTTO_ROOT:-$HOME/.local/share/otto}"
+RELEASES_DIR="${OTTO_ROOT}/releases"
+CURRENT_LINK="${OTTO_ROOT}/current"
+INSTALL_META="${OTTO_ROOT}/install.env"
+BIN_DIR="${OTTO_BIN_DIR:-$HOME/.local/bin}"
+SERVICE_NAME="otto"
+PLIST_LABEL="com.otto.assistant"
+PLIST_FILE="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
+
+BLUE=$'\033[0;34m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[0;33m'
+RED=$'\033[0;31m'
+NC=$'\033[0m'
+
+info() { echo "${BLUE}[ottoctl]${NC} $*"; }
+success() { echo "${GREEN}[ottoctl]${NC} $*"; }
+warn() { echo "${YELLOW}[ottoctl]${NC} $*"; }
+error() { echo "${RED}[ottoctl]${NC} $*" >&2; }
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    error "Required command '$1' not found"
+    exit 1
+  fi
+}
+
+detect_platform() {
+  case "$(uname -s)" in
+    Linux) echo "linux" ;;
+    Darwin) echo "macos" ;;
+    *)
+      error "Unsupported platform: $(uname -s)"
+      exit 1
+      ;;
+  esac
+}
+
+load_install_meta() {
+  if [[ -f "${INSTALL_META}" ]]; then
+    # shellcheck disable=SC1090
+    source "${INSTALL_META}"
+  fi
+}
+
+resolve_repo() {
+  local explicit_repo="${1:-}"
+  if [[ -n "${explicit_repo}" ]]; then
+    echo "${explicit_repo}"
+    return
+  fi
+
+  if [[ -n "${OTTO_GITHUB_REPO:-}" ]]; then
+    echo "${OTTO_GITHUB_REPO}"
+    return
+  fi
+
+  error "GitHub repo not configured. Set OTTO_GITHUB_REPO or pass --repo <owner/repo>."
+  exit 1
+}
+
+fetch_release_info() {
+  local repo="$1"
+  local channel="$2"
+
+  node "${CURRENT_LINK}/scripts/resolve-release.mjs" "${repo}" "${channel}"
+}
+
+install_release() {
+  local tag="$1"
+  local artifact_url="$2"
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "${tmp_dir}"' RETURN
+
+  mkdir -p "${RELEASES_DIR}" "${BIN_DIR}"
+
+  info "Downloading ${tag}..."
+  curl -fsSL "${artifact_url}" -o "${tmp_dir}/otto.tgz"
+
+  local release_dir="${RELEASES_DIR}/${tag}"
+  rm -rf "${release_dir}"
+  mkdir -p "${release_dir}"
+  tar -xzf "${tmp_dir}/otto.tgz" -C "${release_dir}"
+
+  ln -sfn "${release_dir}" "${CURRENT_LINK}"
+
+  if [[ -f "${CURRENT_LINK}/bin/ottoctl" ]]; then
+    cp "${CURRENT_LINK}/bin/ottoctl" "${BIN_DIR}/ottoctl"
+    chmod +x "${BIN_DIR}/ottoctl"
+  fi
+
+  success "Installed ${tag}"
+}
+
+run_setup() {
+  require_cmd node
+  node "${CURRENT_LINK}/dist/index.js" setup
+}
+
+install_service_linux() {
+  local node_path
+  node_path="$(command -v node)"
+  local user_dir="${HOME}/.config/systemd/user"
+  local service_file="${user_dir}/${SERVICE_NAME}.service"
+
+  mkdir -p "${user_dir}"
+
+  cat > "${service_file}" <<EOF
+[Unit]
+Description=Otto Personal Assistant
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${node_path} ${CURRENT_LINK}/dist/index.js serve
+WorkingDirectory=${HOME}
+Restart=on-failure
+RestartSec=5
+Environment=HOME=${HOME}
+Environment=PATH=${PATH}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=otto
+
+[Install]
+WantedBy=default.target
+EOF
+
+  systemctl --user daemon-reload
+  systemctl --user enable "${SERVICE_NAME}" >/dev/null
+
+  if command -v loginctl >/dev/null 2>&1; then
+    loginctl enable-linger "$(whoami)" >/dev/null 2>&1 || true
+  fi
+}
+
+install_service_macos() {
+  local node_path
+  node_path="$(command -v node)"
+
+  mkdir -p "${HOME}/Library/LaunchAgents"
+
+  cat > "${PLIST_FILE}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${PLIST_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${node_path}</string>
+    <string>${CURRENT_LINK}/dist/index.js</string>
+    <string>serve</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${HOME}</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>PATH</key>
+    <string>${PATH}</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>${HOME}/.local/share/otto/logs/service.log</string>
+  <key>StandardErrorPath</key>
+  <string>${HOME}/.local/share/otto/logs/service.err.log</string>
+</dict>
+</plist>
+EOF
+}
+
+install_service() {
+  local platform
+  platform="$(detect_platform)"
+
+  mkdir -p "${OTTO_ROOT}/logs"
+
+  if [[ "${platform}" == "linux" ]]; then
+    install_service_linux
+  else
+    install_service_macos
+  fi
+}
+
+start_service() {
+  local platform
+  platform="$(detect_platform)"
+
+  if [[ "${platform}" == "linux" ]]; then
+    systemctl --user start "${SERVICE_NAME}"
+  else
+    launchctl bootout "gui/$(id -u)" "${PLIST_FILE}" >/dev/null 2>&1 || true
+    launchctl bootstrap "gui/$(id -u)" "${PLIST_FILE}"
+    launchctl kickstart -k "gui/$(id -u)/${PLIST_LABEL}"
+  fi
+}
+
+stop_service() {
+  local platform
+  platform="$(detect_platform)"
+
+  if [[ "${platform}" == "linux" ]]; then
+    systemctl --user stop "${SERVICE_NAME}"
+  else
+    launchctl bootout "gui/$(id -u)" "${PLIST_FILE}" >/dev/null 2>&1 || true
+  fi
+}
+
+restart_service() {
+  stop_service || true
+  start_service
+}
+
+write_install_meta() {
+  local repo="$1"
+  mkdir -p "${OTTO_ROOT}"
+  cat > "${INSTALL_META}" <<EOF
+OTTO_GITHUB_REPO=${repo}
+OTTO_ROOT=${OTTO_ROOT}
+OTTO_BIN_DIR=${BIN_DIR}
+EOF
+}
+
+cmd_update() {
+  local channel="stable"
+  local repo_override=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --nightly)
+        channel="nightly"
+        shift
+        ;;
+      --repo)
+        repo_override="${2:-}"
+        shift 2
+        ;;
+      *)
+        error "Unknown option for update: $1"
+        exit 1
+        ;;
+    esac
+  done
+
+  local repo
+  repo="$(resolve_repo "${repo_override}")"
+
+  local release_info
+  release_info="$(fetch_release_info "${repo}" "${channel}")"
+  local tag artifact_url artifact_name
+  tag="$(printf '%s\n' "${release_info}" | sed -n '1p')"
+  artifact_url="$(printf '%s\n' "${release_info}" | sed -n '2p')"
+  artifact_name="$(printf '%s\n' "${release_info}" | sed -n '3p')"
+
+  info "Using artifact ${artifact_name} (${tag})"
+
+  install_release "${tag}" "${artifact_url}"
+  write_install_meta "${repo}"
+  run_setup
+  install_service
+  restart_service
+
+  success "Otto updated to ${tag}"
+}
+
+cmd_start() {
+  install_service
+  start_service
+  success "Otto service started"
+}
+
+cmd_stop() {
+  stop_service
+  success "Otto service stopped"
+}
+
+cmd_help() {
+  cat <<'EOF'
+ottoctl - Otto server control
+
+Usage:
+  ottoctl start
+  ottoctl stop
+  ottoctl update [--nightly] [--repo owner/repo]
+EOF
+}
+
+main() {
+  require_cmd curl
+  require_cmd tar
+  require_cmd node
+
+  load_install_meta
+
+  case "${1:-help}" in
+    start)
+      shift
+      cmd_start "$@"
+      ;;
+    stop)
+      shift
+      cmd_stop "$@"
+      ;;
+    update)
+      shift
+      cmd_update "$@"
+      ;;
+    help|--help|-h)
+      cmd_help
+      ;;
+    *)
+      error "Unknown command: $1"
+      cmd_help
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

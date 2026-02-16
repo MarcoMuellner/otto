@@ -72,7 +72,14 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" dist package.json README.md
+          chmod +x bin/ottoctl install.sh
+          tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" \
+            dist \
+            bin/ottoctl \
+            scripts/resolve-release.mjs \
+            install.sh \
+            package.json \
+            README.md
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
