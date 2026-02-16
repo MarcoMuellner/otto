@@ -9,6 +9,7 @@ BIN_DIR="${OTTO_BIN_DIR:-$HOME/.local/bin}"
 SERVICE_NAME="otto"
 PLIST_LABEL="com.otto.assistant"
 PLIST_FILE="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
+DEFAULT_REPO="MarcoMuellner/otto"
 
 BLUE=$'\033[0;34m'
 GREEN=$'\033[0;32m'
@@ -58,8 +59,7 @@ resolve_repo() {
     return
   fi
 
-  error "GitHub repo not configured. Set OTTO_GITHUB_REPO or pass --repo <owner/repo>."
-  exit 1
+  echo "${DEFAULT_REPO}"
 }
 
 fetch_release_info() {

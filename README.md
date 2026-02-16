@@ -30,13 +30,19 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Stable install (recommended):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | bash -s -- --repo <owner>/<repo>
+curl -fsSL https://raw.githubusercontent.com/MarcoMuellner/otto/main/install.sh | bash
 ```
 
 - Nightly install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | bash -s -- --repo <owner>/<repo> --nightly
+curl -fsSL https://raw.githubusercontent.com/MarcoMuellner/otto/main/install.sh | bash -s -- --nightly
+```
+
+- Installing from a fork/other repository (optional):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | bash -s -- --repo <owner>/<repo>
 ```
 
 - Installed control binary: `ottoctl`
@@ -44,6 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl stop`
   - `ottoctl update` (defaults to latest stable)
   - `ottoctl update --nightly` (latest nightly)
+  - `ottoctl update --repo <owner>/<repo>` (optional override for custom repo)
 
 ## Scripts
 

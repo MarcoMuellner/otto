@@ -6,6 +6,7 @@ RELEASES_DIR="${OTTO_ROOT}/releases"
 CURRENT_LINK="${OTTO_ROOT}/current"
 BIN_DIR="${OTTO_BIN_DIR:-$HOME/.local/bin}"
 INSTALL_META="${OTTO_ROOT}/install.env"
+DEFAULT_REPO="MarcoMuellner/otto"
 
 BLUE=$'\033[0;34m'
 GREEN=$'\033[0;32m'
@@ -67,8 +68,8 @@ resolve_repo() {
   local repo="${1:-}"
 
   if [[ -z "${repo}" ]]; then
-    error "Missing --repo <owner/repo>."
-    exit 1
+    echo "${DEFAULT_REPO}"
+    return
   fi
 
   echo "${repo}"
