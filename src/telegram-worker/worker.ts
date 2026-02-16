@@ -1,8 +1,14 @@
 import type { Logger } from "pino"
 
 import type { TelegramWorkerConfig } from "./config.js"
+import {
+  evaluateTelegramAccess,
+  extractTelegramAccessContext,
+  logDeniedTelegramAccess,
+} from "./security.js"
 
 export type TelegramWorkerHandle = {
+  canProcessUpdate: (update: unknown) => boolean
   stop: () => void
 }
 
@@ -18,9 +24,22 @@ export const startTelegramWorker = (
   logger: Logger,
   config: TelegramWorkerConfig
 ): TelegramWorkerHandle => {
+  const canProcessUpdate = (update: unknown): boolean => {
+    const context = extractTelegramAccessContext(update)
+    const decision = evaluateTelegramAccess(context, {
+      allowedUserId: config.allowedUserId,
+      allowedChatId: config.allowedChatId,
+    })
+
+    logDeniedTelegramAccess(logger, decision, context)
+
+    return decision.allowed
+  }
+
   if (!config.enabled) {
     logger.info("Telegram worker disabled by configuration")
     return {
+      canProcessUpdate,
       stop: () => {
         logger.info("Telegram worker stop requested while disabled")
       },
@@ -31,19 +50,18 @@ export const startTelegramWorker = (
     {
       heartbeatMs: config.heartbeatMs,
       hasBotToken: Boolean(config.botToken),
+      allowedUserId: config.allowedUserId,
+      allowedChatId: config.allowedChatId,
     },
     "Telegram worker started"
   )
-
-  if (!config.botToken) {
-    logger.warn("Telegram worker running without TELEGRAM_BOT_TOKEN")
-  }
 
   const heartbeatTimer = setInterval(() => {
     logger.debug({ heartbeatMs: config.heartbeatMs }, "Telegram worker heartbeat")
   }, config.heartbeatMs)
 
   return {
+    canProcessUpdate,
     stop: () => {
       clearInterval(heartbeatTimer)
       logger.info("Telegram worker stopped")
