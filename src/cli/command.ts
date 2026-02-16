@@ -1,8 +1,8 @@
 import { Command, CommanderError, InvalidArgumentError } from "commander"
 
-export type OttoCommand = "setup" | "serve"
+export type OttoCommand = "setup" | "serve" | "telegram-worker"
 
-const VALID_COMMANDS = ["setup", "serve"] as const
+const VALID_COMMANDS = ["setup", "serve", "telegram-worker"] as const
 
 /**
  * Centralizes command validation in one parser so runtime entry behavior stays predictable

@@ -7,3 +7,4 @@ coverage/
 .opencode
 .DS_Store
 .githuman
+/opencode-telegram-bridge-main/

@@ -11,6 +11,7 @@
     "dev": "tsx src/index.ts serve",
     "setup": "tsx src/index.ts setup",
     "serve": "tsx src/index.ts serve",
+    "telegram-worker": "tsx src/index.ts telegram-worker",
     "version:sync": "node scripts/set-build-version.mjs",
     "build": "tsdown && node scripts/copy-assets.mjs",
     "build:local": "pnpm run version:sync && pnpm run build",
