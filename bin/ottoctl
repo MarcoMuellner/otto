@@ -75,7 +75,7 @@ install_release() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "${tmp_dir}"' RETURN
+  trap "rm -rf \"${tmp_dir}\"" RETURN
 
   mkdir -p "${RELEASES_DIR}" "${BIN_DIR}"
 

@@ -82,7 +82,7 @@ fetch_release_info() {
   local helper_url="https://raw.githubusercontent.com/${repo}/${install_ref}/scripts/resolve-release.mjs"
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "${tmp_dir}"' RETURN
+  trap "rm -rf \"${tmp_dir}\"" RETURN
 
   curl -fsSL "${helper_url}" -o "${tmp_dir}/resolve-release.mjs"
   node "${tmp_dir}/resolve-release.mjs" "${repo}" "${channel}"
@@ -94,7 +94,7 @@ install_release() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "${tmp_dir}"' RETURN
+  trap "rm -rf \"${tmp_dir}\"" RETURN
 
   mkdir -p "${RELEASES_DIR}"
 
