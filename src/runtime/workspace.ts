@@ -1,9 +1,10 @@
 import path from "node:path"
-import { access, copyFile, mkdir } from "node:fs/promises"
+import { access, copyFile, cp, mkdir } from "node:fs/promises"
 import { constants } from "node:fs"
 
 const WORKSPACE_SUBDIRECTORIES = ["data", "inbox", "scripts", "secrets", "logs"] as const
 const ASSET_FILES = ["opencode.jsonc", "AGENTS.md"] as const
+const ASSET_DIRECTORIES = [".opencode"] as const
 
 /**
  * Resolves assets relative to the active runtime entry so setup can locate bundled assets
@@ -66,6 +67,16 @@ export const deployWorkspaceAssets = async (
 
     await access(sourcePath, constants.F_OK)
     await copyFile(sourcePath, targetPath)
+
+    deployedFiles.push(targetPath)
+  }
+
+  for (const assetDirectoryName of ASSET_DIRECTORIES) {
+    const sourcePath = path.join(assetDirectory, assetDirectoryName)
+    const targetPath = path.join(ottoHome, assetDirectoryName)
+
+    await access(sourcePath, constants.F_OK)
+    await cp(sourcePath, targetPath, { recursive: true, force: true })
 
     deployedFiles.push(targetPath)
   }

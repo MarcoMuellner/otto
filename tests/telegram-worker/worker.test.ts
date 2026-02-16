@@ -130,7 +130,6 @@ describe("startTelegramWorker", () => {
         allowedUserId: 1001,
         allowedChatId: 2002,
         opencodeBaseUrl: "http://127.0.0.1:4096",
-        outboundTool: "queue_telegram_message",
       },
       "Telegram worker started"
     )

@@ -9,7 +9,6 @@ import type { TelegramWorkerConfig } from "./config.js"
 import { createInboundBridge } from "./inbound.js"
 import type { OpencodeSessionGateway } from "./opencode.js"
 import { createOutboundQueueProcessor } from "./outbound-queue.js"
-import { createQueueTelegramMessageTool } from "./outbound-tool.js"
 import {
   evaluateTelegramAccess,
   extractTelegramAccessContext,
@@ -113,20 +112,6 @@ export const startTelegramWorker = async (
   const bot =
     dependencies.createBotRuntime?.(config.botToken) ?? createTelegrafRuntime(config.botToken)
   const inFlightChats = new Set<number>()
-  const queueTelegramMessageTool = createQueueTelegramMessageTool({
-    logger,
-    outboundMessagesRepository,
-  })
-
-  const gatewayWithToolRegistration = sessionGateway as OpencodeSessionGateway & {
-    registerTools?: (
-      tools: Array<{ name: string; description: string; execute: (input: unknown) => unknown }>
-    ) => Promise<void> | void
-  }
-
-  if (gatewayWithToolRegistration.registerTools) {
-    await gatewayWithToolRegistration.registerTools([queueTelegramMessageTool])
-  }
 
   const bridge = createInboundBridge({
     logger,
@@ -214,7 +199,6 @@ export const startTelegramWorker = async (
       allowedUserId: config.allowedUserId,
       allowedChatId: config.allowedChatId,
       opencodeBaseUrl: config.opencodeBaseUrl,
-      outboundTool: queueTelegramMessageTool.name,
     },
     "Telegram worker started"
   )
