@@ -7,6 +7,12 @@ import type { Logger } from "pino"
 import { ensureOttoConfigFile } from "../config/otto-config.js"
 import { startOpencodeServer } from "../opencode/server.js"
 
+/**
+ * Keeps process lifetime tied to OS signals so the server can shut down cleanly in local
+ * terminals, supervisors, and containerized runtimes.
+ *
+ * @returns First shutdown signal received by the process.
+ */
 const waitForShutdownSignal = async (): Promise<NodeJS.Signals> => {
   return await new Promise((resolve) => {
     const onSignal = (signal: NodeJS.Signals): void => {
@@ -20,6 +26,13 @@ const waitForShutdownSignal = async (): Promise<NodeJS.Signals> => {
   })
 }
 
+/**
+ * Runs Otto in serve mode without mutating installation state, which preserves a clean
+ * boundary between setup-time deployment and runtime execution.
+ *
+ * @param logger Command-scoped logger for runtime telemetry.
+ * @param homeDirectory Optional home override used by tests and embedding.
+ */
 export const runServe = async (logger: Logger, homeDirectory?: string): Promise<void> => {
   const { config, configPath, created } = await ensureOttoConfigFile(homeDirectory)
 

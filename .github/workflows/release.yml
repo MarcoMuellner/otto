@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compute release metadata
+        id: meta
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+            VERSION="${GITHUB_REF_NAME#v}"
+            RELEASE_NAME="Otto ${GITHUB_REF_NAME}"
+            PRERELEASE="false"
+          else
+            TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
+            TAG_NAME="nightly-${TIMESTAMP}-${SHORT_SHA}"
+            PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+            VERSION="${PACKAGE_VERSION}-nightly.${TIMESTAMP}+${SHORT_SHA}"
+            RELEASE_NAME="Otto Nightly ${TIMESTAMP} (${SHORT_SHA})"
+            PRERELEASE="true"
+          fi
+
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Quality checks
+        run: pnpm run check
+
+      - name: Sync build version
+        run: pnpm run version:sync -- "${{ steps.meta.outputs.version }}"
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Package release artifact
+        shell: bash
+        run: |
+          mkdir -p release
+          tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" dist package.json README.md
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag_name }}
+          name: ${{ steps.meta.outputs.release_name }}
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          files: release/*.tgz

@@ -18,6 +18,13 @@ const PRETTY_TRANSPORT: TransportSingleOptions = {
   },
 }
 
+/**
+ * Normalizes runtime environment values so logger behavior is explicit and stable even
+ * when NODE_ENV is unset or loosely configured.
+ *
+ * @param value Optional environment value, defaulting to NODE_ENV.
+ * @returns Runtime environment category used by logger policy.
+ */
 export const resolveRuntimeEnv = (value = process.env.NODE_ENV): RuntimeEnv => {
   if (value === "production") {
     return "production"
@@ -30,6 +37,13 @@ export const resolveRuntimeEnv = (value = process.env.NODE_ENV): RuntimeEnv => {
   return "development"
 }
 
+/**
+ * Centralizes logger option policy so human-friendly development logs and production
+ * structured logs are configured consistently across all Otto processes.
+ *
+ * @param input Optional logger overrides for env, level, and service naming.
+ * @returns Pino logger options tuned for Otto defaults.
+ */
 export const buildLoggerOptions = ({
   env = resolveRuntimeEnv(),
   logLevel,

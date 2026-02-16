@@ -14,6 +14,15 @@ export type SetupResult = {
   directories: string[]
 }
 
+/**
+ * Keeps install/update responsibilities explicit by preparing config, workspace, and assets
+ * in one command, so normal runtime boot can stay side-effect free.
+ *
+ * @param logger Command-scoped logger for setup telemetry.
+ * @param homeDirectory Optional home override used by tests and embedding.
+ * @param assetDirectory Optional asset location override for advanced packaging.
+ * @returns Summary of setup outputs for diagnostics and tests.
+ */
 export const runSetup = async (
   logger: Logger,
   homeDirectory?: string,

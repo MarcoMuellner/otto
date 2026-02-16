@@ -13,6 +13,13 @@ type OpencodeServerHandle = {
   close: () => void
 }
 
+/**
+ * Verifies persisted OpenCode config is syntactically usable before boot so server failures
+ * surface as clear setup errors instead of opaque runtime crashes.
+ *
+ * @param configPath Absolute path to deployed OpenCode config.
+ * @returns Parsed config object used for validity checks.
+ */
 const parseOpencodeConfig = async (configPath: string): Promise<Record<string, unknown>> => {
   const source = await readFile(configPath, "utf8")
 
@@ -29,6 +36,13 @@ const parseOpencodeConfig = async (configPath: string): Promise<Record<string, u
   }
 }
 
+/**
+ * Starts OpenCode through the SDK to keep server lifecycle management centralized in typed
+ * application code rather than shell orchestration.
+ *
+ * @param input Runtime network settings and deployed config location.
+ * @returns Minimal server handle used by Otto runtime control flow.
+ */
 export const startOpencodeServer = async ({
   hostname,
   port,

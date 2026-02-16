@@ -30,7 +30,9 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - `pnpm run setup`: create config/workspace and deploy OpenCode assets into `ottoHome`
 - `pnpm run serve`: run the OpenCode server using deployed workspace assets
 - `pnpm run dev`: run the server from TypeScript sources
+- `pnpm run version:sync`: write `src/version.ts` from explicit value/env/package defaults
 - `pnpm run build`: transpile TypeScript to JavaScript in `dist/` and copy assets
+- `pnpm run build:local`: sync a local dev version and then build
 - `pnpm run start`: run compiled JavaScript server from `dist/`
 - `pnpm run test`: run Vitest once
 - `pnpm run test:watch`: run Vitest in watch mode
@@ -45,6 +47,6 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 pnpm install
 pnpm run setup
 pnpm run check
-pnpm run build
+pnpm run build:local
 pnpm run start
 ```

@@ -6,14 +6,35 @@ import { fileURLToPath } from "node:url"
 const WORKSPACE_SUBDIRECTORIES = ["data", "inbox", "scripts", "secrets", "logs"] as const
 const ASSET_FILES = ["opencode.jsonc", "AGENTS.md"] as const
 
+/**
+ * Resolves asset location from module URL so setup works identically from source and
+ * transpiled builds.
+ *
+ * @param importMetaUrl Module import URL from the caller.
+ * @returns Absolute path to the runtime asset directory.
+ */
 export const resolveAssetDirectory = (importMetaUrl: string): string => {
   return fileURLToPath(new URL("../assets", importMetaUrl))
 }
 
+/**
+ * Keeps workspace structure explicit in one place so setup and tests share the same
+ * directory contract.
+ *
+ * @param ottoHome Otto workspace root path.
+ * @returns Required Otto subdirectory paths.
+ */
 export const getWorkspaceDirectories = (ottoHome: string): string[] => {
   return WORKSPACE_SUBDIRECTORIES.map((directory) => path.join(ottoHome, directory))
 }
 
+/**
+ * Ensures required workspace paths exist ahead of setup operations so follow-up deploy
+ * steps can assume a stable filesystem layout.
+ *
+ * @param ottoHome Otto workspace root path.
+ * @returns Created or verified directory paths.
+ */
 export const ensureWorkspaceDirectories = async (ottoHome: string): Promise<string[]> => {
   const directories = [ottoHome, ...getWorkspaceDirectories(ottoHome)]
 
@@ -22,6 +43,14 @@ export const ensureWorkspaceDirectories = async (ottoHome: string): Promise<stri
   return directories
 }
 
+/**
+ * Deploys shipped assets into Otto home so runtime uses a deterministic local config that
+ * can still be edited by the user after setup.
+ *
+ * @param assetDirectory Directory containing deployable assets.
+ * @param ottoHome Otto workspace root path.
+ * @returns Paths of deployed asset files.
+ */
 export const deployWorkspaceAssets = async (
   assetDirectory: string,
   ottoHome: string

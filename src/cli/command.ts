@@ -4,6 +4,13 @@ export type OttoCommand = "setup" | "serve"
 
 const VALID_COMMANDS = ["setup", "serve"] as const
 
+/**
+ * Centralizes command validation in one parser so runtime entry behavior stays predictable
+ * as Otto grows additional subcommands.
+ *
+ * @param argv Raw user arguments from process argv.
+ * @returns Supported Otto command, defaulting to `serve` for zero-arg startup.
+ */
 export const parseCommand = (argv: string[]): OttoCommand => {
   const parser = new Command()
 
