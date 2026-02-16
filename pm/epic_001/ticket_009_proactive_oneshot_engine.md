@@ -10,16 +10,17 @@ This is the core of proactive behavior: detect what needs attention and communic
 
 ## Scope
 
-- Build one-shot evaluator pipeline:
+- Build one-shot proactive pipeline:
   - gather context (tasks, reminders, pending approvals, overdue items)
-  - ask OpenCode for prioritized outcomes (structured output)
-  - enqueue outbound messages and approval requests as needed
+  - run OpenCode in the same chat session used for inbound messages
+  - use OpenCode tool/plugin calls to enqueue outbound messages and approval requests
 - Add priority tagging (`low`, `normal`, `high`).
 - Respect quiet-hours rules for non-urgent notifications.
 
 ## Non-Goals
 
 - Heartbeat summary generation (separate ticket).
+- No post-hoc parsing of free-form assistant text into actions.
 
 ## Dependencies
 
@@ -30,6 +31,7 @@ This is the core of proactive behavior: detect what needs attention and communic
 - One-shot runs can produce proactive DM messages.
 - Priority and quiet-hour behavior are enforced.
 - Writes are routed through approval workflow.
+- One-shot action emission is tool-driven and idempotent (dedupe-capable), not parser-driven.
 
 ## Verification
 

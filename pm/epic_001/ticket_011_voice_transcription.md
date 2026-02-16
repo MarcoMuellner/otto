@@ -13,7 +13,7 @@ You explicitly require voice message support in Telegram. Without transcription,
 - Add Telegram voice update handler.
 - Download voice/audio payload safely (size/time limits).
 - Add transcription adapter interface and initial provider implementation.
-- Forward transcript to existing inbound prompt pipeline.
+- Forward transcript to the same single-chain inbound prompt/session pipeline.
 - Persist original media metadata + transcript for audit.
 
 ## Non-Goals

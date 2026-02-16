@@ -16,6 +16,8 @@ Proactivity depends on predictable recurring execution with durable run tracking
   - `heartbeat_window`
 - Enforce timezone-aware scheduling from user profile/config.
 - Add jitter/locking to avoid duplicate runs after restart.
+- Trigger one-shot and heartbeat executions against the same OpenCode session used by inbound DM (single-chain continuity).
+- Add per-chat/session serialization so scheduler turns do not race with inbound turns.
 
 ## Non-Goals
 
@@ -30,6 +32,7 @@ Proactivity depends on predictable recurring execution with durable run tracking
 - Jobs execute on expected cadence.
 - Last run / next run persisted and restart-safe.
 - Duplicate execution avoided.
+- Scheduled runs preserve single-session conversational continuity without interleaving races.
 
 ## Verification
 
