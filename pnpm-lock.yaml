@@ -11,6 +11,9 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^0.5.15
         version: 0.5.29(typescript@5.9.3)
+      commander:
+        specifier: ^14.0.1
+        version: 14.0.3
       pino:
         specifier: ^10.1.0
         version: 10.3.1
@@ -604,6 +607,10 @@ packages:
   commander@13.0.0:
     resolution: {integrity: sha512-oPYleIY8wmTVzkvQq10AEok6YcTC4sRUBl8F9gVuwchGVUCTbl/vhLTaQqutuuySYOsu8YTgV+OxKc/8Yvx+mQ==}
     engines: {node: '>=18'}
+
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
 
   confbox@0.1.8:
     resolution: {integrity: sha512-RMtmw0iFkeR4YV+fUOSucriAQNb9g8zFR52MWCtl+cCZOFRNL6zeB395vPzFhEjjn4fMxXudmELnl/KF/WrK6w==}
@@ -1471,6 +1478,8 @@ snapshots:
   colorette@2.0.20: {}
 
   commander@13.0.0: {}
+
+  commander@14.0.3: {}
 
   confbox@0.1.8: {}
 
