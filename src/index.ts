@@ -4,6 +4,7 @@ import { runCommand } from "./cli/runner.js"
 import { createComponentLogger, logger } from "./logging/logger.js"
 import { runServe } from "./runtime/serve.js"
 import { runSetup } from "./runtime/setup.js"
+import { runTelegramWorker } from "./runtime/telegram-worker.js"
 import { getAppVersion } from "./version.js"
 
 const startedAt = new Date().toISOString()
@@ -22,6 +23,7 @@ const main = async (): Promise<void> => {
   await runCommand(command, commandLogger, {
     setup: runSetup,
     serve: runServe,
+    "telegram-worker": runTelegramWorker,
   })
 }
 

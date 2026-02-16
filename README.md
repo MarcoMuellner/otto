@@ -59,6 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
 
 - `pnpm run setup`: create config/workspace and deploy OpenCode assets into `ottoHome`
 - `pnpm run serve`: run the OpenCode server using deployed workspace assets
+- `pnpm run telegram-worker`: run the dedicated Telegram worker runtime
 - `pnpm run dev`: run the server from TypeScript sources
 - `pnpm run version:sync`: write `src/version.ts` from explicit value/env/package defaults
 - `pnpm run build`: bundle runtime with tsdown into `dist/` and copy assets

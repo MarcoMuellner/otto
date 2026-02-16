@@ -8,10 +8,32 @@ describe("parseCommand", () => {
   })
 
   it("returns setup when setup is provided", () => {
-    expect(parseCommand(["setup"])).toBe("setup")
+    // Arrange
+    const argv = ["setup"]
+
+    // Act
+    const command = parseCommand(argv)
+
+    // Assert
+    expect(command).toBe("setup")
+  })
+
+  it("returns telegram-worker when command is provided", () => {
+    // Arrange
+    const argv = ["telegram-worker"]
+
+    // Act
+    const command = parseCommand(argv)
+
+    // Assert
+    expect(command).toBe("telegram-worker")
   })
 
   it("throws for unknown commands", () => {
-    expect(() => parseCommand(["unknown"])).toThrow("Unknown command")
+    // Arrange
+    const argv = ["unknown"]
+
+    // Act and Assert
+    expect(() => parseCommand(argv)).toThrow("Unknown command")
   })
 })

@@ -10,15 +10,18 @@ describe("runCommand", () => {
     const logger = {} as Logger
     const setupHandler = vi.fn(async () => {})
     const serveHandler = vi.fn(async () => {})
+    const telegramWorkerHandler = vi.fn(async () => {})
 
     // Act
     await runCommand("setup" satisfies OttoCommand, logger, {
       setup: setupHandler,
       serve: serveHandler,
+      "telegram-worker": telegramWorkerHandler,
     })
 
     // Assert
     expect(setupHandler).toHaveBeenCalledOnce()
     expect(serveHandler).not.toHaveBeenCalled()
+    expect(telegramWorkerHandler).not.toHaveBeenCalled()
   })
 })
