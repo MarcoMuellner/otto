@@ -99,6 +99,10 @@ describe("startTelegramWorker", () => {
         allowedUserId: 1001,
         allowedChatId: 2002,
         heartbeatMs: 2_000,
+        outboundPollMs: 2_000,
+        outboundMaxAttempts: 5,
+        outboundRetryBaseMs: 5_000,
+        outboundRetryMaxMs: 300_000,
         opencodeBaseUrl: "http://127.0.0.1:4096",
         promptTimeoutMs: 10_000,
       },
@@ -118,10 +122,15 @@ describe("startTelegramWorker", () => {
     expect(info).toHaveBeenCalledWith(
       {
         heartbeatMs: 2_000,
+        outboundPollMs: 2_000,
+        outboundMaxAttempts: 5,
+        outboundRetryBaseMs: 5_000,
+        outboundRetryMaxMs: 300_000,
         hasBotToken: true,
         allowedUserId: 1001,
         allowedChatId: 2002,
         opencodeBaseUrl: "http://127.0.0.1:4096",
+        outboundTool: "queue_telegram_message",
       },
       "Telegram worker started"
     )
@@ -143,6 +152,10 @@ describe("startTelegramWorker", () => {
         allowedUserId: 1001,
         allowedChatId: 2002,
         heartbeatMs: 2_000,
+        outboundPollMs: 2_000,
+        outboundMaxAttempts: 5,
+        outboundRetryBaseMs: 5_000,
+        outboundRetryMaxMs: 300_000,
         opencodeBaseUrl: "http://127.0.0.1:4096",
         promptTimeoutMs: 10_000,
       },
@@ -196,6 +209,10 @@ describe("startTelegramWorker", () => {
       allowedUserId: 0,
       allowedChatId: 0,
       heartbeatMs: 2_000,
+      outboundPollMs: 2_000,
+      outboundMaxAttempts: 5,
+      outboundRetryBaseMs: 5_000,
+      outboundRetryMaxMs: 300_000,
       opencodeBaseUrl: "http://127.0.0.1:4096",
       promptTimeoutMs: 10_000,
     })

@@ -8,6 +8,8 @@ import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import type { TelegramWorkerConfig } from "./config.js"
 import { createInboundBridge } from "./inbound.js"
 import type { OpencodeSessionGateway } from "./opencode.js"
+import { createOutboundQueueProcessor } from "./outbound-queue.js"
+import { createQueueTelegramMessageTool } from "./outbound-tool.js"
 import {
   evaluateTelegramAccess,
   extractTelegramAccessContext,
@@ -111,6 +113,20 @@ export const startTelegramWorker = async (
   const bot =
     dependencies.createBotRuntime?.(config.botToken) ?? createTelegrafRuntime(config.botToken)
   const inFlightChats = new Set<number>()
+  const queueTelegramMessageTool = createQueueTelegramMessageTool({
+    logger,
+    outboundMessagesRepository,
+  })
+
+  const gatewayWithToolRegistration = sessionGateway as OpencodeSessionGateway & {
+    registerTools?: (
+      tools: Array<{ name: string; description: string; execute: (input: unknown) => unknown }>
+    ) => Promise<void> | void
+  }
+
+  if (gatewayWithToolRegistration.registerTools) {
+    await gatewayWithToolRegistration.registerTools([queueTelegramMessageTool])
+  }
 
   const bridge = createInboundBridge({
     logger,
@@ -123,6 +139,28 @@ export const startTelegramWorker = async (
     outboundMessagesRepository,
     promptTimeoutMs: config.promptTimeoutMs,
   })
+
+  const outboundQueueProcessor = createOutboundQueueProcessor({
+    logger,
+    repository: outboundMessagesRepository,
+    sender: {
+      sendMessage: bot.sendMessage,
+    },
+    retryPolicy: {
+      maxAttempts: config.outboundMaxAttempts,
+      baseDelayMs: config.outboundRetryBaseMs,
+      maxDelayMs: config.outboundRetryMaxMs,
+    },
+  })
+
+  const processOutboundQueue = async (): Promise<void> => {
+    try {
+      await outboundQueueProcessor.drainDueMessages()
+    } catch (error) {
+      const err = error as Error
+      logger.error({ error: err.message }, "Failed to process outbound Telegram queue")
+    }
+  }
 
   bot.onTextMessage(async (update) => {
     const context = extractTelegramAccessContext(update.update)
@@ -168,10 +206,15 @@ export const startTelegramWorker = async (
   logger.info(
     {
       heartbeatMs: config.heartbeatMs,
+      outboundPollMs: config.outboundPollMs,
+      outboundMaxAttempts: config.outboundMaxAttempts,
+      outboundRetryBaseMs: config.outboundRetryBaseMs,
+      outboundRetryMaxMs: config.outboundRetryMaxMs,
       hasBotToken: true,
       allowedUserId: config.allowedUserId,
       allowedChatId: config.allowedChatId,
       opencodeBaseUrl: config.opencodeBaseUrl,
+      outboundTool: queueTelegramMessageTool.name,
     },
     "Telegram worker started"
   )
@@ -180,9 +223,15 @@ export const startTelegramWorker = async (
     logger.debug({ heartbeatMs: config.heartbeatMs }, "Telegram worker heartbeat")
   }, config.heartbeatMs)
 
+  await processOutboundQueue()
+  const outboundQueueTimer = setInterval(() => {
+    void processOutboundQueue()
+  }, config.outboundPollMs)
+
   return {
     stop: async () => {
       clearInterval(heartbeatTimer)
+      clearInterval(outboundQueueTimer)
       await bot.stop()
       database.close()
       logger.info("Telegram worker stopped")

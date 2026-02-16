@@ -69,15 +69,88 @@ describe("persistence repositories", () => {
 
     // Act
     const due = repository.listDue(500)
-    repository.markSent("out-1", 600)
+    repository.markSent("out-1", 1, 600)
 
     // Assert
     expect(due).toHaveLength(1)
     expect(due[0]?.id).toBe("out-1")
     const updated = db
-      .prepare("SELECT status, sent_at as sentAt FROM messages_out WHERE id = ?")
-      .get("out-1") as { status: string; sentAt: number }
-    expect(updated).toEqual({ status: "sent", sentAt: 600 })
+      .prepare(
+        "SELECT status, attempt_count as attemptCount, sent_at as sentAt, error_message as errorMessage FROM messages_out WHERE id = ?"
+      )
+      .get("out-1") as {
+      status: string
+      attemptCount: number
+      sentAt: number
+      errorMessage: string | null
+    }
+    expect(updated).toEqual({ status: "sent", attemptCount: 1, sentAt: 600, errorMessage: null })
+
+    db.close()
+  })
+
+  it("supports dedupe-safe enqueue plus retry and permanent failure updates", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createOutboundMessagesRepository(db)
+
+    // Act
+    const firstInsert = repository.enqueueOrIgnoreDedupe({
+      id: "out-retry-1",
+      dedupeKey: "dedupe-retry",
+      chatId: 42,
+      content: "retry me",
+      priority: "high",
+      status: "queued",
+      attemptCount: 0,
+      nextAttemptAt: 100,
+      sentAt: null,
+      failedAt: null,
+      errorMessage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    const duplicateInsert = repository.enqueueOrIgnoreDedupe({
+      id: "out-retry-2",
+      dedupeKey: "dedupe-retry",
+      chatId: 42,
+      content: "retry me again",
+      priority: "high",
+      status: "queued",
+      attemptCount: 0,
+      nextAttemptAt: 100,
+      sentAt: null,
+      failedAt: null,
+      errorMessage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.markRetry("out-retry-1", 1, 1_000, "timeout", 500)
+    repository.markFailed("out-retry-1", 5, "rate limited", 900)
+
+    // Assert
+    expect(firstInsert).toBe("enqueued")
+    expect(duplicateInsert).toBe("duplicate")
+    const updated = db
+      .prepare(
+        "SELECT status, attempt_count as attemptCount, next_attempt_at as nextAttemptAt, failed_at as failedAt, error_message as errorMessage FROM messages_out WHERE id = ?"
+      )
+      .get("out-retry-1") as {
+      status: string
+      attemptCount: number
+      nextAttemptAt: number | null
+      failedAt: number | null
+      errorMessage: string | null
+    }
+    expect(updated).toEqual({
+      status: "failed",
+      attemptCount: 5,
+      nextAttemptAt: null,
+      failedAt: 900,
+      errorMessage: "rate limited",
+    })
 
     db.close()
   })

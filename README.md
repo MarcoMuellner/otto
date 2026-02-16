@@ -27,6 +27,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Pretty terminal logs are opt-in via `OTTO_PRETTY_LOGS=1` (default runtime logging is structured and deployment-safe)
 - Telegram worker security env (required when worker is enabled): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `TELEGRAM_ALLOWED_CHAT_ID`
 - Telegram worker bridge env (optional): `OTTO_OPENCODE_BASE_URL` (default `http://127.0.0.1:4096`), `OTTO_TELEGRAM_PROMPT_TIMEOUT_MS` (default `120000`)
+- Telegram outbound queue env (optional): `OTTO_TELEGRAM_OUTBOUND_POLL_MS` (default `2000`), `OTTO_TELEGRAM_OUTBOUND_MAX_ATTEMPTS` (default `5`), `OTTO_TELEGRAM_OUTBOUND_RETRY_BASE_MS` (default `5000`), `OTTO_TELEGRAM_OUTBOUND_RETRY_MAX_MS` (default `300000`)
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
 
 ## Install (Release Artifact)

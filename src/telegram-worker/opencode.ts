@@ -3,6 +3,9 @@ import { createOpencodeClient } from "@opencode-ai/sdk"
 export type OpencodeSessionGateway = {
   ensureSession: (sessionId: string | null) => Promise<string>
   promptSession: (sessionId: string, text: string) => Promise<string>
+  registerTools?: (
+    tools: Array<{ name: string; description: string; execute: (input: unknown) => unknown }>
+  ) => Promise<void> | void
 }
 
 const isNotFoundError = (error: unknown): boolean => {
