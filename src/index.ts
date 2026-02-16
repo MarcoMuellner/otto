@@ -1,3 +1,5 @@
+import { buildBootstrapMessage } from "./bootstrap/message.js"
+
 const startedAt = new Date().toISOString()
 
-console.log(`[otto] bootstrap ready (${startedAt})`)
+console.log(buildBootstrapMessage(startedAt))

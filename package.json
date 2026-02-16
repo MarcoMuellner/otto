@@ -12,17 +12,22 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint src",
-    "lint:fix": "oxlint src --fix",
-    "format": "prettier --write \"src/**/*.ts\" package.json tsconfig.json .prettierrc.json .oxlintrc.json",
-    "format:check": "prettier --check \"src/**/*.ts\" package.json tsconfig.json .prettierrc.json .oxlintrc.json",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "oxlint src tests",
+    "lint:fix": "oxlint src tests --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" package.json tsconfig.json vitest.config.ts .prettierrc.json .oxlintrc.json README.md",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" package.json tsconfig.json vitest.config.ts .prettierrc.json .oxlintrc.json README.md",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test"
   },
   "devDependencies": {
     "@types/node": "^25.2.3",
+    "@vitest/coverage-v8": "^4.0.0",
     "oxlint": "^1.47.0",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
   }
 }
