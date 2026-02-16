@@ -9,6 +9,8 @@ import { resolveInternalApiConfig, startInternalApiServer } from "../internal-ap
 import { startOpencodeServer } from "../opencode/server.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
+import { resolveTelegramWorkerConfig } from "../telegram-worker/config.js"
+import { startTelegramWorker, type TelegramWorkerHandle } from "../telegram-worker/worker.js"
 
 /**
  * Keeps process lifetime tied to OS signals so the server can shut down cleanly in local
@@ -82,6 +84,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   }
 
   let server: { url: string; close: () => void } | null = null
+  let telegramWorker: TelegramWorkerHandle | null = null
 
   try {
     server = await startOpencodeServer({
@@ -110,10 +113,25 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     "OpenCode server started"
   )
 
+  try {
+    const telegramConfig = resolveTelegramWorkerConfig()
+    telegramWorker = await startTelegramWorker(logger, telegramConfig)
+    logger.info({ enabled: telegramConfig.enabled }, "Telegram worker startup completed")
+  } catch (error) {
+    const err = error as Error
+    logger.warn(
+      { error: err.message },
+      "Telegram worker did not start; continuing serve mode without Telegram"
+    )
+  }
+
   const signal = await waitForShutdownSignal()
 
   logger.info({ signal }, "Shutdown signal received")
 
+  if (telegramWorker) {
+    await telegramWorker.stop()
+  }
   server.close()
   await internalApiServer.close()
   persistenceDatabase.close()

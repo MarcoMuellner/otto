@@ -32,6 +32,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Internal API env (optional): `OTTO_INTERNAL_API_HOST` (default `127.0.0.1`, loopback only), `OTTO_INTERNAL_API_PORT` (default `4180`)
 - Internal API token: persisted in `~/.otto/secrets/internal-api.token` and exported at runtime as `OTTO_INTERNAL_API_URL` + `OTTO_INTERNAL_API_TOKEN` for OpenCode tools
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
+- `ottoctl update` prompts for Telegram credentials when missing and stores them at `~/.local/share/otto/secrets/telegram.env` (skip is allowed)
 
 ## Install (Release Artifact)
 
@@ -65,7 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
 ## Scripts
 
 - `pnpm run setup`: create config/workspace and deploy OpenCode assets into `ottoHome`
-- `pnpm run serve`: run the OpenCode server using deployed workspace assets
+- `pnpm run serve`: run OpenCode + internal API and auto-start Telegram worker when credentials are configured
 - `pnpm run telegram-worker`: run the dedicated Telegram worker runtime
 - `pnpm run dev`: run the server from TypeScript sources
 - `pnpm run version:sync`: write `src/version.ts` from explicit value/env/package defaults

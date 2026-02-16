@@ -5,6 +5,8 @@ OTTO_ROOT="${OTTO_ROOT:-$HOME/.local/share/otto}"
 RELEASES_DIR="${OTTO_ROOT}/releases"
 CURRENT_LINK="${OTTO_ROOT}/current"
 INSTALL_META="${OTTO_ROOT}/install.env"
+SECRETS_DIR="${OTTO_ROOT}/secrets"
+TELEGRAM_ENV_FILE="${SECRETS_DIR}/telegram.env"
 BIN_DIR="${OTTO_BIN_DIR:-$HOME/.local/bin}"
 SERVICE_NAME="otto"
 PLIST_LABEL="com.otto.assistant"
@@ -45,6 +47,116 @@ load_install_meta() {
     # shellcheck disable=SC1090
     source "${INSTALL_META}"
   fi
+}
+
+load_telegram_env() {
+  if [[ -f "${TELEGRAM_ENV_FILE}" ]]; then
+    # shellcheck disable=SC1090
+    source "${TELEGRAM_ENV_FILE}"
+  fi
+}
+
+has_telegram_credentials() {
+  [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && [[ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ]] && [[ -n "${TELEGRAM_ALLOWED_CHAT_ID:-}" ]]
+}
+
+is_positive_integer() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]]
+}
+
+xml_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  value="${value//\'/&apos;}"
+  printf '%s' "${value}"
+}
+
+persist_telegram_credentials() {
+  mkdir -p "${SECRETS_DIR}"
+  chmod 700 "${SECRETS_DIR}"
+
+  cat > "${TELEGRAM_ENV_FILE}" <<EOF
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+TELEGRAM_ALLOWED_USER_ID=${TELEGRAM_ALLOWED_USER_ID}
+TELEGRAM_ALLOWED_CHAT_ID=${TELEGRAM_ALLOWED_CHAT_ID}
+EOF
+
+  chmod 600 "${TELEGRAM_ENV_FILE}"
+}
+
+prompt_telegram_credentials() {
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    warn "Telegram credentials missing and terminal is non-interactive; skipping setup"
+    return 1
+  fi
+
+  while true; do
+    info "Telegram credentials are required for automatic Telegram worker startup."
+    read -r -p "Configure Telegram now? [Y/n]: " configure_now
+
+    case "${configure_now:-Y}" in
+      Y|y|"")
+        break
+        ;;
+      N|n)
+        warn "Skipping Telegram credential setup for now"
+        return 1
+        ;;
+      *)
+        warn "Please answer Y or n"
+        ;;
+    esac
+  done
+
+  while true; do
+    read -r -s -p "TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
+    echo
+    read -r -p "TELEGRAM_ALLOWED_USER_ID: " TELEGRAM_ALLOWED_USER_ID
+    read -r -p "TELEGRAM_ALLOWED_CHAT_ID: " TELEGRAM_ALLOWED_CHAT_ID
+
+    if [[ -z "${TELEGRAM_BOT_TOKEN}" ]]; then
+      warn "TELEGRAM_BOT_TOKEN cannot be empty"
+      continue
+    fi
+
+    if [[ "${TELEGRAM_BOT_TOKEN}" =~ [[:space:]] ]]; then
+      warn "TELEGRAM_BOT_TOKEN cannot contain whitespace"
+      continue
+    fi
+
+    if ! is_positive_integer "${TELEGRAM_ALLOWED_USER_ID}"; then
+      warn "TELEGRAM_ALLOWED_USER_ID must be an integer >= 1"
+      continue
+    fi
+
+    if ! is_positive_integer "${TELEGRAM_ALLOWED_CHAT_ID}"; then
+      warn "TELEGRAM_ALLOWED_CHAT_ID must be an integer >= 1"
+      continue
+    fi
+
+    persist_telegram_credentials
+    success "Saved Telegram credentials to ${TELEGRAM_ENV_FILE}"
+    return 0
+  done
+}
+
+ensure_telegram_credentials() {
+  load_telegram_env
+
+  if has_telegram_credentials; then
+    persist_telegram_credentials
+    info "Using existing Telegram credentials"
+    return 0
+  fi
+
+  if prompt_telegram_credentials; then
+    return 0
+  fi
+
+  return 1
 }
 
 resolve_repo() {
@@ -126,6 +238,7 @@ ExecStart=${node_path} ${CURRENT_LINK}/dist/index.mjs serve
 WorkingDirectory=${HOME}
 Restart=on-failure
 RestartSec=5
+EnvironmentFile=-${TELEGRAM_ENV_FILE}
 Environment=HOME=${HOME}
 Environment=PATH=${PATH}
 Environment=NODE_ENV=production
@@ -150,6 +263,26 @@ install_service_macos() {
   node_path="$(command -v node)"
 
   mkdir -p "${HOME}/Library/LaunchAgents"
+
+  local telegram_env_keys=""
+
+  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    telegram_env_keys+="
+    <key>TELEGRAM_BOT_TOKEN</key>
+    <string>$(xml_escape "${TELEGRAM_BOT_TOKEN}")</string>"
+  fi
+
+  if [[ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ]]; then
+    telegram_env_keys+="
+    <key>TELEGRAM_ALLOWED_USER_ID</key>
+    <string>$(xml_escape "${TELEGRAM_ALLOWED_USER_ID}")</string>"
+  fi
+
+  if [[ -n "${TELEGRAM_ALLOWED_CHAT_ID:-}" ]]; then
+    telegram_env_keys+="
+    <key>TELEGRAM_ALLOWED_CHAT_ID</key>
+    <string>$(xml_escape "${TELEGRAM_ALLOWED_CHAT_ID}")</string>"
+  fi
 
   cat > "${PLIST_FILE}" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -178,6 +311,7 @@ install_service_macos() {
     <string>${PATH}</string>
     <key>NODE_ENV</key>
     <string>production</string>
+${telegram_env_keys}
   </dict>
   <key>StandardOutPath</key>
   <string>${HOME}/.local/share/otto/logs/service.log</string>
@@ -276,6 +410,7 @@ cmd_update() {
   install_release "${tag}" "${artifact_url}"
   write_install_meta "${repo}"
   run_setup
+  ensure_telegram_credentials || true
   install_service
   restart_service
 
@@ -310,6 +445,7 @@ main() {
   require_cmd node
 
   load_install_meta
+  load_telegram_env
 
   case "${1:-help}" in
     start)
