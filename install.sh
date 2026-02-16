@@ -114,7 +114,12 @@ install_release() {
   fi
 
   mkdir -p "${BIN_DIR}"
-  cp "${CURRENT_LINK}/bin/ottoctl" "${BIN_DIR}/ottoctl"
+  local target_cli="${BIN_DIR}/ottoctl"
+  local staged_cli="${BIN_DIR}/.ottoctl.$$"
+
+  cp "${CURRENT_LINK}/bin/ottoctl" "${staged_cli}"
+  chmod +x "${staged_cli}"
+  mv -f "${staged_cli}" "${target_cli}"
   chmod +x "${BIN_DIR}/ottoctl"
 
   success "Installed release ${tag}"
