@@ -2,16 +2,17 @@
 
 ## Objective
 
-Introduce SQLite-backed persistence for communication state, scheduling state, approvals, and idempotency.
+Introduce SQLite-backed persistence for orchestration state while reusing OpenCode sessions for conversation history.
 
 ## Why
 
-Proactive systems require durable memory of what was sent, what is pending, and what already ran to avoid duplicate or lost actions.
+Proactive systems require durable memory of what was sent, what is pending, and what already ran to avoid duplicate or lost actions. OpenCode sessions keep dialog context, but orchestration state still needs dedicated persistence.
 
 ## Scope
 
 - Add SQLite database module under `~/.otto/data/`.
 - Create schema migrations for:
+  - `session_bindings` (Telegram chat and proactive worker session mappings to OpenCode session IDs)
   - `messages_in`
   - `messages_out`
   - `jobs`
@@ -23,6 +24,7 @@ Proactive systems require durable memory of what was sent, what is pending, and 
 
 ## Non-Goals
 
+- Replacing OpenCode as the source of truth for conversation history.
 - No business logic execution yet.
 - No Google API integration yet.
 
@@ -34,6 +36,7 @@ Proactive systems require durable memory of what was sent, what is pending, and 
 
 - Database initializes automatically.
 - Migrations are idempotent and versioned.
+- Session bindings allow reuse of OpenCode sessions for Telegram and proactive one-shot flows.
 - Repositories support insert/update/query operations required by following tickets.
 
 ## Verification
