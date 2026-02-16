@@ -1,20 +1,23 @@
 import path from "node:path"
 import { access, copyFile, mkdir } from "node:fs/promises"
 import { constants } from "node:fs"
-import { fileURLToPath } from "node:url"
 
 const WORKSPACE_SUBDIRECTORIES = ["data", "inbox", "scripts", "secrets", "logs"] as const
 const ASSET_FILES = ["opencode.jsonc", "AGENTS.md"] as const
 
 /**
- * Resolves asset location from module URL so setup works identically from source and
- * transpiled builds.
+ * Resolves assets relative to the active runtime entry so setup can locate bundled assets
+ * in release installs and source assets in local development without extra configuration.
  *
- * @param importMetaUrl Module import URL from the caller.
+ * @param runtimeEntryPath Runtime entry path, defaults to the current process entrypoint.
  * @returns Absolute path to the runtime asset directory.
  */
-export const resolveAssetDirectory = (importMetaUrl: string): string => {
-  return fileURLToPath(new URL("../assets", importMetaUrl))
+export const resolveAssetDirectory = (runtimeEntryPath = process.argv[1]): string => {
+  if (runtimeEntryPath) {
+    return path.join(path.dirname(path.resolve(runtimeEntryPath)), "assets")
+  }
+
+  return path.resolve("dist", "assets")
 }
 
 /**

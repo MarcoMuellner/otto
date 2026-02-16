@@ -27,6 +27,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 
 ## Install (Release Artifact)
 
+- Release artifacts are bundled for Node runtime use, so install/update does not run package manager installs on the target machine.
+
 - Stable install (recommended):
 
 ```bash
@@ -58,7 +60,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
 - `pnpm run serve`: run the OpenCode server using deployed workspace assets
 - `pnpm run dev`: run the server from TypeScript sources
 - `pnpm run version:sync`: write `src/version.ts` from explicit value/env/package defaults
-- `pnpm run build`: transpile TypeScript to JavaScript in `dist/` and copy assets
+- `pnpm run build`: bundle runtime with tsdown into `dist/` and copy assets
 - `pnpm run build:local`: sync a local dev version and then build
 - `pnpm run start`: run compiled JavaScript server from `dist/`
 - `pnpm run test`: run Vitest once

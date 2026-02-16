@@ -171,7 +171,7 @@ main() {
   ensure_local_bin_on_path
 
   info "Running first-time setup..."
-  node "${CURRENT_LINK}/dist/index.js" setup
+  node "${CURRENT_LINK}/dist/index.mjs" setup
 
   info "Installing and starting service..."
   "${BIN_DIR}/ottoctl" start

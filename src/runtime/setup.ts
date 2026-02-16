@@ -26,7 +26,7 @@ export type SetupResult = {
 export const runSetup = async (
   logger: Logger,
   homeDirectory?: string,
-  assetDirectory = resolveAssetDirectory(import.meta.url)
+  assetDirectory = resolveAssetDirectory()
 ): Promise<SetupResult> => {
   const { config, configPath, created } = await ensureOttoConfigFile(homeDirectory)
 

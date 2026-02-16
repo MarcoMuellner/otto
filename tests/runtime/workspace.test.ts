@@ -8,6 +8,7 @@ import {
   deployWorkspaceAssets,
   ensureWorkspaceDirectories,
   getWorkspaceDirectories,
+  resolveAssetDirectory,
 } from "../../src/runtime/workspace.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-workspace-")
@@ -21,19 +22,37 @@ afterEach(async () => {
 
 describe("ensureWorkspaceDirectories", () => {
   it("creates otto home and required subdirectories", async () => {
+    // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
 
     const ottoHome = path.join(tempRoot, ".otto")
+
+    // Act
     const created = await ensureWorkspaceDirectories(ottoHome)
 
+    // Assert
     expect(created).toContain(ottoHome)
     expect(created).toEqual([ottoHome, ...getWorkspaceDirectories(ottoHome)])
   })
 })
 
+describe("resolveAssetDirectory", () => {
+  it("resolves assets relative to runtime entrypoint", () => {
+    // Arrange
+    const runtimeEntryPath = "/opt/otto/dist/index.mjs"
+
+    // Act
+    const assetDirectory = resolveAssetDirectory(runtimeEntryPath)
+
+    // Assert
+    expect(assetDirectory).toBe("/opt/otto/dist/assets")
+  })
+})
+
 describe("deployWorkspaceAssets", () => {
   it("copies opencode and AGENTS assets into otto home", async () => {
+    // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
 
@@ -46,8 +65,10 @@ describe("deployWorkspaceAssets", () => {
     await writeFile(path.join(assetDirectory, "opencode.jsonc"), '{\n  "foo": "bar"\n}\n', "utf8")
     await writeFile(path.join(assetDirectory, "AGENTS.md"), "# rules\n", "utf8")
 
+    // Act
     const deployed = await deployWorkspaceAssets(assetDirectory, ottoHome)
 
+    // Assert
     expect(deployed).toEqual([
       path.join(ottoHome, "opencode.jsonc"),
       path.join(ottoHome, "AGENTS.md"),

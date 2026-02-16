@@ -99,7 +99,7 @@ install_release() {
 
 run_setup() {
   require_cmd node
-  node "${CURRENT_LINK}/dist/index.js" setup
+  node "${CURRENT_LINK}/dist/index.mjs" setup
 }
 
 install_service_linux() {
@@ -117,7 +117,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${node_path} ${CURRENT_LINK}/dist/index.js serve
+ExecStart=${node_path} ${CURRENT_LINK}/dist/index.mjs serve
 WorkingDirectory=${HOME}
 Restart=on-failure
 RestartSec=5
@@ -155,7 +155,7 @@ install_service_macos() {
   <key>ProgramArguments</key>
   <array>
     <string>${node_path}</string>
-    <string>${CURRENT_LINK}/dist/index.js</string>
+    <string>${CURRENT_LINK}/dist/index.mjs</string>
     <string>serve</string>
   </array>
   <key>WorkingDirectory</key>
