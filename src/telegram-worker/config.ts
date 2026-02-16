@@ -6,6 +6,8 @@ export type TelegramWorkerConfig = {
   allowedUserId: number
   allowedChatId: number
   heartbeatMs: number
+  opencodeBaseUrl: string
+  promptTimeoutMs: number
 }
 
 const telegramWorkerConfigSchema = z.object({
@@ -14,6 +16,8 @@ const telegramWorkerConfigSchema = z.object({
   TELEGRAM_ALLOWED_USER_ID: z.string().optional(),
   TELEGRAM_ALLOWED_CHAT_ID: z.string().optional(),
   OTTO_TELEGRAM_WORKER_HEARTBEAT_MS: z.string().optional(),
+  OTTO_OPENCODE_BASE_URL: z.string().optional(),
+  OTTO_TELEGRAM_PROMPT_TIMEOUT_MS: z.string().optional(),
 })
 
 /**
@@ -78,7 +82,24 @@ export const resolveTelegramWorkerConfig = (
       allowedUserId: 0,
       allowedChatId: 0,
       heartbeatMs,
+      opencodeBaseUrl: parsed.data.OTTO_OPENCODE_BASE_URL?.trim() || "http://127.0.0.1:4096",
+      promptTimeoutMs: 120_000,
     }
+  }
+
+  const rawPromptTimeoutMs = parsed.data.OTTO_TELEGRAM_PROMPT_TIMEOUT_MS
+  const promptTimeoutMs = rawPromptTimeoutMs == null ? 120_000 : Number(rawPromptTimeoutMs)
+  if (!Number.isInteger(promptTimeoutMs) || promptTimeoutMs < 5_000) {
+    throw new Error(
+      "Invalid Telegram worker config: OTTO_TELEGRAM_PROMPT_TIMEOUT_MS must be an integer >= 5000"
+    )
+  }
+
+  const opencodeBaseUrl = parsed.data.OTTO_OPENCODE_BASE_URL?.trim() || "http://127.0.0.1:4096"
+  if (!/^https?:\/\//.test(opencodeBaseUrl)) {
+    throw new Error(
+      "Invalid Telegram worker config: OTTO_OPENCODE_BASE_URL must start with http:// or https://"
+    )
   }
 
   const allowedUserId = parseTelegramId(
@@ -100,5 +121,7 @@ export const resolveTelegramWorkerConfig = (
     allowedUserId,
     allowedChatId,
     heartbeatMs,
+    opencodeBaseUrl,
+    promptTimeoutMs,
   }
 }

@@ -19,6 +19,8 @@ describe("resolveTelegramWorkerConfig", () => {
       allowedUserId: 0,
       allowedChatId: 0,
       heartbeatMs: 60_000,
+      opencodeBaseUrl: "http://127.0.0.1:4096",
+      promptTimeoutMs: 120_000,
     })
   })
 
@@ -40,6 +42,8 @@ describe("resolveTelegramWorkerConfig", () => {
       allowedUserId: 123,
       allowedChatId: 456,
       heartbeatMs: 60_000,
+      opencodeBaseUrl: "http://127.0.0.1:4096",
+      promptTimeoutMs: 120_000,
     })
   })
 
@@ -63,5 +67,20 @@ describe("resolveTelegramWorkerConfig", () => {
 
     // Act and Assert
     expect(() => resolveTelegramWorkerConfig(environment)).toThrow("TELEGRAM_ALLOWED_USER_ID")
+  })
+
+  it("throws when prompt timeout is too small", () => {
+    // Arrange
+    const environment = {
+      TELEGRAM_BOT_TOKEN: "bot-token",
+      TELEGRAM_ALLOWED_USER_ID: "123",
+      TELEGRAM_ALLOWED_CHAT_ID: "456",
+      OTTO_TELEGRAM_PROMPT_TIMEOUT_MS: "1000",
+    }
+
+    // Act and Assert
+    expect(() => resolveTelegramWorkerConfig(environment)).toThrow(
+      "OTTO_TELEGRAM_PROMPT_TIMEOUT_MS"
+    )
   })
 })
