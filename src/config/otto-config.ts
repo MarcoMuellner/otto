@@ -1,15 +1,22 @@
 import { homedir } from "node:os"
 import path from "node:path"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { z } from "zod"
 
-export type OttoConfig = {
-  version: 1
-  ottoHome: string
-  opencode: {
-    hostname: string
-    port: number
-  }
-}
+const ottoConfigSchema = z.object({
+  version: z.literal(1),
+  ottoHome: z.string().min(1, "ottoHome must be a non-empty string"),
+  opencode: z.object({
+    hostname: z.string().min(1, "opencode.hostname must be a non-empty string"),
+    port: z
+      .number()
+      .int("opencode.port must be an integer")
+      .min(1, "opencode.port must be >= 1")
+      .max(65535, "opencode.port must be <= 65535"),
+  }),
+})
+
+export type OttoConfig = z.infer<typeof ottoConfigSchema>
 
 export type ResolvedOttoConfig = {
   config: OttoConfig
@@ -18,10 +25,6 @@ export type ResolvedOttoConfig = {
 }
 
 const CONFIG_RELATIVE_PATH = path.join(".config", "otto", "config.jsonc")
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === "object" && value !== null
-}
 
 export const resolveOttoConfigPath = (homeDirectory = homedir()): string => {
   return path.join(homeDirectory, CONFIG_RELATIVE_PATH)
@@ -47,43 +50,17 @@ const parseOttoConfig = (source: string, configPath: string): OttoConfig => {
     throw new Error(`Invalid JSON in Otto config: ${configPath}`)
   }
 
-  if (!isRecord(parsed)) {
-    throw new Error(`Otto config must be an object: ${configPath}`)
+  const validated = ottoConfigSchema.safeParse(parsed)
+
+  if (!validated.success) {
+    const detail = validated.error.issues
+      .map((issue) => `${issue.path.join(".") || "root"}: ${issue.message}`)
+      .join("; ")
+
+    throw new Error(`Invalid Otto config in ${configPath}: ${detail}`)
   }
 
-  const { version, ottoHome, opencode } = parsed
-
-  if (version !== 1) {
-    throw new Error(`Unsupported Otto config version in ${configPath}`)
-  }
-
-  if (typeof ottoHome !== "string" || ottoHome.length === 0) {
-    throw new Error(`Config field "ottoHome" must be a non-empty string: ${configPath}`)
-  }
-
-  if (!isRecord(opencode)) {
-    throw new Error(`Config field "opencode" must be an object: ${configPath}`)
-  }
-
-  const hostname = opencode.hostname
-  const port = opencode.port
-
-  if (typeof hostname !== "string" || hostname.length === 0) {
-    throw new Error(`Config field "opencode.hostname" must be a non-empty string: ${configPath}`)
-  }
-
-  if (typeof port !== "number" || !Number.isInteger(port) || port <= 0 || port > 65535) {
-    throw new Error(`Config field "opencode.port" must be a valid TCP port: ${configPath}`)
-  }
-
-  return {
-    version: 1,
-    ottoHome,
-    opencode: {
-      hostname,
-      port,
-    },
-  }
+  return validated.data
 }
 
 export const ensureOttoConfigFile = async (

@@ -6,3 +6,4 @@ coverage/
 .env.*
 .opencode
 .DS_Store
+.githuman
