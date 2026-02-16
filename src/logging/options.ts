@@ -6,6 +6,7 @@ type BuildLoggerOptionsInput = {
   env?: RuntimeEnv
   logLevel?: string
   serviceName?: string
+  prettyLogs?: boolean
 }
 
 const PRETTY_TRANSPORT: TransportSingleOptions = {
@@ -48,8 +49,10 @@ export const buildLoggerOptions = ({
   env = resolveRuntimeEnv(),
   logLevel,
   serviceName = "otto",
+  prettyLogs = false,
 }: BuildLoggerOptionsInput = {}): LoggerOptions => {
   const level = logLevel ?? (env === "development" ? "debug" : "info")
+  const shouldUsePrettyTransport = env === "development" && prettyLogs
 
   return {
     name: serviceName,
@@ -58,6 +61,6 @@ export const buildLoggerOptions = ({
       service: serviceName,
     },
     timestamp: pino.stdTimeFunctions.isoTime,
-    transport: env === "development" ? PRETTY_TRANSPORT : undefined,
+    transport: shouldUsePrettyTransport ? PRETTY_TRANSPORT : undefined,
   }
 }

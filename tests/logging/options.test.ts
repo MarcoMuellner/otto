@@ -21,9 +21,26 @@ describe("resolveRuntimeEnv", () => {
 })
 
 describe("buildLoggerOptions", () => {
-  it("enables pretty logging in development", () => {
-    const options = buildLoggerOptions({ env: "development" })
+  it("disables pretty logging in development by default", () => {
+    // Arrange
+    const input = { env: "development" as const }
 
+    // Act
+    const options = buildLoggerOptions(input)
+
+    // Assert
+    expect(options.level).toBe("debug")
+    expect(options.transport).toBeUndefined()
+  })
+
+  it("enables pretty logging only when explicitly requested", () => {
+    // Arrange
+    const input = { env: "development" as const, prettyLogs: true }
+
+    // Act
+    const options = buildLoggerOptions(input)
+
+    // Assert
     expect(options.level).toBe("debug")
     expect(options.transport).toEqual({
       target: "pino-pretty",
@@ -37,15 +54,25 @@ describe("buildLoggerOptions", () => {
   })
 
   it("disables pretty transport in production", () => {
-    const options = buildLoggerOptions({ env: "production" })
+    // Arrange
+    const input = { env: "production" as const, prettyLogs: true }
 
+    // Act
+    const options = buildLoggerOptions(input)
+
+    // Assert
     expect(options.level).toBe("info")
     expect(options.transport).toBeUndefined()
   })
 
   it("uses explicit log level overrides", () => {
-    const options = buildLoggerOptions({ env: "production", logLevel: "warn" })
+    // Arrange
+    const input = { env: "production" as const, logLevel: "warn" }
 
+    // Act
+    const options = buildLoggerOptions(input)
+
+    // Assert
     expect(options.level).toBe("warn")
   })
 })

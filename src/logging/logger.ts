@@ -6,6 +6,7 @@ type CreateLoggerInput = {
   env?: "development" | "test" | "production"
   logLevel?: string
   serviceName?: string
+  prettyLogs?: boolean
 }
 
 /**
@@ -17,10 +18,12 @@ type CreateLoggerInput = {
  */
 export const createLogger = (input: CreateLoggerInput = {}): Logger => {
   const env = input.env ?? resolveRuntimeEnv()
+  const prettyLogs = input.prettyLogs ?? process.env.OTTO_PRETTY_LOGS === "1"
   const options = buildLoggerOptions({
     env,
     logLevel: input.logLevel,
     serviceName: input.serviceName,
+    prettyLogs,
   })
 
   return pino(options)

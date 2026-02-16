@@ -24,6 +24,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Otto config path: `~/.config/otto/config.jsonc`
 - The file is auto-created with defaults if it does not exist
 - Runtime behavior is file-first: edit this config to customize host/port/workspace
+- Pretty terminal logs are opt-in via `OTTO_PRETTY_LOGS=1` (default runtime logging is structured and deployment-safe)
 
 ## Install (Release Artifact)
 
