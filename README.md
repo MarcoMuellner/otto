@@ -9,6 +9,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - pnpm
 - TypeScript (`src/` -> `dist/`)
 - Vitest for tests in `tests/` (TDD-first)
+- Pino + pino-pretty for structured and beautiful logging
 - Oxlint + Prettier for quality gates
 
 ## Project Layout

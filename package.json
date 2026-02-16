@@ -21,6 +21,10 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" package.json tsconfig.json vitest.config.ts .prettierrc.json .oxlintrc.json README.md",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test"
   },
+  "dependencies": {
+    "pino": "^10.1.0",
+    "pino-pretty": "^13.1.2"
+  },
   "devDependencies": {
     "@types/node": "^25.2.3",
     "@vitest/coverage-v8": "^4.0.0",
