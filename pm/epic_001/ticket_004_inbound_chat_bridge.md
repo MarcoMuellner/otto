@@ -16,6 +16,7 @@ Two-way communication starts with reliable inbound message processing and consis
 - Bridge to OpenCode SDK session prompt flow.
 - Return assistant replies to DM.
 - Add per-chat in-flight guard and timeout handling.
+- Keep one stable OpenCode session binding for the user DM chain (`telegram:chat:<chatId>:assistant`).
 
 ## Non-Goals
 
@@ -30,6 +31,7 @@ Two-way communication starts with reliable inbound message processing and consis
 
 - User message receives OpenCode response in Telegram.
 - Session continuity is preserved across multiple messages.
+- Inbound flow is compatible with shared proactive usage of the same session (single-chain model).
 - Prompt timeout/abort path is handled and logged.
 
 ## Verification

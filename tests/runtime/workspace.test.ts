@@ -51,7 +51,7 @@ describe("resolveAssetDirectory", () => {
 })
 
 describe("deployWorkspaceAssets", () => {
-  it("copies opencode and AGENTS assets into otto home", async () => {
+  it("copies workspace assets including .opencode tools", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -64,6 +64,13 @@ describe("deployWorkspaceAssets", () => {
 
     await writeFile(path.join(assetDirectory, "opencode.jsonc"), '{\n  "foo": "bar"\n}\n', "utf8")
     await writeFile(path.join(assetDirectory, "AGENTS.md"), "# rules\n", "utf8")
+    await mkdir(path.join(assetDirectory, ".opencode", "tools"), { recursive: true })
+    await writeFile(path.join(assetDirectory, ".opencode", "package.json"), "{}\n", "utf8")
+    await writeFile(
+      path.join(assetDirectory, ".opencode", "tools", "queue_telegram_message.ts"),
+      "export default {}\n",
+      "utf8"
+    )
 
     // Act
     const deployed = await deployWorkspaceAssets(assetDirectory, ottoHome)
@@ -72,9 +79,13 @@ describe("deployWorkspaceAssets", () => {
     expect(deployed).toEqual([
       path.join(ottoHome, "opencode.jsonc"),
       path.join(ottoHome, "AGENTS.md"),
+      path.join(ottoHome, ".opencode"),
     ])
 
     await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.toContain("foo")
     await expect(readFile(path.join(ottoHome, "AGENTS.md"), "utf8")).resolves.toContain("rules")
+    await expect(
+      readFile(path.join(ottoHome, ".opencode", "tools", "queue_telegram_message.ts"), "utf8")
+    ).resolves.toContain("export default")
   })
 })

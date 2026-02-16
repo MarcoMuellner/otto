@@ -15,6 +15,7 @@ You required a strict safety policy: autonomous intervals can propose writes, bu
 - Persist approval lifecycle in DB.
 - Execute action only on explicit approval.
 - Expire stale approvals safely.
+- Keep approval prompts and user responses in the same DM/session chain to preserve conversational continuity.
 
 ## Non-Goals
 
@@ -29,6 +30,7 @@ You required a strict safety policy: autonomous intervals can propose writes, bu
 - Unsupervised write actions are blocked until approval.
 - Approved actions execute once and are auditable.
 - Rejected/expired approvals never execute.
+- Approval interactions remain understandable without thread-emulation UX primitives.
 
 ## Verification
 

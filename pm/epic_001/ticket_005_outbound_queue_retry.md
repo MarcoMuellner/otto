@@ -14,10 +14,12 @@ Telegram/API/network failures are expected. Proactive communication must not dro
 - Implement retry policy (exponential backoff + max attempts).
 - Add dedupe key support to prevent duplicate sends.
 - Persist delivery outcomes and errors.
+- Add OpenCode-facing tool/plugin entrypoint for outbound enqueue (for example `queue_telegram_message`) so proactive prompts trigger queue writes directly.
 
 ## Non-Goals
 
 - No scheduler decision logic yet.
+- No direct Telegram sending from model/tool path (tool enqueues only; queue worker delivers).
 
 ## Dependencies
 
@@ -28,6 +30,7 @@ Telegram/API/network failures are expected. Proactive communication must not dro
 - Failed sends are retried automatically.
 - Permanent failure state is visible in DB/logs.
 - Duplicate enqueue with same dedupe key is ignored safely.
+- Tool-triggered enqueue path is idempotent and auditable.
 
 ## Verification
 

@@ -14,6 +14,7 @@ You want Otto to stop nagging when tasks are completed in external channels, not
 - Persist observed task states and timestamps.
 - Map proactive items to external task IDs.
 - Mark reminders resolved when external task completion is detected.
+- Keep reconciliation updates linked to the single DM/session context so follow-up messaging remains coherent.
 
 ## Non-Goals
 

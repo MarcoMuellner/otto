@@ -85,6 +85,15 @@ export type UserProfileRecord = {
   updatedAt: number
 }
 
+const isUniqueConstraintForColumn = (error: unknown, columnName: string): boolean => {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const message = error.message.toLowerCase()
+  return message.includes("unique") && message.includes(columnName.toLowerCase())
+}
+
 /**
  * Keeps session binding persistence isolated so future transport adapters can share the same
  * OpenCode session mapping contract.
@@ -158,6 +167,27 @@ export const createOutboundMessagesRepository = (database: Database.Database) =>
       (@id, @dedupeKey, @chatId, @content, @priority, @status, @attemptCount, @nextAttemptAt, @sentAt, @failedAt, @errorMessage, @createdAt, @updatedAt)`
   )
 
+  const updateQueuedRetryStatement = database.prepare(
+    `UPDATE messages_out
+     SET status = 'queued',
+         attempt_count = ?,
+         next_attempt_at = ?,
+         error_message = ?,
+         updated_at = ?
+     WHERE id = ?`
+  )
+
+  const markFailedStatement = database.prepare(
+    `UPDATE messages_out
+     SET status = 'failed',
+         attempt_count = ?,
+         next_attempt_at = NULL,
+         failed_at = ?,
+         error_message = ?,
+         updated_at = ?
+     WHERE id = ?`
+  )
+
   const listDueStatement = database.prepare(
     `SELECT
       id,
@@ -182,20 +212,53 @@ export const createOutboundMessagesRepository = (database: Database.Database) =>
   const markSentStatement = database.prepare(
     `UPDATE messages_out
      SET status = 'sent',
+         attempt_count = ?,
+         next_attempt_at = NULL,
          sent_at = ?,
+         failed_at = NULL,
+         error_message = NULL,
          updated_at = ?
      WHERE id = ?`
   )
 
   return {
+    enqueueOrIgnoreDedupe: (record: OutboundMessageRecord): "enqueued" | "duplicate" => {
+      try {
+        insertStatement.run(record)
+        return "enqueued"
+      } catch (error) {
+        if (record.dedupeKey && isUniqueConstraintForColumn(error, "dedupe_key")) {
+          return "duplicate"
+        }
+
+        throw error
+      }
+    },
     enqueue: (record: OutboundMessageRecord): void => {
       insertStatement.run(record)
     },
     listDue: (timestamp = Date.now()): OutboundMessageRecord[] => {
       return listDueStatement.all(timestamp) as OutboundMessageRecord[]
     },
-    markSent: (id: string, timestamp = Date.now()): void => {
-      markSentStatement.run(timestamp, timestamp, id)
+    markSent: (id: string, attemptCount: number, timestamp = Date.now()): void => {
+      markSentStatement.run(attemptCount, timestamp, timestamp, id)
+    },
+    markRetry: (
+      id: string,
+      attemptCount: number,
+      nextAttemptAt: number,
+      errorMessage: string,
+      timestamp = Date.now()
+    ): void => {
+      updateQueuedRetryStatement.run(attemptCount, nextAttemptAt, errorMessage, timestamp, id)
+    },
+    markFailed: (
+      id: string,
+      attemptCount: number,
+      errorMessage: string,
+      timestamp = Date.now()
+    ): void => {
+      markFailedStatement.run(attemptCount, timestamp, errorMessage, timestamp, id)
     },
   }
 }

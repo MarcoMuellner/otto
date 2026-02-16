@@ -19,6 +19,7 @@ Proactive communication quality depends on user-specific timing and constraints.
 - Enforce quiet-hours policy in scheduler/outbound pipeline.
 - Add operational commands for worker status/last job run/queue depth.
 - Finalize runbooks in README/docs for support and recovery.
+- Keep user interaction model explicitly single-chain (no required thread emulation markers in normal UX).
 
 ## Non-Goals
 
@@ -33,6 +34,7 @@ Proactive communication quality depends on user-specific timing and constraints.
 - Fresh install can complete onboarding and immediately run with correct scheduling.
 - Quiet-hours policy suppresses non-urgent messages as configured.
 - Operator can inspect communication worker health quickly.
+- Onboarding and runbooks clearly explain single-chain conversational behavior.
 
 ## Verification
 

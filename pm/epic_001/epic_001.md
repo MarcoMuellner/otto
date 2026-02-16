@@ -18,6 +18,23 @@ Otto must move from reactive command handling to proactive daily assistance. Tel
 - Completion can be inferred from user replies or external channel reconciliation (for example Google Tasks).
 - Timezone and quiet-hours are user-specific and configurable.
 - Telegram handling runs as a dedicated worker module/process, integrated into Otto service operation.
+- Telegram UX follows a single conversational chain in one DM; Otto does not require thread-emulation references for normal operation.
+- Inbound and proactive turns share one stable OpenCode session per user chat.
+- Proactive actions are expressed via OpenCode tool/plugin calls (enqueue/approval tools), not by parsing free-form model output.
+
+## Decision Record
+
+### DR-001: Single-Chain Conversation Model
+
+- `context`: Telegram DMs are linear and thread emulation felt unnatural for daily assistant use.
+- `decision`: Keep one user-facing conversation chain and one stable OpenCode session per chat for both inbound and proactive turns.
+- `consequence`: Context continuity is natural and intuitive; scheduling/queue reliability remains in Otto SQLite.
+
+### DR-002: Tool-Driven Proactive Execution
+
+- `context`: Parsing model text into actions adds fragility and hidden coupling.
+- `decision`: Use OpenCode tool/plugin calls for actionable outcomes (`queue_telegram_message`, approval-related tools), then deliver via deterministic queue worker.
+- `consequence`: Action execution is explicit, auditable, idempotent, and simpler to evolve safely.
 
 ## Success Criteria
 

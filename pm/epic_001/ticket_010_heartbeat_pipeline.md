@@ -12,7 +12,7 @@ Heartbeats establish consistent assistant presence and help you stay aligned wit
 
 - Implement heartbeat content builder using OpenCode prompt templates.
 - Schedule heartbeat windows using timezone profile.
-- Produce outbound DM messages via queue.
+- Run heartbeat turns in the same DM OpenCode session and emit outbound via queue tool/plugin calls.
 - Include digest components (priorities, open tasks, suggested next action).
 
 ## Non-Goals
@@ -28,6 +28,7 @@ Heartbeats establish consistent assistant presence and help you stay aligned wit
 - Three daily heartbeats are sent at configured windows.
 - Heartbeats are concise and high-signal.
 - Duplicate heartbeat send is prevented for a window.
+- Heartbeat messages maintain conversational continuity in the single-chain session model.
 
 ## Verification
 
