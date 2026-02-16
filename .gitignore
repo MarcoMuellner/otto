@@ -5,6 +5,8 @@ coverage/
 .env
 .env.*
 .opencode
+!src/assets/.opencode/
+!src/assets/.opencode/**
 .DS_Store
 .githuman
 /opencode-telegram-bridge-main/

@@ -1,0 +1,8 @@
+{
+  "name": "otto-opencode-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.2.6"
+  }
+}
