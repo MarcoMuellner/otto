@@ -277,6 +277,63 @@ describe("buildInternalApiServer", () => {
     await app.close()
   })
 
+  it("falls back to TELEGRAM_ALLOWED_USER_ID when chat and session binding are missing", async () => {
+    // Arrange
+    const previousAllowedUserId = process.env.TELEGRAM_ALLOWED_USER_ID
+    process.env.TELEGRAM_ALLOWED_USER_ID = "8334178095"
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+    })
+
+    try {
+      // Act
+      const response = await app.inject({
+        method: "POST",
+        url: "/internal/tools/queue-telegram-message",
+        headers: {
+          authorization: "Bearer secret",
+        },
+        payload: {
+          content: "hello from fallback",
+          dedupeKey: "dedupe-fallback",
+        },
+      })
+
+      // Assert
+      expect(response.statusCode).toBe(200)
+      const firstCall = vi.mocked(repository.enqueueOrIgnoreDedupe).mock.calls[0]?.[0]
+      expect(firstCall?.chatId).toBe(8334178095)
+    } finally {
+      await app.close()
+
+      if (previousAllowedUserId === undefined) {
+        delete process.env.TELEGRAM_ALLOWED_USER_ID
+      } else {
+        process.env.TELEGRAM_ALLOWED_USER_ID = previousAllowedUserId
+      }
+    }
+  })
+
   it("denies scheduled lane task mutations and allows list", async () => {
     // Arrange
     const app = buildInternalApiServer({

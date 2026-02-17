@@ -331,12 +331,14 @@ export const buildInternalApiServer = (
         payload.chatId ??
         (payload.sessionId
           ? dependencies.sessionBindingsRepository.getTelegramChatIdBySessionId(payload.sessionId)
-          : null)
+          : null) ??
+        resolveDefaultWatchdogChatId()
 
       if (!resolvedChatId) {
         return reply.code(400).send({
           error: "missing_chat",
-          message: "chatId is required unless sessionId is mapped to a Telegram chat binding",
+          message:
+            "chatId is required unless sessionId is mapped or TELEGRAM_ALLOWED_USER_ID is configured",
         })
       }
 
