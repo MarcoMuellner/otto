@@ -335,12 +335,131 @@ export const createJobsRepository = (database: DatabaseSync) => {
      ORDER BY next_run_at ASC`
   )
 
+  const selectClaimableIdsStatement = database.prepare(
+    `SELECT id
+     FROM jobs
+     WHERE status != 'paused'
+       AND next_run_at IS NOT NULL
+       AND next_run_at <= ?
+       AND (
+         lock_token IS NULL
+         OR lock_expires_at IS NULL
+         OR lock_expires_at <= ?
+       )
+     ORDER BY next_run_at ASC
+     LIMIT ?`
+  )
+
+  const claimByIdStatement = database.prepare(
+    `UPDATE jobs
+     SET status = 'running',
+         lock_token = ?,
+         lock_expires_at = ?,
+         updated_at = ?
+     WHERE id = ?
+       AND status != 'paused'
+       AND (
+         lock_token IS NULL
+         OR lock_expires_at IS NULL
+         OR lock_expires_at <= ?
+       )`
+  )
+
+  const getByIdStatement = database.prepare(
+    `SELECT
+      id,
+      type,
+      status,
+      payload,
+      last_run_at as lastRunAt,
+      next_run_at as nextRunAt,
+      lock_token as lockToken,
+      lock_expires_at as lockExpiresAt,
+      created_at as createdAt,
+      updated_at as updatedAt
+     FROM jobs
+     WHERE id = ?`
+  )
+
+  const releaseLockStatement = database.prepare(
+    `UPDATE jobs
+     SET status = 'idle',
+         lock_token = NULL,
+         lock_expires_at = NULL,
+         updated_at = ?
+     WHERE id = ?
+       AND lock_token = ?`
+  )
+
+  const beginImmediate = (): void => {
+    database.exec("BEGIN IMMEDIATE")
+  }
+
+  const commit = (): void => {
+    database.exec("COMMIT")
+  }
+
+  const rollback = (): void => {
+    database.exec("ROLLBACK")
+  }
+
   return {
     upsert: (record: JobRecord): void => {
       upsertStatement.run(record)
     },
     listDue: (timestamp = Date.now()): JobRecord[] => {
       return listDueStatement.all(timestamp) as JobRecord[]
+    },
+    claimDue: (
+      timestamp: number,
+      limit: number,
+      lockToken: string,
+      lockLeaseMs: number,
+      updatedAt = Date.now()
+    ): JobRecord[] => {
+      const lockExpiresAt = timestamp + lockLeaseMs
+
+      beginImmediate()
+
+      try {
+        const candidateRows = selectClaimableIdsStatement.all(
+          timestamp,
+          timestamp,
+          limit
+        ) as Array<{
+          id: string
+        }>
+
+        const claimedJobs: JobRecord[] = []
+
+        for (const row of candidateRows) {
+          const claimResult = claimByIdStatement.run(
+            lockToken,
+            lockExpiresAt,
+            updatedAt,
+            row.id,
+            timestamp
+          ) as { changes?: number }
+
+          if ((claimResult.changes ?? 0) < 1) {
+            continue
+          }
+
+          const claimedRow = getByIdStatement.get(row.id) as JobRecord | undefined
+          if (claimedRow) {
+            claimedJobs.push(claimedRow)
+          }
+        }
+
+        commit()
+        return claimedJobs
+      } catch (error) {
+        rollback()
+        throw error
+      }
+    },
+    releaseLock: (jobId: string, lockToken: string, updatedAt = Date.now()): void => {
+      releaseLockStatement.run(updatedAt, jobId, lockToken)
     },
   }
 }

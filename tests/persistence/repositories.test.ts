@@ -184,6 +184,98 @@ describe("persistence repositories", () => {
     db.close()
   })
 
+  it("claims due jobs with lock lease and supports lock release", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createJobsRepository(db)
+
+    repository.upsert({
+      id: "job-due-1",
+      type: "oneshot_tick",
+      status: "idle",
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.upsert({
+      id: "job-future",
+      type: "oneshot_tick",
+      status: "idle",
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 9_999,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.upsert({
+      id: "job-paused",
+      type: "oneshot_tick",
+      status: "paused",
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    // Act
+    const claimed = repository.claimDue(1_000, 10, "lock-1", 60_000, 1_000)
+
+    // Assert
+    expect(claimed).toHaveLength(1)
+    expect(claimed[0]?.id).toBe("job-due-1")
+
+    const claimedAgain = repository.claimDue(1_100, 10, "lock-2", 60_000, 1_100)
+    expect(claimedAgain).toHaveLength(0)
+
+    repository.releaseLock("job-due-1", "lock-1", 1_200)
+    const reclaimed = repository.claimDue(1_300, 10, "lock-3", 60_000, 1_300)
+    expect(reclaimed).toHaveLength(1)
+    expect(reclaimed[0]?.id).toBe("job-due-1")
+
+    db.close()
+  })
+
+  it("reclaims jobs when lock lease is expired", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createJobsRepository(db)
+
+    repository.upsert({
+      id: "job-expired-lock",
+      type: "oneshot_tick",
+      status: "running",
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      lockToken: "stale-lock",
+      lockExpiresAt: 1_050,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    // Act
+    const reclaimed = repository.claimDue(1_100, 10, "fresh-lock", 60_000, 1_100)
+
+    // Assert
+    expect(reclaimed).toHaveLength(1)
+    expect(reclaimed[0]?.id).toBe("job-expired-lock")
+
+    db.close()
+  })
+
   it("stores approvals, task observations, and user profile snapshots", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)

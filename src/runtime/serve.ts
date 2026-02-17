@@ -8,8 +8,11 @@ import { ensureOttoConfigFile } from "../config/otto-config.js"
 import { resolveInternalApiConfig, startInternalApiServer } from "../internal-api/server.js"
 import { startOpencodeServer } from "../opencode/server.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
+import { createJobsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
+import { resolveSchedulerConfig } from "../scheduler/config.js"
+import { startSchedulerKernel } from "../scheduler/kernel.js"
 import { resolveTelegramWorkerConfig } from "../telegram-worker/config.js"
 import { startTelegramWorker, type TelegramWorkerHandle } from "../telegram-worker/worker.js"
 
@@ -60,9 +63,11 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   process.chdir(config.ottoHome)
 
   const persistenceDatabase = openPersistenceDatabase({ ottoHome: config.ottoHome })
+  const jobsRepository = createJobsRepository(persistenceDatabase)
   const outboundMessagesRepository = createOutboundMessagesRepository(persistenceDatabase)
   const sessionBindingsRepository = createSessionBindingsRepository(persistenceDatabase)
   const internalApiConfig = await resolveInternalApiConfig(config.ottoHome)
+  const schedulerConfig = resolveSchedulerConfig()
 
   process.env.OTTO_INTERNAL_API_URL = internalApiConfig.baseUrl
   process.env.OTTO_INTERNAL_API_TOKEN = internalApiConfig.token
@@ -87,6 +92,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   }
 
   let server: { url: string; close: () => void } | null = null
+  let schedulerKernel: { stop: () => Promise<void> } | null = null
   let telegramWorker: TelegramWorkerHandle | null = null
 
   try {
@@ -116,6 +122,12 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     "OpenCode server started"
   )
 
+  schedulerKernel = await startSchedulerKernel({
+    logger,
+    jobsRepository,
+    config: schedulerConfig,
+  })
+
   try {
     const telegramConfig = resolveTelegramWorkerConfig()
     telegramWorker = await startTelegramWorker(logger, telegramConfig)
@@ -134,6 +146,9 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
 
   if (telegramWorker) {
     await telegramWorker.stop()
+  }
+  if (schedulerKernel) {
+    await schedulerKernel.stop()
   }
   server.close()
   await internalApiServer.close()
