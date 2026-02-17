@@ -158,4 +158,52 @@ describe("task-config", () => {
     // Act and Assert
     await expect(loadTaskProfile(tempRoot, "wrong-name")).rejects.toThrow("id mismatch")
   })
+
+  it("loads JSONC with comments and trailing commas", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const taskConfigDirectory = resolveTaskConfigDirectory(tempRoot)
+    await mkdir(path.join(taskConfigDirectory, "profiles"), { recursive: true })
+
+    await writeFile(
+      path.join(taskConfigDirectory, "base.jsonc"),
+      `{
+  // base task execution config
+  "version": 1,
+  "base": {
+    "opencode": {
+      "agent": {
+        "assistant": {
+          "tools": {
+            "skill": true,
+          },
+          "prompt": "base prompt",
+        },
+      },
+    },
+  },
+  "lanes": {
+    "scheduled": {
+      "opencode": {
+        "agent": {
+          "assistant": {
+            "prompt": "scheduled prompt",
+          },
+        },
+      },
+    },
+  },
+}
+`,
+      "utf8"
+    )
+
+    // Act
+    const loaded = await loadTaskRuntimeBaseConfig(tempRoot)
+
+    // Assert
+    expect(JSON.stringify(loaded)).toContain("base prompt")
+    expect(JSON.stringify(loaded)).toContain("scheduled prompt")
+  })
 })

@@ -1,6 +1,7 @@
 import path from "node:path"
 import { readFile } from "node:fs/promises"
 
+import { parse as parseJsonc } from "jsonc-parser"
 import { z } from "zod"
 
 export type TaskExecutionLane = "interactive" | "scheduled"
@@ -46,12 +47,19 @@ const BASE_CONFIG_FILE_NAME = "base.jsonc"
 const PROFILES_DIRECTORY_NAME = "profiles"
 
 const parseJsonFile = <T>(source: string, schema: z.ZodSchema<T>, filePath: string): T => {
-  let parsed: unknown
+  const parseErrors: Array<{
+    error: number
+    offset: number
+    length: number
+  }> = []
 
-  try {
-    parsed = JSON.parse(source)
-  } catch {
-    throw new Error(`Invalid JSON in task config file: ${filePath}`)
+  const parsed = parseJsonc(source, parseErrors, {
+    allowTrailingComma: true,
+    disallowComments: false,
+  })
+
+  if (parseErrors.length > 0) {
+    throw new Error(`Invalid JSONC in task config file: ${filePath}`)
   }
 
   const validated = schema.safeParse(parsed)
