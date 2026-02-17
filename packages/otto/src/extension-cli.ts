@@ -18,7 +18,8 @@ type CliStreams = {
 type ExtensionCliEnvironment = NodeJS.ProcessEnv
 
 const resolveDefaultCatalogRoot = (): string => {
-  const currentFileDirectory = path.dirname(decodeURIComponent(new URL(import.meta.url).pathname))
+  const entrypointPath = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve("dist")
+  const currentFileDirectory = path.dirname(entrypointPath)
   return path.join(currentFileDirectory, "assets", "extensions", "catalog")
 }
 
@@ -178,10 +179,10 @@ export const runExtensionCliCommand = async (
   }
 }
 
-const isMainModule = process.argv[1]
-  ? path.resolve(process.argv[1]) ===
-    path.resolve(decodeURIComponent(new URL(import.meta.url).pathname))
-  : false
+const isMainModule =
+  typeof process.argv[1] === "string" &&
+  (process.argv[1].endsWith("/extension-cli.mjs") ||
+    process.argv[1].endsWith("\\extension-cli.mjs"))
 
 if (isMainModule) {
   runExtensionCliCommand(process.argv.slice(2))

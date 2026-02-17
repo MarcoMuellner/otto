@@ -1,7 +1,6 @@
 import path from "node:path";
 import { access, readFile, readdir } from "node:fs/promises";
 import { constants } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
@@ -172,7 +171,9 @@ const pathExists = async (targetPath: string): Promise<boolean> => {
 };
 
 export const resolveDefaultExtensionCatalogRoot = (): string => {
-  const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const currentDirectory = path.dirname(
+    decodeURIComponent(new URL(import.meta.url).pathname),
+  );
   return path.resolve(currentDirectory, "../../otto-extensions/extensions");
 };
 
