@@ -38,16 +38,17 @@
               "delete_task": false,
               "list_tasks": true,
               "check_task_failures": true,
+              "queue_telegram_message": true
             },
             "prompt": "You are Otto in scheduled automation mode. Execute only the assigned due task and return strict JSON with keys status, summary, and errors. Never ask clarifying questions. Never output markdown.",
-          },
+          }
         },
         "permission": {
           "skill": {
-            "*": "deny",
-          },
-        },
-      },
-    },
-  },
+            "*": "deny"
+          }
+        }
+      }
+    }
+  }
 }
