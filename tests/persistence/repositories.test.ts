@@ -165,9 +165,14 @@ describe("persistence repositories", () => {
       id: "job-1",
       type: "oneshot",
       status: "idle",
+      scheduleType: "oneshot",
+      runAt: 1000,
+      cadenceMinutes: null,
       payload: null,
       lastRunAt: null,
       nextRunAt: 1000,
+      terminalState: null,
+      terminalReason: null,
       lockToken: null,
       lockExpiresAt: null,
       createdAt: 100,
@@ -195,9 +200,14 @@ describe("persistence repositories", () => {
       id: "job-due-1",
       type: "oneshot_tick",
       status: "idle",
+      scheduleType: "recurring",
+      runAt: null,
+      cadenceMinutes: 1,
       payload: null,
       lastRunAt: null,
       nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
       lockToken: null,
       lockExpiresAt: null,
       createdAt: 100,
@@ -207,9 +217,14 @@ describe("persistence repositories", () => {
       id: "job-future",
       type: "oneshot_tick",
       status: "idle",
+      scheduleType: "recurring",
+      runAt: null,
+      cadenceMinutes: 1,
       payload: null,
       lastRunAt: null,
       nextRunAt: 9_999,
+      terminalState: null,
+      terminalReason: null,
       lockToken: null,
       lockExpiresAt: null,
       createdAt: 100,
@@ -219,9 +234,14 @@ describe("persistence repositories", () => {
       id: "job-paused",
       type: "oneshot_tick",
       status: "paused",
+      scheduleType: "recurring",
+      runAt: null,
+      cadenceMinutes: 1,
       payload: null,
       lastRunAt: null,
       nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
       lockToken: null,
       lockExpiresAt: null,
       createdAt: 100,
@@ -257,9 +277,14 @@ describe("persistence repositories", () => {
       id: "job-expired-lock",
       type: "oneshot_tick",
       status: "running",
+      scheduleType: "recurring",
+      runAt: null,
+      cadenceMinutes: 1,
       payload: null,
       lastRunAt: null,
       nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
       lockToken: "stale-lock",
       lockExpiresAt: 1_050,
       createdAt: 100,
@@ -272,6 +297,127 @@ describe("persistence repositories", () => {
     // Assert
     expect(reclaimed).toHaveLength(1)
     expect(reclaimed[0]?.id).toBe("job-expired-lock")
+
+    db.close()
+  })
+
+  it("stores job runs and updates recurring or one-shot schedule state", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createJobsRepository(db)
+
+    repository.upsert({
+      id: "job-recurring",
+      type: "reminder",
+      status: "idle",
+      scheduleType: "recurring",
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.upsert({
+      id: "job-oneshot",
+      type: "reminder",
+      status: "idle",
+      scheduleType: "oneshot",
+      runAt: 2_000,
+      cadenceMinutes: null,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 2_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const recurringClaim = repository.claimDue(1_000, 10, "lock-r", 60_000, 1_000)
+    const oneshotClaim = repository.claimDue(2_000, 10, "lock-o", 60_000, 2_000)
+
+    repository.insertRun({
+      id: "run-r",
+      jobId: "job-recurring",
+      scheduledFor: 1_000,
+      startedAt: 1_001,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 1_001,
+    })
+    repository.markRunFinished("run-r", "success", 1_010, null, null, '{"ok":true}')
+    repository.rescheduleRecurring("job-recurring", "lock-r", 1_010, 2_810_000, 1_011)
+
+    repository.insertRun({
+      id: "run-o",
+      jobId: "job-oneshot",
+      scheduledFor: 2_000,
+      startedAt: 2_001,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 2_001,
+    })
+    repository.markRunFinished("run-o", "failed", 2_010, "timeout", "execution timeout", null)
+    repository.finalizeOneShot("job-oneshot", "lock-o", "completed", null, 2_010, 2_011)
+
+    // Assert
+    expect(recurringClaim).toHaveLength(1)
+    expect(oneshotClaim).toHaveLength(1)
+
+    const recurring = db
+      .prepare(
+        "SELECT status, last_run_at as lastRunAt, next_run_at as nextRunAt, lock_token as lockToken FROM jobs WHERE id = ?"
+      )
+      .get("job-recurring") as {
+      status: string
+      lastRunAt: number
+      nextRunAt: number
+      lockToken: string | null
+    }
+    expect(recurring).toEqual({
+      status: "idle",
+      lastRunAt: 1_010,
+      nextRunAt: 2_810_000,
+      lockToken: null,
+    })
+
+    const oneshot = db
+      .prepare(
+        "SELECT status, last_run_at as lastRunAt, next_run_at as nextRunAt, terminal_state as terminalState FROM jobs WHERE id = ?"
+      )
+      .get("job-oneshot") as {
+      status: string
+      lastRunAt: number
+      nextRunAt: number | null
+      terminalState: string | null
+    }
+    expect(oneshot).toEqual({
+      status: "idle",
+      lastRunAt: 2_010,
+      nextRunAt: null,
+      terminalState: "completed",
+    })
+
+    const recurringRuns = repository.listRunsByJobId("job-recurring")
+    const oneshotRuns = repository.listRunsByJobId("job-oneshot")
+    expect(recurringRuns[0]?.status).toBe("success")
+    expect(oneshotRuns[0]?.status).toBe("failed")
 
     db.close()
   })

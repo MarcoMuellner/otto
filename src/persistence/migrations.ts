@@ -131,4 +131,39 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
       )`,
     ],
   },
+  {
+    id: "009_job_schedule_and_runs",
+    statements: [
+      `ALTER TABLE jobs ADD COLUMN schedule_type TEXT`,
+      `ALTER TABLE jobs ADD COLUMN run_at INTEGER`,
+      `ALTER TABLE jobs ADD COLUMN cadence_minutes INTEGER`,
+      `ALTER TABLE jobs ADD COLUMN terminal_state TEXT`,
+      `ALTER TABLE jobs ADD COLUMN terminal_reason TEXT`,
+      `UPDATE jobs
+       SET schedule_type = COALESCE(schedule_type, 'recurring'),
+           cadence_minutes = CASE
+             WHEN cadence_minutes IS NULL AND next_run_at IS NOT NULL THEN 1
+             ELSE cadence_minutes
+           END,
+           run_at = CASE
+             WHEN run_at IS NULL AND next_run_at IS NOT NULL THEN next_run_at
+             ELSE run_at
+           END`,
+      `CREATE TABLE IF NOT EXISTS job_runs (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        scheduled_for INTEGER,
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER,
+        status TEXT NOT NULL,
+        error_code TEXT,
+        error_message TEXT,
+        result_json TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (job_id) REFERENCES jobs(id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_jobs_schedule_due ON jobs (status, next_run_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_job_runs_job_started_at ON job_runs (job_id, started_at DESC)`,
+    ],
+  },
 ]

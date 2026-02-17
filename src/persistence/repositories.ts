@@ -3,6 +3,9 @@ import type { DatabaseSync } from "node:sqlite"
 export type MessagePriority = "low" | "normal" | "high"
 export type OutboundMessageStatus = "queued" | "sent" | "failed" | "cancelled"
 export type JobStatus = "idle" | "running" | "paused"
+export type JobScheduleType = "recurring" | "oneshot"
+export type JobTerminalState = "completed" | "expired" | "cancelled"
+export type JobRunStatus = "success" | "failed" | "skipped"
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "expired"
 
 export type SessionBindingRecord = {
@@ -42,13 +45,31 @@ export type JobRecord = {
   id: string
   type: string
   status: JobStatus
+  scheduleType: JobScheduleType
+  runAt: number | null
+  cadenceMinutes: number | null
   payload: string | null
   lastRunAt: number | null
   nextRunAt: number | null
+  terminalState: JobTerminalState | null
+  terminalReason: string | null
   lockToken: string | null
   lockExpiresAt: number | null
   createdAt: number
   updatedAt: number
+}
+
+export type JobRunRecord = {
+  id: string
+  jobId: string
+  scheduledFor: number | null
+  startedAt: number
+  finishedAt: number | null
+  status: JobRunStatus
+  errorCode: string | null
+  errorMessage: string | null
+  resultJson: string | null
+  createdAt: number
 }
 
 export type ApprovalRecord = {
@@ -303,18 +324,23 @@ export const createOutboundMessagesRepository = (database: DatabaseSync) => {
 export const createJobsRepository = (database: DatabaseSync) => {
   const upsertStatement = database.prepare(
     `INSERT INTO jobs
-      (id, type, status, payload, last_run_at, next_run_at, lock_token, lock_expires_at, created_at, updated_at)
+      (id, type, status, schedule_type, run_at, cadence_minutes, payload, last_run_at, next_run_at, terminal_state, terminal_reason, lock_token, lock_expires_at, created_at, updated_at)
      VALUES
-      (@id, @type, @status, @payload, @lastRunAt, @nextRunAt, @lockToken, @lockExpiresAt, @createdAt, @updatedAt)
+      (@id, @type, @status, @scheduleType, @runAt, @cadenceMinutes, @payload, @lastRunAt, @nextRunAt, @terminalState, @terminalReason, @lockToken, @lockExpiresAt, @createdAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
-      type = excluded.type,
-      status = excluded.status,
-      payload = excluded.payload,
-      last_run_at = excluded.last_run_at,
-      next_run_at = excluded.next_run_at,
-      lock_token = excluded.lock_token,
-      lock_expires_at = excluded.lock_expires_at,
-      updated_at = excluded.updated_at`
+       type = excluded.type,
+       status = excluded.status,
+       schedule_type = excluded.schedule_type,
+       run_at = excluded.run_at,
+       cadence_minutes = excluded.cadence_minutes,
+       payload = excluded.payload,
+       last_run_at = excluded.last_run_at,
+       next_run_at = excluded.next_run_at,
+       terminal_state = excluded.terminal_state,
+       terminal_reason = excluded.terminal_reason,
+       lock_token = excluded.lock_token,
+       lock_expires_at = excluded.lock_expires_at,
+       updated_at = excluded.updated_at`
   )
 
   const listDueStatement = database.prepare(
@@ -322,9 +348,14 @@ export const createJobsRepository = (database: DatabaseSync) => {
       id,
       type,
       status,
+      schedule_type as scheduleType,
+      run_at as runAt,
+      cadence_minutes as cadenceMinutes,
       payload,
       last_run_at as lastRunAt,
       next_run_at as nextRunAt,
+      terminal_state as terminalState,
+      terminal_reason as terminalReason,
       lock_token as lockToken,
       lock_expires_at as lockExpiresAt,
       created_at as createdAt,
@@ -370,9 +401,14 @@ export const createJobsRepository = (database: DatabaseSync) => {
       id,
       type,
       status,
+      schedule_type as scheduleType,
+      run_at as runAt,
+      cadence_minutes as cadenceMinutes,
       payload,
       last_run_at as lastRunAt,
       next_run_at as nextRunAt,
+      terminal_state as terminalState,
+      terminal_reason as terminalReason,
       lock_token as lockToken,
       lock_expires_at as lockExpiresAt,
       created_at as createdAt,
@@ -389,6 +425,68 @@ export const createJobsRepository = (database: DatabaseSync) => {
          updated_at = ?
      WHERE id = ?
        AND lock_token = ?`
+  )
+
+  const insertRunStatement = database.prepare(
+    `INSERT INTO job_runs
+      (id, job_id, scheduled_for, started_at, finished_at, status, error_code, error_message, result_json, created_at)
+     VALUES
+      (@id, @jobId, @scheduledFor, @startedAt, @finishedAt, @status, @errorCode, @errorMessage, @resultJson, @createdAt)`
+  )
+
+  const markRunFinishedStatement = database.prepare(
+    `UPDATE job_runs
+     SET finished_at = ?,
+         status = ?,
+         error_code = ?,
+         error_message = ?,
+         result_json = ?
+     WHERE id = ?`
+  )
+
+  const rescheduleRecurringStatement = database.prepare(
+    `UPDATE jobs
+     SET status = 'idle',
+         last_run_at = ?,
+         next_run_at = ?,
+         terminal_state = NULL,
+         terminal_reason = NULL,
+         lock_token = NULL,
+         lock_expires_at = NULL,
+         updated_at = ?
+     WHERE id = ?
+       AND lock_token = ?`
+  )
+
+  const finalizeOneShotStatement = database.prepare(
+    `UPDATE jobs
+     SET status = 'idle',
+         last_run_at = ?,
+         next_run_at = NULL,
+         terminal_state = ?,
+         terminal_reason = ?,
+         lock_token = NULL,
+         lock_expires_at = NULL,
+         updated_at = ?
+     WHERE id = ?
+       AND lock_token = ?`
+  )
+
+  const listRunsByJobIdStatement = database.prepare(
+    `SELECT
+      id,
+      job_id as jobId,
+      scheduled_for as scheduledFor,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      error_code as errorCode,
+      error_message as errorMessage,
+      result_json as resultJson,
+      created_at as createdAt
+     FROM job_runs
+     WHERE job_id = ?
+     ORDER BY started_at DESC`
   )
 
   const beginImmediate = (): void => {
@@ -460,6 +558,48 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     releaseLock: (jobId: string, lockToken: string, updatedAt = Date.now()): void => {
       releaseLockStatement.run(updatedAt, jobId, lockToken)
+    },
+    insertRun: (record: JobRunRecord): void => {
+      insertRunStatement.run(record)
+    },
+    markRunFinished: (
+      runId: string,
+      status: JobRunStatus,
+      finishedAt: number,
+      errorCode: string | null,
+      errorMessage: string | null,
+      resultJson: string | null
+    ): void => {
+      markRunFinishedStatement.run(finishedAt, status, errorCode, errorMessage, resultJson, runId)
+    },
+    rescheduleRecurring: (
+      jobId: string,
+      lockToken: string,
+      lastRunAt: number,
+      nextRunAt: number,
+      updatedAt = Date.now()
+    ): void => {
+      rescheduleRecurringStatement.run(lastRunAt, nextRunAt, updatedAt, jobId, lockToken)
+    },
+    finalizeOneShot: (
+      jobId: string,
+      lockToken: string,
+      terminalState: JobTerminalState,
+      terminalReason: string | null,
+      lastRunAt: number,
+      updatedAt = Date.now()
+    ): void => {
+      finalizeOneShotStatement.run(
+        lastRunAt,
+        terminalState,
+        terminalReason,
+        updatedAt,
+        jobId,
+        lockToken
+      )
+    },
+    listRunsByJobId: (jobId: string): JobRunRecord[] => {
+      return listRunsByJobIdStatement.all(jobId) as JobRunRecord[]
     },
   }
 }
