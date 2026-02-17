@@ -558,6 +558,37 @@ cmd_task() {
   esac
 }
 
+run_extension_cli() {
+  NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/extension-cli.mjs" "$@"
+}
+
+cmd_extension() {
+  local subcommand="${1:-}"
+  shift || true
+
+  case "${subcommand}" in
+    list)
+      run_extension_cli list "$@"
+      ;;
+    install)
+      run_extension_cli install "$@"
+      ;;
+    update)
+      run_extension_cli update "$@"
+      ;;
+    remove)
+      run_extension_cli remove "$@"
+      ;;
+    help|--help|-h|"")
+      run_extension_cli --help
+      ;;
+    *)
+      error "Unknown extension command: ${subcommand}"
+      exit 1
+      ;;
+  esac
+}
+
 resolve_repo() {
   local explicit_repo="${1:-}"
   if [[ -n "${explicit_repo}" ]]; then
@@ -844,6 +875,11 @@ Usage:
   ottoctl task bind-profile <task-id> <profile-id>
   ottoctl task show <task-id>
   ottoctl task audit [limit]
+  ottoctl extension list
+  ottoctl extension install <id>[@version]
+  ottoctl extension update <id>
+  ottoctl extension update --all
+  ottoctl extension remove <id>[@version]
   ottoctl update [--nightly] [--repo owner/repo]
 EOF
 }
@@ -876,6 +912,10 @@ main() {
     task)
       shift
       cmd_task "$@"
+      ;;
+    extension)
+      shift
+      cmd_extension "$@"
       ;;
     update)
       shift
