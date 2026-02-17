@@ -59,6 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
 - Installed control binary: `ottoctl`
   - `ottoctl start`
   - `ottoctl stop`
+  - `ottoctl configure-telegram` (interactive Telegram credential setup, skippable)
   - `ottoctl update` (defaults to latest stable)
   - `ottoctl update --nightly` (latest nightly)
   - `ottoctl update --repo <owner>/<repo>` (optional override for custom repo)

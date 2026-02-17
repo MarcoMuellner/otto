@@ -178,6 +178,9 @@ main() {
   info "Running first-time setup..."
   NODE_ENV=production node "${CURRENT_LINK}/dist/index.mjs" setup
 
+  info "Configuring Telegram credentials (optional)..."
+  "${BIN_DIR}/ottoctl" configure-telegram || true
+
   info "Installing and starting service..."
   "${BIN_DIR}/ottoctl" start
 

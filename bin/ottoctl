@@ -428,6 +428,14 @@ cmd_stop() {
   success "Otto service stopped"
 }
 
+cmd_configure_telegram() {
+  if ensure_telegram_credentials; then
+    success "Telegram credential setup complete"
+  else
+    warn "Telegram credential setup skipped"
+  fi
+}
+
 cmd_help() {
   cat <<'EOF'
 ottoctl - Otto server control
@@ -435,6 +443,7 @@ ottoctl - Otto server control
 Usage:
   ottoctl start
   ottoctl stop
+  ottoctl configure-telegram
   ottoctl update [--nightly] [--repo owner/repo]
 EOF
 }
@@ -455,6 +464,10 @@ main() {
     stop)
       shift
       cmd_stop "$@"
+      ;;
+    configure-telegram)
+      shift
+      cmd_configure_telegram "$@"
       ;;
     update)
       shift
