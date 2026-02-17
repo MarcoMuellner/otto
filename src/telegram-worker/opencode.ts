@@ -1,4 +1,19 @@
 import { createOpencodeClient } from "@opencode-ai/sdk"
+import type { Logger } from "pino"
+
+type SessionChatTextPart = {
+  type?: string
+  text?: string
+}
+
+type SessionChatResponsePayload = {
+  parts?: SessionChatTextPart[]
+}
+
+type ModelSelection = {
+  providerId: string
+  modelId: string
+}
 
 export type OpencodeSessionGateway = {
   ensureSession: (sessionId: string | null) => Promise<string>
@@ -14,14 +29,34 @@ const isNotFoundError = (error: unknown): boolean => {
   return message.includes("not found") || message.includes("404")
 }
 
-const extractAssistantText = (response: unknown): string => {
-  const payload = response as { data?: { parts?: Array<{ type?: string; text?: string }> } }
-  const parts = payload.data?.parts ?? []
+const extractAssistantText = (payload: SessionChatResponsePayload): string => {
+  const parts = payload.parts ?? []
 
   return parts
     .filter((part) => part.type === "text")
     .map((part) => part.text ?? "")
     .join("\n")
+}
+
+const resolveModelSelection = async (
+  configApi: ReturnType<typeof createOpencodeClient>["config"]
+): Promise<ModelSelection> => {
+  const response = await configApi.get()
+  const model = response.data?.model
+
+  if (!model) {
+    throw new Error("OpenCode config is missing a default model")
+  }
+
+  const slashIndex = model.indexOf("/")
+  if (slashIndex <= 0 || slashIndex === model.length - 1) {
+    throw new Error(`OpenCode model must be in provider/model format, received: ${model}`)
+  }
+
+  return {
+    providerId: model.slice(0, slashIndex),
+    modelId: model.slice(slashIndex + 1),
+  }
 }
 
 /**
@@ -31,16 +66,13 @@ const extractAssistantText = (response: unknown): string => {
  * @param baseUrl OpenCode server base URL.
  * @returns Session gateway used by Telegram inbound bridge.
  */
-export const createOpencodeSessionGateway = (baseUrl: string): OpencodeSessionGateway => {
+export const createOpencodeSessionGateway = (
+  baseUrl: string,
+  logger?: Logger
+): OpencodeSessionGateway => {
   const client = createOpencodeClient({ baseUrl, throwOnError: true })
-  const sessionApi = client.session as unknown as {
-    get: (input: { path: { id: string } }) => Promise<unknown>
-    create: (input: { body: { title: string } }) => Promise<{ data?: { id?: string } }>
-    prompt: (input: {
-      path: { id: string }
-      body: { parts: Array<{ type: "text"; text: string }> }
-    }) => Promise<unknown>
-  }
+  const sessionApi = client.session
+  let modelSelectionPromise: Promise<ModelSelection> | null = null
 
   return {
     ensureSession: async (sessionId) => {
@@ -55,7 +87,11 @@ export const createOpencodeSessionGateway = (baseUrl: string): OpencodeSessionGa
         }
       }
 
-      const created = await sessionApi.create({ body: { title: "Telegram chat" } })
+      const created = await sessionApi.create({
+        body: {
+          title: "Telegram chat",
+        },
+      })
       const createdId = created.data?.id
 
       if (!createdId) {
@@ -65,14 +101,35 @@ export const createOpencodeSessionGateway = (baseUrl: string): OpencodeSessionGa
       return createdId
     },
     promptSession: async (sessionId, text) => {
-      const response = await sessionApi.prompt({
+      modelSelectionPromise ??= resolveModelSelection(client.config)
+      const modelSelection = await modelSelectionPromise
+
+      logger?.info(
+        {
+          baseUrl,
+          sessionId,
+          providerId: modelSelection.providerId,
+          modelId: modelSelection.modelId,
+          textLength: text.length,
+        },
+        "Sending Telegram prompt to OpenCode session chat API"
+      )
+
+      const response = await sessionApi.chat({
         path: { id: sessionId },
         body: {
+          providerID: modelSelection.providerId,
+          modelID: modelSelection.modelId,
           parts: [{ type: "text", text }],
         },
       })
 
-      return extractAssistantText(response)
+      const payload = response.data
+      if (!payload) {
+        throw new Error("OpenCode chat response missing data payload")
+      }
+
+      return extractAssistantText(payload)
     },
   }
 }

@@ -105,7 +105,7 @@ export const startTelegramWorker = async (
     dependencies.createSessionGateway ??
     (async (baseUrl: string): Promise<OpencodeSessionGateway> => {
       const module = await import("./opencode.js")
-      return module.createOpencodeSessionGateway(baseUrl)
+      return module.createOpencodeSessionGateway(baseUrl, logger)
     })
 
   const sessionGateway = await sessionGatewayFactory(config.opencodeBaseUrl)
