@@ -14,6 +14,7 @@ export type TelegramInboundMessage = {
 
 export type TelegramSender = {
   sendMessage: (chatId: number, text: string) => Promise<void>
+  sendChatAction?: (chatId: number, action: "typing") => Promise<void>
 }
 
 export type SessionBindingsRepository = {
@@ -89,6 +90,44 @@ const isUniqueConstraintViolation = (error: unknown): boolean => {
   return error.message.includes("UNIQUE") || error.message.includes("constraint")
 }
 
+const TYPING_ACTION_INTERVAL_MS = 4_000
+
+const startTypingHeartbeat = (
+  sender: TelegramSender,
+  logger: Logger,
+  chatId: number
+): (() => void) => {
+  if (!sender.sendChatAction) {
+    return () => {}
+  }
+
+  let active = true
+
+  const emitTyping = async (): Promise<void> => {
+    if (!active) {
+      return
+    }
+
+    try {
+      await sender.sendChatAction?.(chatId, "typing")
+    } catch (error) {
+      const err = error as Error
+      logger.debug({ chatId, error: err.message }, "Failed to send Telegram typing action")
+    }
+  }
+
+  void emitTyping()
+
+  const timer = setInterval(() => {
+    void emitTyping()
+  }, TYPING_ACTION_INTERVAL_MS)
+
+  return () => {
+    active = false
+    clearInterval(timer)
+  }
+}
+
 /**
  * Creates the inbound Telegram-to-OpenCode bridge so text messages can reuse stable sessions
  * and return replies while persisting orchestration records.
@@ -137,6 +176,11 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
       }
 
       let assistantText = ""
+      const stopTypingHeartbeat = startTypingHeartbeat(
+        dependencies.sender,
+        dependencies.logger,
+        message.chatId
+      )
 
       try {
         assistantText = await withTimeout(
@@ -153,6 +197,8 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
         const fallbackMessage = "I could not complete that right now. Please try again in a moment."
         await dependencies.sender.sendMessage(message.chatId, fallbackMessage)
         return
+      } finally {
+        stopTypingHeartbeat()
       }
 
       const reply = normalizeAssistantText(assistantText)

@@ -31,6 +31,7 @@ export type TelegramInboundUpdate = {
 export type TelegramBotRuntime = {
   onTextMessage: (handler: (update: TelegramInboundUpdate) => Promise<void>) => void
   sendMessage: (chatId: number, text: string) => Promise<void>
+  sendChatAction?: (chatId: number, action: "typing") => Promise<void>
   launch: () => Promise<void>
   stop: () => Promise<void>
 }
@@ -65,6 +66,9 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
     },
     sendMessage: async (chatId, text) => {
       await bot.telegram.sendMessage(chatId, text)
+    },
+    sendChatAction: async (chatId, action) => {
+      await bot.telegram.sendChatAction(chatId, action)
     },
     launch: async () => {
       await bot.launch()
@@ -117,6 +121,7 @@ export const startTelegramWorker = async (
     logger,
     sender: {
       sendMessage: bot.sendMessage,
+      sendChatAction: bot.sendChatAction,
     },
     sessionGateway,
     sessionBindingsRepository,
