@@ -185,12 +185,13 @@ export const startTelegramWorker = async (
     }
   })
 
-  try {
-    await bot.launch()
-  } catch (error) {
-    database.close()
-    throw error
-  }
+  void bot.launch().catch((error) => {
+    const err = error as Error
+    logger.error(
+      { error: err.message },
+      "Telegram bot launch failed; inbound updates may be unavailable"
+    )
+  })
 
   logger.info(
     {

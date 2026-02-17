@@ -38,7 +38,7 @@ const createLoggerStub = () => {
   }
 }
 
-const createFakeBotRuntime = () => {
+const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
   let handler:
     | ((update: {
         sourceMessageId: string
@@ -58,7 +58,11 @@ const createFakeBotRuntime = () => {
     sendMessage: async (chatId, text) => {
       sentMessages.push({ chatId, text })
     },
-    launch: async () => {},
+    launch: async () => {
+      if (options.launchError) {
+        throw options.launchError
+      }
+    },
     stop: async () => {},
   }
 
@@ -215,5 +219,51 @@ describe("startTelegramWorker", () => {
 
     // Assert
     expect(info).toHaveBeenCalledWith("Telegram worker disabled by configuration")
+  })
+
+  it("keeps running queue loop when Telegram launch fails", async () => {
+    // Arrange
+    const { logger, error, info } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime({ launchError: new Error("launch failed") })
+
+    // Act
+    const worker = await startTelegramWorker(
+      logger,
+      {
+        enabled: true,
+        botToken: "token",
+        allowedUserId: 1001,
+        heartbeatMs: 2_000,
+        outboundPollMs: 2_000,
+        outboundMaxAttempts: 5,
+        outboundRetryBaseMs: 5_000,
+        outboundRetryMaxMs: 300_000,
+        opencodeBaseUrl: "http://127.0.0.1:4096",
+        promptTimeoutMs: 10_000,
+      },
+      {
+        createBotRuntime: () => fakeBot.runtime,
+        openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+        createSessionGateway: () => ({
+          ensureSession: async () => "session-1",
+          promptSession: async () => "ok",
+        }),
+      }
+    )
+    await Promise.resolve()
+
+    // Assert
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedUserId: 1001 }),
+      "Telegram worker started"
+    )
+    expect(error).toHaveBeenCalledWith(
+      { error: "launch failed" },
+      "Telegram bot launch failed; inbound updates may be unavailable"
+    )
+
+    await worker.stop()
   })
 })
