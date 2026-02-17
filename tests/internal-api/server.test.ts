@@ -7,6 +7,7 @@ import type { Logger } from "pino"
 
 import { buildInternalApiServer, resolveInternalApiConfig } from "../../src/internal-api/server.js"
 import type { OutboundMessageEnqueueRepository } from "../../src/telegram-worker/outbound-enqueue.js"
+import type { JobRecord, TaskListRecord } from "../../src/persistence/repositories.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-internal-api-")
 const cleanupPaths: string[] = []
@@ -23,6 +24,68 @@ const createLoggerStub = (): Logger => {
     warn: vi.fn(),
     error: vi.fn(),
   } as unknown as Logger
+}
+
+const createJobsRepositoryStub = () => {
+  const tasks = new Map<string, JobRecord>()
+
+  return {
+    getById: (jobId: string): JobRecord | null => {
+      return tasks.get(jobId) ?? null
+    },
+    createTask: (record: JobRecord): void => {
+      tasks.set(record.id, record)
+    },
+    updateTask: (
+      jobId: string,
+      update: {
+        type: string
+        scheduleType: "recurring" | "oneshot"
+        profileId: string | null
+        runAt: number | null
+        cadenceMinutes: number | null
+        payload: string | null
+        nextRunAt: number | null
+      }
+    ): void => {
+      const existing = tasks.get(jobId)
+      if (!existing) {
+        return
+      }
+
+      tasks.set(jobId, {
+        ...existing,
+        ...update,
+      })
+    },
+    cancelTask: (jobId: string): void => {
+      const existing = tasks.get(jobId)
+      if (!existing) {
+        return
+      }
+
+      tasks.set(jobId, {
+        ...existing,
+        terminalState: "cancelled",
+        nextRunAt: null,
+      })
+    },
+    listTasks: (): TaskListRecord[] => {
+      return Array.from(tasks.values()).map((task) => ({
+        id: task.id,
+        type: task.type,
+        scheduleType: task.scheduleType,
+        profileId: task.profileId,
+        status: task.status,
+        runAt: task.runAt,
+        cadenceMinutes: task.cadenceMinutes,
+        nextRunAt: task.nextRunAt,
+        terminalState: task.terminalState,
+        terminalReason: task.terminalReason,
+        updatedAt: task.updatedAt,
+      }))
+    },
+  }
 }
 
 describe("resolveInternalApiConfig", () => {
@@ -63,6 +126,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobsRepository: createJobsRepositoryStub(),
     })
 
     // Act
@@ -97,6 +161,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobsRepository: createJobsRepositoryStub(),
     })
 
     // Act
@@ -146,6 +211,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => 777),
       },
+      jobsRepository: createJobsRepositoryStub(),
     })
 
     // Act
@@ -170,6 +236,61 @@ describe("buildInternalApiServer", () => {
     })
     const firstCall = vi.mocked(repository.enqueueOrIgnoreDedupe).mock.calls[0]?.[0]
     expect(firstCall?.chatId).toBe(777)
+
+    await app.close()
+  })
+
+  it("denies scheduled lane task mutations and allows list", async () => {
+    // Arrange
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobsRepository: createJobsRepositoryStub(),
+    })
+
+    // Act
+    const deniedCreate = await app.inject({
+      method: "POST",
+      url: "/internal/tools/tasks/create",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "scheduled",
+        type: "test",
+        scheduleType: "oneshot",
+        runAt: 1_000,
+      },
+    })
+
+    const allowedList = await app.inject({
+      method: "POST",
+      url: "/internal/tools/tasks/list",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "scheduled",
+      },
+    })
+
+    // Assert
+    expect(deniedCreate.statusCode).toBe(403)
+    expect(allowedList.statusCode).toBe(200)
 
     await app.close()
   })

@@ -73,6 +73,20 @@ export type JobRunRecord = {
   createdAt: number
 }
 
+export type TaskListRecord = {
+  id: string
+  type: string
+  scheduleType: JobScheduleType
+  profileId: string | null
+  status: JobStatus
+  runAt: number | null
+  cadenceMinutes: number | null
+  nextRunAt: number | null
+  terminalState: JobTerminalState | null
+  terminalReason: string | null
+  updatedAt: number
+}
+
 export type ApprovalRecord = {
   id: string
   actionType: string
@@ -438,6 +452,55 @@ export const createJobsRepository = (database: DatabaseSync) => {
      WHERE id = ?`
   )
 
+  const insertTaskStatement = database.prepare(
+    `INSERT INTO jobs
+      (id, type, status, schedule_type, profile_id, run_at, cadence_minutes, payload, last_run_at, next_run_at, terminal_state, terminal_reason, lock_token, lock_expires_at, created_at, updated_at)
+     VALUES
+      (@id, @type, @status, @scheduleType, @profileId, @runAt, @cadenceMinutes, @payload, @lastRunAt, @nextRunAt, @terminalState, @terminalReason, @lockToken, @lockExpiresAt, @createdAt, @updatedAt)`
+  )
+
+  const updateTaskStatement = database.prepare(
+    `UPDATE jobs
+     SET type = COALESCE(?, type),
+         schedule_type = COALESCE(?, schedule_type),
+         profile_id = ?,
+         run_at = ?,
+         cadence_minutes = ?,
+         payload = ?,
+         next_run_at = ?,
+         updated_at = ?
+     WHERE id = ?`
+  )
+
+  const cancelTaskStatement = database.prepare(
+    `UPDATE jobs
+     SET status = 'idle',
+         next_run_at = NULL,
+         terminal_state = 'cancelled',
+         terminal_reason = ?,
+         lock_token = NULL,
+         lock_expires_at = NULL,
+         updated_at = ?
+     WHERE id = ?`
+  )
+
+  const listTasksStatement = database.prepare(
+    `SELECT
+      id,
+      type,
+      schedule_type as scheduleType,
+      profile_id as profileId,
+      status,
+      run_at as runAt,
+      cadence_minutes as cadenceMinutes,
+      next_run_at as nextRunAt,
+      terminal_state as terminalState,
+      terminal_reason as terminalReason,
+      updated_at as updatedAt
+     FROM jobs
+     ORDER BY updated_at DESC`
+  )
+
   const insertRunStatement = database.prepare(
     `INSERT INTO job_runs
       (id, job_id, scheduled_for, started_at, finished_at, status, error_code, error_message, result_json, created_at)
@@ -612,8 +675,46 @@ export const createJobsRepository = (database: DatabaseSync) => {
     listRunsByJobId: (jobId: string): JobRunRecord[] => {
       return listRunsByJobIdStatement.all(jobId) as JobRunRecord[]
     },
+    getById: (jobId: string): JobRecord | null => {
+      const row = getByIdStatement.get(jobId) as JobRecord | undefined
+      return row ?? null
+    },
     setProfile: (jobId: string, profileId: string | null, updatedAt = Date.now()): void => {
       setProfileStatement.run(profileId, updatedAt, jobId)
+    },
+    createTask: (record: JobRecord): void => {
+      insertTaskStatement.run(record)
+    },
+    updateTask: (
+      jobId: string,
+      update: {
+        type: string
+        scheduleType: JobScheduleType
+        profileId: string | null
+        runAt: number | null
+        cadenceMinutes: number | null
+        payload: string | null
+        nextRunAt: number | null
+      },
+      updatedAt = Date.now()
+    ): void => {
+      updateTaskStatement.run(
+        update.type,
+        update.scheduleType,
+        update.profileId,
+        update.runAt,
+        update.cadenceMinutes,
+        update.payload,
+        update.nextRunAt,
+        updatedAt,
+        jobId
+      )
+    },
+    cancelTask: (jobId: string, reason: string | null, updatedAt = Date.now()): void => {
+      cancelTaskStatement.run(reason, updatedAt, jobId)
+    },
+    listTasks: (): TaskListRecord[] => {
+      return listTasksStatement.all() as TaskListRecord[]
     },
   }
 }

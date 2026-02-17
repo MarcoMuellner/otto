@@ -27,6 +27,7 @@ export type {
   OutboundMessageRecord,
   OutboundMessageStatus,
   SessionBindingRecord,
+  TaskListRecord,
   TaskObservationRecord,
   UserProfileRecord,
 } from "./repositories.js"

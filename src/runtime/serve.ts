@@ -80,6 +80,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       config: internalApiConfig,
       outboundMessagesRepository,
       sessionBindingsRepository,
+      jobsRepository,
     })
   } catch (error) {
     persistenceDatabase.close()
