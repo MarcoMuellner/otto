@@ -7,7 +7,11 @@ import type { Logger } from "pino"
 
 import { buildInternalApiServer, resolveInternalApiConfig } from "../../src/internal-api/server.js"
 import type { OutboundMessageEnqueueRepository } from "../../src/telegram-worker/outbound-enqueue.js"
-import type { JobRecord, TaskListRecord } from "../../src/persistence/repositories.js"
+import type {
+  FailedJobRunRecord,
+  JobRecord,
+  TaskListRecord,
+} from "../../src/persistence/repositories.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-internal-api-")
 const cleanupPaths: string[] = []
@@ -28,6 +32,7 @@ const createLoggerStub = (): Logger => {
 
 const createJobsRepositoryStub = () => {
   const tasks = new Map<string, JobRecord>()
+  const failedRuns: FailedJobRunRecord[] = []
 
   return {
     getById: (jobId: string): JobRecord | null => {
@@ -84,6 +89,12 @@ const createJobsRepositoryStub = () => {
         terminalReason: task.terminalReason,
         updatedAt: task.updatedAt,
       }))
+    },
+    listRecentFailedRuns: (): FailedJobRunRecord[] => {
+      return [...failedRuns]
+    },
+    setRecentFailedRuns: (rows: FailedJobRunRecord[]): void => {
+      failedRuns.splice(0, failedRuns.length, ...rows)
     },
   }
 }
@@ -372,6 +383,80 @@ describe("buildInternalApiServer", () => {
     }
     expect(body.taskAudit[0]?.id).toBe("task-audit-1")
     expect(body.commandAudit[0]?.id).toBe("cmd-audit-1")
+
+    await app.close()
+  })
+
+  it("checks failed runs and enqueues dedupe-safe watchdog alert", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.setRecentFailedRuns([
+      {
+        runId: "run-1",
+        jobId: "job-1",
+        jobType: "email-triage",
+        startedAt: 1_000,
+        errorCode: "tool_timeout",
+        errorMessage: "tool call timed out",
+      },
+      {
+        runId: "run-2",
+        jobId: "job-2",
+        jobType: "general-reminder",
+        startedAt: 900,
+        errorCode: null,
+        errorMessage: "upstream service unavailable",
+      },
+    ])
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => 777),
+      },
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/tasks/failures/check",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        sessionId: "session-1",
+        lookbackMinutes: 120,
+        threshold: 2,
+        notify: true,
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      failedCount: 2,
+      shouldAlert: true,
+      notificationStatus: "enqueued",
+    })
+    expect(repository.enqueueOrIgnoreDedupe).toHaveBeenCalledOnce()
 
     await app.close()
   })

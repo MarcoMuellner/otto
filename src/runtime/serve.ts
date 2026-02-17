@@ -14,8 +14,15 @@ import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
 import { resolveSchedulerConfig } from "../scheduler/config.js"
+import { createTaskExecutionEngine } from "../scheduler/executor.js"
 import { startSchedulerKernel } from "../scheduler/kernel.js"
+import {
+  ensureWatchdogTask,
+  resolveDefaultWatchdogChatId,
+  WATCHDOG_DEFAULT_CADENCE_MINUTES,
+} from "../scheduler/watchdog.js"
 import { resolveTelegramWorkerConfig } from "../telegram-worker/config.js"
+import { createOpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { startTelegramWorker, type TelegramWorkerHandle } from "../telegram-worker/worker.js"
 
 /**
@@ -129,10 +136,41 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     "OpenCode server started"
   )
 
+  const watchdogChatId = resolveDefaultWatchdogChatId()
+  const watchdogEnsureResult = ensureWatchdogTask(
+    jobsRepository,
+    {
+      cadenceMinutes: WATCHDOG_DEFAULT_CADENCE_MINUTES,
+      chatId: watchdogChatId,
+    },
+    Date.now
+  )
+  logger.info(
+    {
+      taskId: watchdogEnsureResult.taskId,
+      created: watchdogEnsureResult.created,
+      cadenceMinutes: watchdogEnsureResult.cadenceMinutes,
+      hasChatId: Boolean(watchdogChatId),
+    },
+    "Watchdog task ensured"
+  )
+
+  const schedulerSessionGateway = createOpencodeSessionGateway(server.url, logger)
+  const taskExecutionEngine = createTaskExecutionEngine({
+    logger,
+    ottoHome: config.ottoHome,
+    jobsRepository,
+    sessionBindingsRepository,
+    outboundMessagesRepository,
+    sessionGateway: schedulerSessionGateway,
+    defaultWatchdogChatId: watchdogChatId,
+  })
+
   schedulerKernel = await startSchedulerKernel({
     logger,
     jobsRepository,
     config: schedulerConfig,
+    executeClaimedJob: taskExecutionEngine.executeClaimedJob,
   })
 
   try {

@@ -37,8 +37,9 @@
               "update_task": false,
               "delete_task": false,
               "list_tasks": true,
+              "check_task_failures": true,
             },
-            "prompt": "You are Otto in scheduled task mode. Execute only the assigned due task and report structured results.",
+            "prompt": "You are Otto in scheduled automation mode. Execute only the assigned due task and return strict JSON with keys status, summary, and errors. Never ask clarifying questions. Never output markdown.",
           },
         },
         "permission": {

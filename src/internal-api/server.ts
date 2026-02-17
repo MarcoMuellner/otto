@@ -10,11 +10,13 @@ import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbou
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import type {
   CommandAuditRecord,
+  FailedJobRunRecord,
   JobRecord,
   JobScheduleType,
   TaskAuditRecord,
   TaskListRecord,
 } from "../persistence/repositories.js"
+import { checkTaskFailures, resolveDefaultWatchdogChatId } from "../scheduler/watchdog.js"
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
@@ -54,6 +56,7 @@ type InternalApiServerDependencies = {
     ) => void
     cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
     listTasks: () => TaskListRecord[]
+    listRecentFailedRuns: (sinceTimestamp: number, limit?: number) => FailedJobRunRecord[]
   }
   taskAuditRepository: {
     insert: (record: TaskAuditRecord) => void
@@ -142,6 +145,21 @@ const listTasksApiSchema = z.object({
 const listTaskAuditApiSchema = z.object({
   lane: executionLaneSchema,
   limit: z.number().int().min(1).max(200).optional(),
+})
+
+const checkTaskFailuresApiSchema = z.object({
+  lane: executionLaneSchema,
+  sessionId: z.string().trim().min(1).optional(),
+  lookbackMinutes: z
+    .number()
+    .int()
+    .min(5)
+    .max(24 * 60)
+    .optional(),
+  maxFailures: z.number().int().min(1).max(200).optional(),
+  threshold: z.number().int().min(1).max(50).optional(),
+  notify: z.boolean().optional(),
+  chatId: z.number().int().positive().optional(),
 })
 
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
@@ -701,6 +719,75 @@ export const buildInternalApiServer = (
         errorMessage: err.message,
       })
       dependencies.logger.error({ error: err.message }, "Internal API task list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/tasks/failures/check", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = checkTaskFailuresApiSchema.parse(request.body)
+      const chatIdFromSession = payload.sessionId
+        ? dependencies.sessionBindingsRepository.getTelegramChatIdBySessionId(payload.sessionId)
+        : null
+      const defaultChatId = payload.chatId ?? chatIdFromSession ?? resolveDefaultWatchdogChatId()
+
+      const result = checkTaskFailures(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          outboundMessagesRepository: dependencies.outboundMessagesRepository,
+          defaultChatId,
+        },
+        {
+          lookbackMinutes: payload.lookbackMinutes,
+          maxFailures: payload.maxFailures,
+          threshold: payload.threshold,
+          notify: payload.notify,
+          excludeTaskTypes: ["watchdog_failures"],
+        }
+      )
+
+      writeCommandAudit(dependencies, {
+        command: "check_task_failures",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          failedCount: result.failedCount,
+          shouldAlert: result.shouldAlert,
+          notificationStatus: result.notificationStatus,
+        }),
+      })
+
+      return reply.code(200).send(result)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "check_task_failures",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "check_task_failures",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API task failures check failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

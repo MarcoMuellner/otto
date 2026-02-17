@@ -73,6 +73,15 @@ export type JobRunRecord = {
   createdAt: number
 }
 
+export type FailedJobRunRecord = {
+  runId: string
+  jobId: string
+  jobType: string
+  startedAt: number
+  errorCode: string | null
+  errorMessage: string | null
+}
+
 export type TaskListRecord = {
   id: string
   type: string
@@ -585,6 +594,22 @@ export const createJobsRepository = (database: DatabaseSync) => {
      ORDER BY started_at DESC`
   )
 
+  const listRecentFailedRunsStatement = database.prepare(
+    `SELECT
+      r.id as runId,
+      r.job_id as jobId,
+      j.type as jobType,
+      r.started_at as startedAt,
+      r.error_code as errorCode,
+      r.error_message as errorMessage
+     FROM job_runs r
+     JOIN jobs j ON j.id = r.job_id
+     WHERE r.status = 'failed'
+       AND r.started_at >= ?
+     ORDER BY r.started_at DESC
+     LIMIT ?`
+  )
+
   const beginImmediate = (): void => {
     database.exec("BEGIN IMMEDIATE")
   }
@@ -696,6 +721,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     listRunsByJobId: (jobId: string): JobRunRecord[] => {
       return listRunsByJobIdStatement.all(jobId) as JobRunRecord[]
+    },
+    listRecentFailedRuns: (sinceTimestamp: number, limit = 50): FailedJobRunRecord[] => {
+      return listRecentFailedRunsStatement.all(sinceTimestamp, limit) as FailedJobRunRecord[]
     },
     getById: (jobId: string): JobRecord | null => {
       const row = getByIdStatement.get(jobId) as JobRecord | undefined

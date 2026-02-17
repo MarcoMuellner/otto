@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import type { Logger } from "pino"
 
+import type { JobRecord } from "../persistence/repositories.js"
 import type { SchedulerConfig } from "./config.js"
 
 export type SchedulerJobsRepository = {
@@ -11,9 +12,21 @@ export type SchedulerJobsRepository = {
     lockToken: string,
     lockLeaseMs: number,
     updatedAt?: number
-  ) => Array<{ id: string; type: string }>
+  ) => JobRecord[]
   releaseLock: (jobId: string, lockToken: string, updatedAt?: number) => void
 }
+
+export type SchedulerClaimedJob = Pick<
+  JobRecord,
+  | "id"
+  | "type"
+  | "scheduleType"
+  | "cadenceMinutes"
+  | "nextRunAt"
+  | "profileId"
+  | "payload"
+  | "lockToken"
+>
 
 export type SchedulerKernelHandle = {
   stop: () => Promise<void>
@@ -25,6 +38,7 @@ type SchedulerKernelDependencies = {
   logger: SchedulerLogger
   jobsRepository: SchedulerJobsRepository
   config: SchedulerConfig
+  executeClaimedJob?: (job: SchedulerClaimedJob) => Promise<void>
   now?: () => number
   createLockToken?: () => string
 }
@@ -83,7 +97,24 @@ export const startSchedulerKernel = async (
       }
 
       for (const job of claimed) {
-        dependencies.jobsRepository.releaseLock(job.id, lockToken, now())
+        if (!dependencies.executeClaimedJob) {
+          dependencies.jobsRepository.releaseLock(job.id, lockToken, now())
+          continue
+        }
+
+        try {
+          await dependencies.executeClaimedJob(job)
+        } catch (error) {
+          const err = error as Error
+          dependencies.logger.error(
+            {
+              jobId: job.id,
+              error: err.message,
+            },
+            "Scheduler claimed job execution failed"
+          )
+          dependencies.jobsRepository.releaseLock(job.id, lockToken, now())
+        }
       }
     } catch (error) {
       const err = error as Error

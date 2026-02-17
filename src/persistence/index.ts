@@ -19,6 +19,7 @@ export type {
   ApprovalRecord,
   ApprovalStatus,
   InboundMessageRecord,
+  FailedJobRunRecord,
   JobRecord,
   JobRunRecord,
   JobRunStatus,

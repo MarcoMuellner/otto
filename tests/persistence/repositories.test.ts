@@ -425,8 +425,11 @@ describe("persistence repositories", () => {
 
     const recurringRuns = repository.listRunsByJobId("job-recurring")
     const oneshotRuns = repository.listRunsByJobId("job-oneshot")
+    const recentFailed = repository.listRecentFailedRuns(0, 10)
     expect(recurringRuns[0]?.status).toBe("success")
     expect(oneshotRuns[0]?.status).toBe("failed")
+    expect(recentFailed[0]?.runId).toBe("run-o")
+    expect(recentFailed[0]?.jobType).toBe("reminder")
 
     db.close()
   })

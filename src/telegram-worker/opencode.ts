@@ -17,7 +17,15 @@ type ModelSelection = {
 
 export type OpencodeSessionGateway = {
   ensureSession: (sessionId: string | null) => Promise<string>
-  promptSession: (sessionId: string, text: string) => Promise<string>
+  promptSession: (
+    sessionId: string,
+    text: string,
+    options?: {
+      systemPrompt?: string
+      tools?: Record<string, boolean>
+      agent?: string
+    }
+  ) => Promise<string>
 }
 
 const isNotFoundError = (error: unknown): boolean => {
@@ -100,7 +108,7 @@ export const createOpencodeSessionGateway = (
 
       return createdId
     },
-    promptSession: async (sessionId, text) => {
+    promptSession: async (sessionId, text, options) => {
       modelSelectionPromise ??= resolveModelSelection(client.config)
       const modelSelection = await modelSelectionPromise
 
@@ -120,6 +128,9 @@ export const createOpencodeSessionGateway = (
         body: {
           providerID: modelSelection.providerId,
           modelID: modelSelection.modelId,
+          agent: options?.agent,
+          system: options?.systemPrompt,
+          tools: options?.tools,
           parts: [{ type: "text", text }],
         },
       })
