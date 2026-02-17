@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "general-reminder",
+  "description": "Default reminder profile with no additional skill requirements.",
+  "laneOverrides": {
+    "scheduled": {
+      "opencode": {}
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "base": {
+    "opencode": {
+      "agent": {
+        "assistant": {
+          "tools": {
+            "skill": true,
+          },
+          "prompt": "You are Otto's assistant runtime. Stay concise and outcome-focused.",
+        },
+      },
+      "permission": {
+        "skill": {
+          "*": "allow",
+        },
+      },
+    },
+  },
+  "lanes": {
+    "interactive": {
+      "opencode": {
+        "agent": {
+          "assistant": {
+            "prompt": "You are Otto in interactive mode. Help the user directly, keep context grounded, and only perform requested actions.",
+          },
+        },
+      },
+    },
+    "scheduled": {
+      "opencode": {
+        "agent": {
+          "assistant": {
+            "tools": {
+              "skill": false,
+            },
+            "prompt": "You are Otto in scheduled task mode. Execute only the assigned due task and report structured results.",
+          },
+        },
+        "permission": {
+          "skill": {
+            "*": "deny",
+          },
+        },
+      },
+    },
+  },
+}

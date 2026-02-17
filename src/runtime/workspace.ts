@@ -2,9 +2,16 @@ import path from "node:path"
 import { access, copyFile, cp, mkdir } from "node:fs/promises"
 import { constants } from "node:fs"
 
-const WORKSPACE_SUBDIRECTORIES = ["data", "inbox", "scripts", "secrets", "logs"] as const
+const WORKSPACE_SUBDIRECTORIES = [
+  "data",
+  "inbox",
+  "scripts",
+  "secrets",
+  "logs",
+  "task-config",
+] as const
 const ASSET_FILES = ["opencode.jsonc", "AGENTS.md"] as const
-const ASSET_DIRECTORIES = [".opencode"] as const
+const ASSET_DIRECTORIES = [".opencode", "task-config"] as const
 
 /**
  * Resolves assets relative to the active runtime entry so setup can locate bundled assets

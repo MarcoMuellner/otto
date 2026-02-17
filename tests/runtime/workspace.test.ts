@@ -65,7 +65,14 @@ describe("deployWorkspaceAssets", () => {
     await writeFile(path.join(assetDirectory, "opencode.jsonc"), '{\n  "foo": "bar"\n}\n', "utf8")
     await writeFile(path.join(assetDirectory, "AGENTS.md"), "# rules\n", "utf8")
     await mkdir(path.join(assetDirectory, ".opencode", "tools"), { recursive: true })
+    await mkdir(path.join(assetDirectory, "task-config", "profiles"), { recursive: true })
     await writeFile(path.join(assetDirectory, ".opencode", "package.json"), "{}\n", "utf8")
+    await writeFile(path.join(assetDirectory, "task-config", "base.jsonc"), "{}\n", "utf8")
+    await writeFile(
+      path.join(assetDirectory, "task-config", "profiles", "general-reminder.jsonc"),
+      "{}\n",
+      "utf8"
+    )
     await writeFile(
       path.join(assetDirectory, ".opencode", "tools", "queue_telegram_message.ts"),
       "export default {}\n",
@@ -80,6 +87,7 @@ describe("deployWorkspaceAssets", () => {
       path.join(ottoHome, "opencode.jsonc"),
       path.join(ottoHome, "AGENTS.md"),
       path.join(ottoHome, ".opencode"),
+      path.join(ottoHome, "task-config"),
     ])
 
     await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.toContain("foo")
@@ -87,5 +95,8 @@ describe("deployWorkspaceAssets", () => {
     await expect(
       readFile(path.join(ottoHome, ".opencode", "tools", "queue_telegram_message.ts"), "utf8")
     ).resolves.toContain("export default")
+    await expect(
+      readFile(path.join(ottoHome, "task-config", "base.jsonc"), "utf8")
+    ).resolves.toContain("{}")
   })
 })
