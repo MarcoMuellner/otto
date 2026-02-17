@@ -2,7 +2,6 @@ import type { Logger } from "pino"
 
 export type TelegramAccessPolicy = {
   allowedUserId: number
-  allowedChatId: number
 }
 
 export type TelegramAccessContext = {
@@ -17,7 +16,6 @@ export type TelegramAccessReason =
   | "missing_chat"
   | "non_private_chat"
   | "user_not_allowed"
-  | "chat_not_allowed"
 
 export type TelegramAccessDecision = {
   allowed: boolean
@@ -65,7 +63,7 @@ export const extractTelegramAccessContext = (update: unknown): TelegramAccessCon
  * unauthorized senders or non-private chats.
  *
  * @param context Parsed access context from Telegram update payload.
- * @param policy Allowed user and chat identifiers.
+ * @param policy Allowed user identifier.
  * @returns Authorization decision and diagnostic reason.
  */
 export const evaluateTelegramAccess = (
@@ -86,10 +84,6 @@ export const evaluateTelegramAccess = (
 
   if (context.userId !== policy.allowedUserId) {
     return { allowed: false, reason: "user_not_allowed" }
-  }
-
-  if (context.chatId !== policy.allowedChatId) {
-    return { allowed: false, reason: "chat_not_allowed" }
   }
 
   return { allowed: true, reason: "authorized" }

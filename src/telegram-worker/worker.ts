@@ -151,7 +151,6 @@ export const startTelegramWorker = async (
     const context = extractTelegramAccessContext(update.update)
     const decision = evaluateTelegramAccess(context, {
       allowedUserId: config.allowedUserId,
-      allowedChatId: config.allowedChatId,
     })
     logDeniedTelegramAccess(logger, decision, context)
 
@@ -197,7 +196,6 @@ export const startTelegramWorker = async (
       outboundRetryMaxMs: config.outboundRetryMaxMs,
       hasBotToken: true,
       allowedUserId: config.allowedUserId,
-      allowedChatId: config.allowedChatId,
       opencodeBaseUrl: config.opencodeBaseUrl,
     },
     "Telegram worker started"

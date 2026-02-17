@@ -10,7 +10,7 @@ This is a personal assistant system. Security must reject non-allowlisted users/
 
 ## Scope
 
-- Add required config fields: `telegram.botToken`, `telegram.allowedUserId`, `telegram.allowedChatId`.
+- Add required config fields: `telegram.botToken`, `telegram.allowedUserId`.
 - Validate all incoming updates against allowlist.
 - Reject non-authorized messages with minimal/no information leakage.
 - Add auditable security logs for denied events.

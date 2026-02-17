@@ -17,7 +17,6 @@ describe("resolveTelegramWorkerConfig", () => {
       enabled: false,
       botToken: "",
       allowedUserId: 0,
-      allowedChatId: 0,
       heartbeatMs: 60_000,
       outboundPollMs: 2_000,
       outboundMaxAttempts: 5,
@@ -33,7 +32,6 @@ describe("resolveTelegramWorkerConfig", () => {
     const environment = {
       TELEGRAM_BOT_TOKEN: "bot-token",
       TELEGRAM_ALLOWED_USER_ID: "123",
-      TELEGRAM_ALLOWED_CHAT_ID: "456",
     }
 
     // Act
@@ -44,7 +42,6 @@ describe("resolveTelegramWorkerConfig", () => {
       enabled: true,
       botToken: "bot-token",
       allowedUserId: 123,
-      allowedChatId: 456,
       heartbeatMs: 60_000,
       outboundPollMs: 2_000,
       outboundMaxAttempts: 5,
@@ -82,7 +79,6 @@ describe("resolveTelegramWorkerConfig", () => {
     const environment = {
       TELEGRAM_BOT_TOKEN: "bot-token",
       TELEGRAM_ALLOWED_USER_ID: "123",
-      TELEGRAM_ALLOWED_CHAT_ID: "456",
       OTTO_TELEGRAM_PROMPT_TIMEOUT_MS: "1000",
     }
 
@@ -97,7 +93,6 @@ describe("resolveTelegramWorkerConfig", () => {
     const environment = {
       TELEGRAM_BOT_TOKEN: "bot-token",
       TELEGRAM_ALLOWED_USER_ID: "123",
-      TELEGRAM_ALLOWED_CHAT_ID: "456",
       OTTO_TELEGRAM_OUTBOUND_RETRY_BASE_MS: "5000",
       OTTO_TELEGRAM_OUTBOUND_RETRY_MAX_MS: "1000",
     }

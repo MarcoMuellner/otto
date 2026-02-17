@@ -41,7 +41,6 @@ describe("evaluateTelegramAccess", () => {
     // Act
     const decision = evaluateTelegramAccess(context, {
       allowedUserId: 1001,
-      allowedChatId: 2002,
     })
 
     // Assert
@@ -59,7 +58,6 @@ describe("evaluateTelegramAccess", () => {
     // Act
     const decision = evaluateTelegramAccess(context, {
       allowedUserId: 1001,
-      allowedChatId: 2002,
     })
 
     // Assert
@@ -77,7 +75,6 @@ describe("evaluateTelegramAccess", () => {
     // Act
     const decision = evaluateTelegramAccess(context, {
       allowedUserId: 1001,
-      allowedChatId: 2002,
     })
 
     // Assert
@@ -92,7 +89,7 @@ describe("logDeniedTelegramAccess", () => {
     const logger = {
       warn,
     } as unknown as Logger
-    const decision = { allowed: false as const, reason: "chat_not_allowed" as const }
+    const decision = { allowed: false as const, reason: "user_not_allowed" as const }
     const context = {
       userId: 1001,
       chatId: 2222,
@@ -105,7 +102,7 @@ describe("logDeniedTelegramAccess", () => {
     // Assert
     expect(warn).toHaveBeenCalledWith(
       {
-        reason: "chat_not_allowed",
+        reason: "user_not_allowed",
         userId: 1001,
         chatId: 2222,
         chatType: "private",

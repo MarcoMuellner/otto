@@ -4,7 +4,6 @@ export type TelegramWorkerConfig = {
   enabled: boolean
   botToken: string
   allowedUserId: number
-  allowedChatId: number
   heartbeatMs: number
   outboundPollMs: number
   outboundMaxAttempts: number
@@ -18,7 +17,6 @@ const telegramWorkerConfigSchema = z.object({
   OTTO_TELEGRAM_WORKER_ENABLED: z.string().optional(),
   TELEGRAM_BOT_TOKEN: z.string().optional(),
   TELEGRAM_ALLOWED_USER_ID: z.string().optional(),
-  TELEGRAM_ALLOWED_CHAT_ID: z.string().optional(),
   OTTO_TELEGRAM_WORKER_HEARTBEAT_MS: z.string().optional(),
   OTTO_TELEGRAM_OUTBOUND_POLL_MS: z.string().optional(),
   OTTO_TELEGRAM_OUTBOUND_MAX_ATTEMPTS: z.string().optional(),
@@ -120,7 +118,6 @@ export const resolveTelegramWorkerConfig = (
       enabled,
       botToken,
       allowedUserId: 0,
-      allowedChatId: 0,
       heartbeatMs,
       outboundPollMs,
       outboundMaxAttempts,
@@ -150,10 +147,6 @@ export const resolveTelegramWorkerConfig = (
     parsed.data.TELEGRAM_ALLOWED_USER_ID,
     "TELEGRAM_ALLOWED_USER_ID"
   )
-  const allowedChatId = parseTelegramId(
-    parsed.data.TELEGRAM_ALLOWED_CHAT_ID,
-    "TELEGRAM_ALLOWED_CHAT_ID"
-  )
 
   if (enabled && botToken.length === 0) {
     throw new Error("Invalid Telegram worker config: TELEGRAM_BOT_TOKEN is required")
@@ -163,7 +156,6 @@ export const resolveTelegramWorkerConfig = (
     enabled,
     botToken,
     allowedUserId,
-    allowedChatId,
     heartbeatMs,
     outboundPollMs,
     outboundMaxAttempts,

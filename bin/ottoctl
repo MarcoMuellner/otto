@@ -57,7 +57,7 @@ load_telegram_env() {
 }
 
 has_telegram_credentials() {
-  [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && [[ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ]] && [[ -n "${TELEGRAM_ALLOWED_CHAT_ID:-}" ]]
+  [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && [[ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ]]
 }
 
 is_positive_integer() {
@@ -78,10 +78,9 @@ persist_telegram_credentials() {
   mkdir -p "${SECRETS_DIR}"
   chmod 700 "${SECRETS_DIR}"
 
-  cat > "${TELEGRAM_ENV_FILE}" <<EOF
+cat > "${TELEGRAM_ENV_FILE}" <<EOF
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_ALLOWED_USER_ID=${TELEGRAM_ALLOWED_USER_ID}
-TELEGRAM_ALLOWED_CHAT_ID=${TELEGRAM_ALLOWED_CHAT_ID}
 EOF
 
   chmod 600 "${TELEGRAM_ENV_FILE}"
@@ -115,7 +114,6 @@ prompt_telegram_credentials() {
     read -r -s -p "TELEGRAM_BOT_TOKEN: " TELEGRAM_BOT_TOKEN
     echo
     read -r -p "TELEGRAM_ALLOWED_USER_ID: " TELEGRAM_ALLOWED_USER_ID
-    read -r -p "TELEGRAM_ALLOWED_CHAT_ID: " TELEGRAM_ALLOWED_CHAT_ID
 
     if [[ -z "${TELEGRAM_BOT_TOKEN}" ]]; then
       warn "TELEGRAM_BOT_TOKEN cannot be empty"
@@ -129,11 +127,6 @@ prompt_telegram_credentials() {
 
     if ! is_positive_integer "${TELEGRAM_ALLOWED_USER_ID}"; then
       warn "TELEGRAM_ALLOWED_USER_ID must be an integer >= 1"
-      continue
-    fi
-
-    if ! is_positive_integer "${TELEGRAM_ALLOWED_CHAT_ID}"; then
-      warn "TELEGRAM_ALLOWED_CHAT_ID must be an integer >= 1"
       continue
     fi
 
@@ -276,12 +269,6 @@ install_service_macos() {
     telegram_env_keys+="
     <key>TELEGRAM_ALLOWED_USER_ID</key>
     <string>$(xml_escape "${TELEGRAM_ALLOWED_USER_ID}")</string>"
-  fi
-
-  if [[ -n "${TELEGRAM_ALLOWED_CHAT_ID:-}" ]]; then
-    telegram_env_keys+="
-    <key>TELEGRAM_ALLOWED_CHAT_ID</key>
-    <string>$(xml_escape "${TELEGRAM_ALLOWED_CHAT_ID}")</string>"
   fi
 
   cat > "${PLIST_FILE}" <<EOF
