@@ -64,6 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl task profiles list`
   - `ottoctl task profiles validate [profile-id]`
   - `ottoctl task profiles install <profile-file.jsonc>`
+  - `ottoctl task list`
   - `ottoctl task bind-profile <task-id> <profile-id>`
   - `ottoctl task show <task-id>`
   - `ottoctl update` (defaults to latest stable)

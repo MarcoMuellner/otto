@@ -368,6 +368,18 @@ cmd_task_show() {
   sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, type, schedule_type, profile_id, status, next_run_at, terminal_state FROM jobs WHERE id='${escaped_task}';"
 }
 
+cmd_task_list() {
+  require_task_runtime_paths
+  require_cmd sqlite3
+
+  if [[ ! -f "${STATE_DB_PATH}" ]]; then
+    error "State database not found: ${STATE_DB_PATH}. Run setup first."
+    exit 1
+  fi
+
+  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, type, schedule_type, profile_id, status, next_run_at, terminal_state FROM jobs ORDER BY id ASC;"
+}
+
 cmd_task() {
   local subcommand="${1:-}"
   shift || true
@@ -394,6 +406,9 @@ cmd_task() {
       ;;
     bind-profile)
       cmd_task_bind_profile "$@"
+      ;;
+    list)
+      cmd_task_list "$@"
       ;;
     show)
       cmd_task_show "$@"
@@ -687,6 +702,7 @@ Usage:
   ottoctl task profiles list
   ottoctl task profiles validate [profile-id]
   ottoctl task profiles install <profile-file.jsonc>
+  ottoctl task list
   ottoctl task bind-profile <task-id> <profile-id>
   ottoctl task show <task-id>
   ottoctl update [--nightly] [--repo owner/repo]
