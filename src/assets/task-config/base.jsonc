@@ -33,6 +33,10 @@
           "assistant": {
             "tools": {
               "skill": false,
+              "create_task": false,
+              "update_task": false,
+              "delete_task": false,
+              "list_tasks": true,
             },
             "prompt": "You are Otto in scheduled task mode. Execute only the assigned due task and report structured results.",
           },
