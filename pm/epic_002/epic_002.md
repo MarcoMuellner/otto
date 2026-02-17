@@ -4,7 +4,8 @@
 
 - `id`: `epic_002`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `completed`
+- `completed_through_ticket`: `ticket_005`
 - `goal`: deliver a deterministic one-minute scheduler with durable task definitions, task run history, and policy-safe task management.
 
 ## Why
