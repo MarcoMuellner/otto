@@ -166,4 +166,11 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_job_runs_job_started_at ON job_runs (job_id, started_at DESC)`,
     ],
   },
+  {
+    id: "010_job_profile_mapping",
+    statements: [
+      `ALTER TABLE jobs ADD COLUMN profile_id TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_jobs_profile_id ON jobs (profile_id)`,
+    ],
+  },
 ]

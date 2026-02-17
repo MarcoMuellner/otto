@@ -12,6 +12,10 @@ SERVICE_NAME="otto"
 PLIST_LABEL="com.otto.assistant"
 PLIST_FILE="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
 DEFAULT_REPO="MarcoMuellner/otto"
+OTTO_HOME=""
+TASK_CONFIG_DIR=""
+TASK_PROFILE_DIR=""
+STATE_DB_PATH=""
 
 BLUE=$'\033[0;34m'
 GREEN=$'\033[0;32m'
@@ -49,6 +53,21 @@ load_install_meta() {
   fi
 }
 
+resolve_otto_home() {
+  local config_path="${HOME}/.config/otto/config.jsonc"
+
+  if [[ -f "${config_path}" ]]; then
+    local resolved_home
+    resolved_home="$(node -e 'const fs=require("node:fs"); const p=process.argv[1]; try {const raw=fs.readFileSync(p,"utf8"); const parsed=JSON.parse(raw); if (parsed && typeof parsed.ottoHome === "string" && parsed.ottoHome.length > 0) { process.stdout.write(parsed.ottoHome); process.exit(0);} } catch {} process.exit(1)' "${config_path}" 2>/dev/null || true)"
+    if [[ -n "${resolved_home}" ]]; then
+      echo "${resolved_home}"
+      return
+    fi
+  fi
+
+  echo "${HOME}/.otto"
+}
+
 load_telegram_env() {
   if [[ -f "${TELEGRAM_ENV_FILE}" ]]; then
     # shellcheck disable=SC1090
@@ -62,6 +81,12 @@ has_telegram_credentials() {
 
 is_positive_integer() {
   [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]]
+}
+
+sql_escape() {
+  local value="$1"
+  value="${value//\'/\'\'}"
+  printf '%s' "${value}"
 }
 
 xml_escape() {
@@ -150,6 +175,234 @@ ensure_telegram_credentials() {
   fi
 
   return 1
+}
+
+validate_task_profile_file() {
+  local profile_path="$1"
+
+  node -e '
+const fs = require("node:fs")
+const path = process.argv[1]
+const expectedId = process.argv[2] || ""
+let parsed
+try {
+  parsed = JSON.parse(fs.readFileSync(path, "utf8"))
+} catch {
+  console.error(`Invalid JSON in profile: ${path}`)
+  process.exit(1)
+}
+
+if (!parsed || parsed.version !== 1) {
+  console.error(`Invalid profile version in ${path}`)
+  process.exit(1)
+}
+
+if (typeof parsed.id !== "string" || parsed.id.trim().length === 0) {
+  console.error(`Profile id is required in ${path}`)
+  process.exit(1)
+}
+
+if (expectedId && parsed.id !== expectedId) {
+  console.error(`Profile id mismatch in ${path}: expected ${expectedId}, got ${parsed.id}`)
+  process.exit(1)
+}
+
+if (parsed.laneOverrides != null && (typeof parsed.laneOverrides !== "object" || Array.isArray(parsed.laneOverrides))) {
+  console.error(`laneOverrides must be an object in ${path}`)
+  process.exit(1)
+}
+
+for (const lane of ["interactive", "scheduled"]) {
+  const laneValue = parsed.laneOverrides?.[lane]
+  if (laneValue == null) continue
+  if (typeof laneValue !== "object" || Array.isArray(laneValue)) {
+    console.error(`${lane} override must be an object in ${path}`)
+    process.exit(1)
+  }
+  if (laneValue.opencode == null || typeof laneValue.opencode !== "object" || Array.isArray(laneValue.opencode)) {
+    console.error(`${lane}.opencode must be an object in ${path}`)
+    process.exit(1)
+  }
+}
+' "${profile_path}" "$2"
+}
+
+require_task_runtime_paths() {
+  if [[ -z "${TASK_PROFILE_DIR}" || -z "${STATE_DB_PATH}" ]]; then
+    error "Task runtime paths are not initialized"
+    exit 1
+  fi
+}
+
+cmd_task_profiles_list() {
+  require_task_runtime_paths
+  mkdir -p "${TASK_PROFILE_DIR}"
+
+  local found=0
+  while IFS= read -r profile_path; do
+    found=1
+    node -e 'const fs=require("node:fs"); const p=process.argv[1]; try {const obj=JSON.parse(fs.readFileSync(p,"utf8")); process.stdout.write(`${obj.id || "<invalid-id>"}\t${p}\n`)} catch {process.stdout.write(`<invalid>\t${p}\n`)}' "${profile_path}"
+  done < <(find "${TASK_PROFILE_DIR}" -maxdepth 1 -type f -name "*.jsonc" -print 2>/dev/null | sort)
+
+  if [[ ${found} -eq 0 ]]; then
+    info "No task profiles installed in ${TASK_PROFILE_DIR}"
+  fi
+}
+
+cmd_task_profiles_validate() {
+  require_task_runtime_paths
+  mkdir -p "${TASK_PROFILE_DIR}"
+
+  local profile_id="${1:-}"
+  if [[ -z "${profile_id}" ]]; then
+    local any=0
+    while IFS= read -r profile_path; do
+      any=1
+      local filename expected_id
+      filename="$(basename "${profile_path}")"
+      expected_id="${filename%.jsonc}"
+      validate_task_profile_file "${profile_path}" "${expected_id}"
+      success "Valid: ${expected_id}"
+    done < <(find "${TASK_PROFILE_DIR}" -maxdepth 1 -type f -name "*.jsonc" -print 2>/dev/null | sort)
+
+    if [[ ${any} -eq 0 ]]; then
+      warn "No profiles found to validate in ${TASK_PROFILE_DIR}"
+    fi
+    return
+  fi
+
+  local profile_path="${TASK_PROFILE_DIR}/${profile_id}.jsonc"
+  if [[ ! -f "${profile_path}" ]]; then
+    error "Profile not found: ${profile_id}"
+    exit 1
+  fi
+
+  validate_task_profile_file "${profile_path}" "${profile_id}"
+  success "Valid: ${profile_id}"
+}
+
+cmd_task_profiles_install() {
+  require_task_runtime_paths
+  mkdir -p "${TASK_PROFILE_DIR}"
+
+  local source_path="${1:-}"
+  if [[ -z "${source_path}" ]]; then
+    error "Usage: ottoctl task profiles install <profile-file.jsonc>"
+    exit 1
+  fi
+
+  if [[ ! -f "${source_path}" ]]; then
+    error "Profile file not found: ${source_path}"
+    exit 1
+  fi
+
+  local filename expected_id target_path
+  filename="$(basename "${source_path}")"
+  expected_id="${filename%.jsonc}"
+  target_path="${TASK_PROFILE_DIR}/${filename}"
+
+  validate_task_profile_file "${source_path}" "${expected_id}"
+  cp "${source_path}" "${target_path}"
+  chmod 600 "${target_path}" || true
+
+  success "Installed task profile: ${expected_id}"
+}
+
+cmd_task_bind_profile() {
+  require_task_runtime_paths
+  require_cmd sqlite3
+
+  local task_id="${1:-}"
+  local profile_id="${2:-}"
+
+  if [[ -z "${task_id}" || -z "${profile_id}" ]]; then
+    error "Usage: ottoctl task bind-profile <task-id> <profile-id>"
+    exit 1
+  fi
+
+  local profile_path="${TASK_PROFILE_DIR}/${profile_id}.jsonc"
+  if [[ ! -f "${profile_path}" ]]; then
+    error "Profile not found: ${profile_id}"
+    exit 1
+  fi
+
+  validate_task_profile_file "${profile_path}" "${profile_id}"
+
+  if [[ ! -f "${STATE_DB_PATH}" ]]; then
+    error "State database not found: ${STATE_DB_PATH}. Run setup first."
+    exit 1
+  fi
+
+  local escaped_profile escaped_task changes
+  escaped_profile="$(sql_escape "${profile_id}")"
+  escaped_task="$(sql_escape "${task_id}")"
+
+  changes="$(sqlite3 "${STATE_DB_PATH}" "UPDATE jobs SET profile_id='${escaped_profile}', updated_at=strftime('%s','now') * 1000 WHERE id='${escaped_task}'; SELECT changes();")"
+
+  if [[ "${changes}" == "0" ]]; then
+    error "Task not found: ${task_id}"
+    exit 1
+  fi
+
+  success "Bound task ${task_id} to profile ${profile_id}"
+}
+
+cmd_task_show() {
+  require_task_runtime_paths
+  require_cmd sqlite3
+
+  local task_id="${1:-}"
+  if [[ -z "${task_id}" ]]; then
+    error "Usage: ottoctl task show <task-id>"
+    exit 1
+  fi
+
+  if [[ ! -f "${STATE_DB_PATH}" ]]; then
+    error "State database not found: ${STATE_DB_PATH}. Run setup first."
+    exit 1
+  fi
+
+  local escaped_task
+  escaped_task="$(sql_escape "${task_id}")"
+
+  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, type, schedule_type, profile_id, status, next_run_at, terminal_state FROM jobs WHERE id='${escaped_task}';"
+}
+
+cmd_task() {
+  local subcommand="${1:-}"
+  shift || true
+
+  case "${subcommand}" in
+    profiles)
+      local profile_action="${1:-list}"
+      shift || true
+      case "${profile_action}" in
+        list)
+          cmd_task_profiles_list "$@"
+          ;;
+        validate)
+          cmd_task_profiles_validate "$@"
+          ;;
+        install)
+          cmd_task_profiles_install "$@"
+          ;;
+        *)
+          error "Unknown task profiles command: ${profile_action}"
+          exit 1
+          ;;
+      esac
+      ;;
+    bind-profile)
+      cmd_task_bind_profile "$@"
+      ;;
+    show)
+      cmd_task_show "$@"
+      ;;
+    *)
+      error "Unknown task command: ${subcommand}"
+      exit 1
+      ;;
+  esac
 }
 
 resolve_repo() {
@@ -431,6 +684,11 @@ Usage:
   ottoctl start
   ottoctl stop
   ottoctl configure-telegram
+  ottoctl task profiles list
+  ottoctl task profiles validate [profile-id]
+  ottoctl task profiles install <profile-file.jsonc>
+  ottoctl task bind-profile <task-id> <profile-id>
+  ottoctl task show <task-id>
   ottoctl update [--nightly] [--repo owner/repo]
 EOF
 }
@@ -442,6 +700,10 @@ main() {
 
   load_install_meta
   load_telegram_env
+  OTTO_HOME="$(resolve_otto_home)"
+  TASK_CONFIG_DIR="${OTTO_HOME}/task-config"
+  TASK_PROFILE_DIR="${TASK_CONFIG_DIR}/profiles"
+  STATE_DB_PATH="${OTTO_HOME}/data/otto-state.db"
 
   case "${1:-help}" in
     start)
@@ -455,6 +717,10 @@ main() {
     configure-telegram)
       shift
       cmd_configure_telegram "$@"
+      ;;
+    task)
+      shift
+      cmd_task "$@"
       ;;
     update)
       shift

@@ -17,6 +17,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - `src/`: application source code
 - `src/assets/`: deployable OpenCode assets (including `opencode.jsonc`)
 - `src/assets/.opencode/`: shipped OpenCode local tools and tool runtime dependencies
+- `src/assets/task-config/`: deployable task runtime base config and task profiles
 - `dist/`: transpiled JavaScript output
 - `tests/`: test suite (outside `src/`)
 
@@ -60,6 +61,11 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl start`
   - `ottoctl stop`
   - `ottoctl configure-telegram` (interactive Telegram credential setup, skippable)
+  - `ottoctl task profiles list`
+  - `ottoctl task profiles validate [profile-id]`
+  - `ottoctl task profiles install <profile-file.jsonc>`
+  - `ottoctl task bind-profile <task-id> <profile-id>`
+  - `ottoctl task show <task-id>`
   - `ottoctl update` (defaults to latest stable)
   - `ottoctl update --nightly` (latest nightly)
   - `ottoctl update --repo <owner>/<repo>` (optional override for custom repo)
