@@ -79,7 +79,7 @@ fetch_release_info() {
   local repo="$1"
   local channel="$2"
   local install_ref="${OTTO_INSTALL_REF:-main}"
-  local helper_url="https://raw.githubusercontent.com/${repo}/${install_ref}/packages/otto/scripts/resolve-release.mjs"
+  local helper_url="https://raw.githubusercontent.com/${repo}/${install_ref}/scripts/resolve-release.mjs"
   local tmp_dir
   tmp_dir="$(mktemp -d)"
   trap '[[ -n "${tmp_dir:-}" ]] && rm -rf "${tmp_dir}"' RETURN

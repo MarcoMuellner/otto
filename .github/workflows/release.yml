@@ -17,6 +17,8 @@ on:
       - "packages/otto/vitest.config.ts"
       - "packages/otto/.prettierrc.json"
       - "packages/otto/.oxlintrc.json"
+      - "install.sh"
+      - "scripts/resolve-release.mjs"
       - ".github/workflows/release.yml"
     tags:
       - "v*"

@@ -12,3 +12,13 @@ This repository is a pnpm workspace with two packages:
 - `pnpm run test`
 
 These root scripts proxy to package-level scripts and preserve prior operator workflow.
+
+## Install Entrypoint
+
+The installer remains available at the repository root for compatibility:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MarcoMuellner/otto/main/install.sh | bash
+```
+
+The root installer delegates to `packages/otto/install.sh` internally.
