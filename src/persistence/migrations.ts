@@ -173,4 +173,32 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_jobs_profile_id ON jobs (profile_id)`,
     ],
   },
+  {
+    id: "011_task_and_command_audit_logs",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS task_audit_log (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        lane TEXT NOT NULL,
+        actor TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        metadata_json TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES jobs(id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_task_audit_task_created ON task_audit_log (task_id, created_at DESC)`,
+      `CREATE TABLE IF NOT EXISTS command_audit_log (
+        id TEXT PRIMARY KEY,
+        command TEXT NOT NULL,
+        lane TEXT,
+        status TEXT NOT NULL,
+        error_message TEXT,
+        metadata_json TEXT,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_command_audit_created ON command_audit_log (created_at DESC)`,
+    ],
+  },
 ]

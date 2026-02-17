@@ -88,6 +88,26 @@ const createJobsRepositoryStub = () => {
   }
 }
 
+const createTaskAuditRepositoryStub = () => {
+  const rows: Array<{ id: string }> = []
+  return {
+    insert: vi.fn((record: { id: string }) => {
+      rows.push(record)
+    }),
+    listRecent: vi.fn(() => rows as Array<never>),
+  }
+}
+
+const createCommandAuditRepositoryStub = () => {
+  const rows: Array<{ id: string }> = []
+  return {
+    insert: vi.fn((record: { id: string }) => {
+      rows.push(record)
+    }),
+    listRecent: vi.fn(() => rows as Array<never>),
+  }
+}
+
 describe("resolveInternalApiConfig", () => {
   it("creates and reuses a persisted token file", async () => {
     // Arrange
@@ -127,6 +147,8 @@ describe("buildInternalApiServer", () => {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
       jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
     })
 
     // Act
@@ -162,6 +184,8 @@ describe("buildInternalApiServer", () => {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
       jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
     })
 
     // Act
@@ -212,6 +236,8 @@ describe("buildInternalApiServer", () => {
         getTelegramChatIdBySessionId: vi.fn(() => 777),
       },
       jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
     })
 
     // Act
@@ -260,6 +286,8 @@ describe("buildInternalApiServer", () => {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
       jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
     })
 
     // Act
@@ -291,6 +319,59 @@ describe("buildInternalApiServer", () => {
     // Assert
     expect(deniedCreate.statusCode).toBe(403)
     expect(allowedList.statusCode).toBe(200)
+
+    await app.close()
+  })
+
+  it("returns task and command audit streams", async () => {
+    // Arrange
+    const taskAuditRepository = createTaskAuditRepositoryStub()
+    const commandAuditRepository = createCommandAuditRepositoryStub()
+    taskAuditRepository.insert({ id: "task-audit-1" })
+    commandAuditRepository.insert({ id: "cmd-audit-1" })
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository,
+      commandAuditRepository,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/tasks/audit/list",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    const body = response.json() as {
+      taskAudit: Array<{ id: string }>
+      commandAudit: Array<{ id: string }>
+    }
+    expect(body.taskAudit[0]?.id).toBe("task-audit-1")
+    expect(body.commandAudit[0]?.id).toBe("cmd-audit-1")
 
     await app.close()
   })

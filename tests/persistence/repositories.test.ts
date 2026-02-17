@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import {
   createApprovalsRepository,
+  createCommandAuditRepository,
   createJobsRepository,
   createOutboundMessagesRepository,
   createSessionBindingsRepository,
+  createTaskAuditRepository,
   createTaskObservationsRepository,
   createUserProfileRepository,
   openPersistenceDatabase,
@@ -498,6 +500,65 @@ describe("persistence repositories", () => {
       heartbeatEvening: "19:00",
       updatedAt: 300,
     })
+
+    db.close()
+  })
+
+  it("stores task and command audit history", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const taskAuditRepository = createTaskAuditRepository(db)
+    const commandAuditRepository = createCommandAuditRepository(db)
+
+    jobsRepository.createTask({
+      id: "job-audit-1",
+      type: "reminder",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      runAt: 1_000,
+      cadenceMinutes: null,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    // Act
+    taskAuditRepository.insert({
+      id: "task-audit-1",
+      taskId: "job-audit-1",
+      action: "update",
+      lane: "interactive",
+      actor: "internal_tool",
+      beforeJson: "{}",
+      afterJson: "{}",
+      metadataJson: "{}",
+      createdAt: 500,
+    })
+    commandAuditRepository.insert({
+      id: "cmd-audit-1",
+      command: "update_task",
+      lane: "interactive",
+      status: "success",
+      errorMessage: null,
+      metadataJson: "{}",
+      createdAt: 600,
+    })
+
+    // Assert
+    const taskAudit = taskAuditRepository.listRecent()
+    const commandAudit = commandAuditRepository.listRecent()
+    expect(taskAudit[0]?.id).toBe("task-audit-1")
+    expect(commandAudit[0]?.id).toBe("cmd-audit-1")
 
     db.close()
   })

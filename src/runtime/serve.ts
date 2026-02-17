@@ -11,6 +11,8 @@ import { openPersistenceDatabase } from "../persistence/index.js"
 import { createJobsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
+import { createTaskAuditRepository } from "../persistence/repositories.js"
+import { createCommandAuditRepository } from "../persistence/repositories.js"
 import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { startSchedulerKernel } from "../scheduler/kernel.js"
 import { resolveTelegramWorkerConfig } from "../telegram-worker/config.js"
@@ -64,6 +66,8 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
 
   const persistenceDatabase = openPersistenceDatabase({ ottoHome: config.ottoHome })
   const jobsRepository = createJobsRepository(persistenceDatabase)
+  const taskAuditRepository = createTaskAuditRepository(persistenceDatabase)
+  const commandAuditRepository = createCommandAuditRepository(persistenceDatabase)
   const outboundMessagesRepository = createOutboundMessagesRepository(persistenceDatabase)
   const sessionBindingsRepository = createSessionBindingsRepository(persistenceDatabase)
   const internalApiConfig = await resolveInternalApiConfig(config.ottoHome)
@@ -81,6 +85,8 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       outboundMessagesRepository,
       sessionBindingsRepository,
       jobsRepository,
+      taskAuditRepository,
+      commandAuditRepository,
     })
   } catch (error) {
     persistenceDatabase.close()

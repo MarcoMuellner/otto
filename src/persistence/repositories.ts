@@ -87,6 +87,28 @@ export type TaskListRecord = {
   updatedAt: number
 }
 
+export type TaskAuditRecord = {
+  id: string
+  taskId: string
+  action: "create" | "update" | "delete"
+  lane: "interactive" | "scheduled"
+  actor: string | null
+  beforeJson: string | null
+  afterJson: string | null
+  metadataJson: string | null
+  createdAt: number
+}
+
+export type CommandAuditRecord = {
+  id: string
+  command: string
+  lane: "interactive" | "scheduled" | null
+  status: "success" | "failed" | "denied"
+  errorMessage: string | null
+  metadataJson: string | null
+  createdAt: number
+}
+
 export type ApprovalRecord = {
   id: string
   actionType: string
@@ -715,6 +737,84 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     listTasks: (): TaskListRecord[] => {
       return listTasksStatement.all() as TaskListRecord[]
+    },
+  }
+}
+
+/**
+ * Persists immutable task lifecycle audits so task mutations remain traceable over time.
+ *
+ * @param database Open SQLite database instance.
+ * @returns Repository for task audit writes and reads.
+ */
+export const createTaskAuditRepository = (database: DatabaseSync) => {
+  const insertStatement = database.prepare(
+    `INSERT INTO task_audit_log
+      (id, task_id, action, lane, actor, before_json, after_json, metadata_json, created_at)
+     VALUES
+      (@id, @taskId, @action, @lane, @actor, @beforeJson, @afterJson, @metadataJson, @createdAt)`
+  )
+
+  const listRecentStatement = database.prepare(
+    `SELECT
+      id,
+      task_id as taskId,
+      action,
+      lane,
+      actor,
+      before_json as beforeJson,
+      after_json as afterJson,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM task_audit_log
+     ORDER BY created_at DESC
+     LIMIT ?`
+  )
+
+  return {
+    insert: (record: TaskAuditRecord): void => {
+      insertStatement.run(record)
+    },
+    listRecent: (limit = 50): TaskAuditRecord[] => {
+      return listRecentStatement.all(limit) as TaskAuditRecord[]
+    },
+  }
+}
+
+/**
+ * Tracks internal tool command executions for operational diagnostics and auditability.
+ *
+ * @param database Open SQLite database instance.
+ * @returns Repository for command execution audit entries.
+ */
+export const createCommandAuditRepository = (database: DatabaseSync) => {
+  const insertStatement = database.prepare(
+    `INSERT INTO command_audit_log
+      (id, command, lane, status, error_message, metadata_json, created_at)
+     VALUES
+      (@id, @command, @lane, @status, @errorMessage, @metadataJson, @createdAt)`
+  )
+
+  const listRecentStatement = database.prepare(
+    `SELECT
+      id,
+      command,
+      lane,
+      status,
+      error_message as errorMessage,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM command_audit_log
+     ORDER BY created_at DESC
+     LIMIT ?`
+  )
+
+  return {
+    insert: (record: CommandAuditRecord): void => {
+      insertStatement.run(record)
+    },
+    listRecent: (limit = 100): CommandAuditRecord[] => {
+      return listRecentStatement.all(limit) as CommandAuditRecord[]
     },
   }
 }

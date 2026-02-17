@@ -8,7 +8,13 @@ import { z, ZodError } from "zod"
 
 import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbound-enqueue.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
-import type { JobRecord, JobScheduleType, TaskListRecord } from "../persistence/repositories.js"
+import type {
+  CommandAuditRecord,
+  JobRecord,
+  JobScheduleType,
+  TaskAuditRecord,
+  TaskListRecord,
+} from "../persistence/repositories.js"
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
@@ -48,6 +54,14 @@ type InternalApiServerDependencies = {
     ) => void
     cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
     listTasks: () => TaskListRecord[]
+  }
+  taskAuditRepository: {
+    insert: (record: TaskAuditRecord) => void
+    listRecent: (limit?: number) => TaskAuditRecord[]
+  }
+  commandAuditRepository: {
+    insert: (record: CommandAuditRecord) => void
+    listRecent: (limit?: number) => CommandAuditRecord[]
   }
 }
 
@@ -125,6 +139,11 @@ const listTasksApiSchema = z.object({
   lane: executionLaneSchema,
 })
 
+const listTaskAuditApiSchema = z.object({
+  lane: executionLaneSchema,
+  limit: z.number().int().min(1).max(200).optional(),
+})
+
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
 }
@@ -156,6 +175,28 @@ const assertTaskMutationLane = (
       message: "Task mutation is only allowed in interactive lane",
     },
   }
+}
+
+const writeCommandAudit = (
+  dependencies: InternalApiServerDependencies,
+  record: {
+    command: string
+    lane: "interactive" | "scheduled" | null
+    status: "success" | "failed" | "denied"
+    errorMessage?: string | null
+    metadataJson?: string | null
+    createdAt?: number
+  }
+): void => {
+  dependencies.commandAuditRepository.insert({
+    id: randomUUID(),
+    command: record.command,
+    lane: record.lane,
+    status: record.status,
+    errorMessage: record.errorMessage ?? null,
+    metadataJson: record.metadataJson ?? null,
+    createdAt: record.createdAt ?? Date.now(),
+  })
 }
 
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
@@ -302,13 +343,36 @@ export const buildInternalApiServer = (
         },
         "Internal API queued Telegram message"
       )
+      writeCommandAudit(dependencies, {
+        command: "queue_telegram_message",
+        lane: "interactive",
+        status: "success",
+        metadataJson: JSON.stringify({
+          chatId: resolvedChatId,
+          status: result.status,
+          queuedCount: result.queuedCount,
+          duplicateCount: result.duplicateCount,
+        }),
+      })
       return reply.code(200).send(result)
     } catch (error) {
       if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "queue_telegram_message",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
       }
 
       const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "queue_telegram_message",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
       dependencies.logger.error({ error: err.message }, "Internal API request failed")
       return reply.code(500).send({ error: "internal_error" })
     }
@@ -330,6 +394,12 @@ export const buildInternalApiServer = (
       const payload = createTaskApiSchema.parse(request.body)
       const laneDecision = assertTaskMutationLane(dependencies.logger, payload.lane, "create")
       if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "create_task",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
         return reply.code(laneDecision.statusCode).send(laneDecision.body)
       }
 
@@ -358,16 +428,54 @@ export const buildInternalApiServer = (
         updatedAt: now,
       })
 
+      dependencies.taskAuditRepository.insert({
+        id: randomUUID(),
+        taskId: id,
+        action: "create",
+        lane: payload.lane,
+        actor: "internal_tool",
+        beforeJson: null,
+        afterJson: JSON.stringify(
+          dependencies.jobsRepository.getById(id) ?? {
+            id,
+          }
+        ),
+        metadataJson: JSON.stringify({
+          command: "create_task",
+        }),
+        createdAt: now,
+      })
+
+      writeCommandAudit(dependencies, {
+        command: "create_task",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({ taskId: id }),
+        createdAt: now,
+      })
+
       return reply.code(200).send({
         id,
         status: "created",
       })
     } catch (error) {
       if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "create_task",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
       }
 
       const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "create_task",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
       dependencies.logger.error({ error: err.message }, "Internal API task create failed")
       return reply.code(500).send({ error: "internal_error" })
     }
@@ -389,6 +497,12 @@ export const buildInternalApiServer = (
       const payload = updateTaskApiSchema.parse(request.body)
       const laneDecision = assertTaskMutationLane(dependencies.logger, payload.lane, "update")
       if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "update_task",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
         return reply.code(laneDecision.statusCode).send(laneDecision.body)
       }
 
@@ -421,16 +535,48 @@ export const buildInternalApiServer = (
         Date.now()
       )
 
+      const updatedTask = dependencies.jobsRepository.getById(payload.id)
+      dependencies.taskAuditRepository.insert({
+        id: randomUUID(),
+        taskId: payload.id,
+        action: "update",
+        lane: payload.lane,
+        actor: "internal_tool",
+        beforeJson: JSON.stringify(existingTask),
+        afterJson: JSON.stringify(updatedTask),
+        metadataJson: JSON.stringify({ command: "update_task" }),
+        createdAt: Date.now(),
+      })
+
+      writeCommandAudit(dependencies, {
+        command: "update_task",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({ taskId: payload.id }),
+      })
+
       return reply.code(200).send({
         id: payload.id,
         status: "updated",
       })
     } catch (error) {
       if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "update_task",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
       }
 
       const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "update_task",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
       dependencies.logger.error({ error: err.message }, "Internal API task update failed")
       return reply.code(500).send({ error: "internal_error" })
     }
@@ -452,6 +598,12 @@ export const buildInternalApiServer = (
       const payload = deleteTaskApiSchema.parse(request.body)
       const laneDecision = assertTaskMutationLane(dependencies.logger, payload.lane, "delete")
       if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "delete_task",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
         return reply.code(laneDecision.statusCode).send(laneDecision.body)
       }
 
@@ -461,13 +613,48 @@ export const buildInternalApiServer = (
       }
 
       dependencies.jobsRepository.cancelTask(payload.id, payload.reason ?? null, Date.now())
+
+      const updatedTask = dependencies.jobsRepository.getById(payload.id)
+      dependencies.taskAuditRepository.insert({
+        id: randomUUID(),
+        taskId: payload.id,
+        action: "delete",
+        lane: payload.lane,
+        actor: "internal_tool",
+        beforeJson: JSON.stringify(existingTask),
+        afterJson: JSON.stringify(updatedTask),
+        metadataJson: JSON.stringify({
+          command: "delete_task",
+          reason: payload.reason ?? null,
+        }),
+        createdAt: Date.now(),
+      })
+
+      writeCommandAudit(dependencies, {
+        command: "delete_task",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({ taskId: payload.id }),
+      })
       return reply.code(200).send({ id: payload.id, status: "deleted" })
     } catch (error) {
       if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "delete_task",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
       }
 
       const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "delete_task",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
       dependencies.logger.error({ error: err.message }, "Internal API task delete failed")
       return reply.code(500).send({ error: "internal_error" })
     }
@@ -486,16 +673,63 @@ export const buildInternalApiServer = (
     }
 
     try {
-      listTasksApiSchema.parse(request.body)
+      const payload = listTasksApiSchema.parse(request.body)
       const tasks = dependencies.jobsRepository.listTasks()
+      writeCommandAudit(dependencies, {
+        command: "list_tasks",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({ count: tasks.length }),
+      })
       return reply.code(200).send({ tasks })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "list_tasks",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "list_tasks",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API task list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/tasks/audit/list", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = listTaskAuditApiSchema.parse(request.body)
+      const limit = payload.limit ?? 50
+      const taskAudit = dependencies.taskAuditRepository.listRecent(limit)
+      const commandAudit = dependencies.commandAuditRepository.listRecent(limit)
+      return reply.code(200).send({ taskAudit, commandAudit })
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
       }
 
       const err = error as Error
-      dependencies.logger.error({ error: err.message }, "Internal API task list failed")
+      dependencies.logger.error({ error: err.message }, "Internal API task audit list failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

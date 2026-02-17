@@ -380,6 +380,28 @@ cmd_task_list() {
   sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, type, schedule_type, profile_id, status, next_run_at, terminal_state FROM jobs ORDER BY id ASC;"
 }
 
+cmd_task_audit() {
+  require_task_runtime_paths
+  require_cmd sqlite3
+
+  local limit="${1:-50}"
+  if ! [[ "${limit}" =~ ^[0-9]+$ ]] || [[ "${limit}" -lt 1 ]] || [[ "${limit}" -gt 200 ]]; then
+    error "Usage: ottoctl task audit [limit:1-200]"
+    exit 1
+  fi
+
+  if [[ ! -f "${STATE_DB_PATH}" ]]; then
+    error "State database not found: ${STATE_DB_PATH}. Run setup first."
+    exit 1
+  fi
+
+  info "Recent task audit records (limit=${limit})"
+  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, task_id, action, lane, actor, created_at FROM task_audit_log ORDER BY created_at DESC LIMIT ${limit};"
+  echo
+  info "Recent command audit records (limit=${limit})"
+  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, command, lane, status, error_message, created_at FROM command_audit_log ORDER BY created_at DESC LIMIT ${limit};"
+}
+
 cmd_task() {
   local subcommand="${1:-}"
   shift || true
@@ -412,6 +434,9 @@ cmd_task() {
       ;;
     show)
       cmd_task_show "$@"
+      ;;
+    audit)
+      cmd_task_audit "$@"
       ;;
     *)
       error "Unknown task command: ${subcommand}"
@@ -705,6 +730,7 @@ Usage:
   ottoctl task list
   ottoctl task bind-profile <task-id> <profile-id>
   ottoctl task show <task-id>
+  ottoctl task audit [limit]
   ottoctl update [--nightly] [--repo owner/repo]
 EOF
 }

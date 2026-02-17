@@ -67,6 +67,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl task list`
   - `ottoctl task bind-profile <task-id> <profile-id>`
   - `ottoctl task show <task-id>`
+  - `ottoctl task audit [limit]`
   - `ottoctl update` (defaults to latest stable)
   - `ottoctl update --nightly` (latest nightly)
   - `ottoctl update --repo <owner>/<repo>` (optional override for custom repo)
