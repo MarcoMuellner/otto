@@ -28,6 +28,12 @@ const taskExecutionResultSchema = z.object({
 })
 
 type TaskExecutionResult = z.infer<typeof taskExecutionResultSchema>
+type TaskExecutionParseOutcome = {
+  result: TaskExecutionResult
+  rawOutput: string | null
+  parseErrorCode: string | null
+  parseErrorMessage: string | null
+}
 
 type SchedulerLogger = Pick<Logger, "info" | "warn" | "error">
 
@@ -179,40 +185,126 @@ const toFailureResult = (code: string, message: string): TaskExecutionResult => 
   }
 }
 
-const parseStructuredResult = (assistantText: string): TaskExecutionResult => {
+const normalizeExecutionResult = (value: unknown): unknown => {
+  const record = asRecord(value)
+  if (!record) {
+    return value
+  }
+
+  const status = typeof record.status === "string" ? record.status : null
+  const summary = typeof record.summary === "string" ? record.summary.trim() : null
+  if (!status || !summary) {
+    return value
+  }
+
+  const normalizedErrors: Array<{ code: string; message: string }> = []
+  if (Array.isArray(record.errors)) {
+    for (const entry of record.errors) {
+      if (typeof entry === "string" && entry.trim().length > 0) {
+        normalizedErrors.push({
+          code: "task_error",
+          message: entry.trim(),
+        })
+        continue
+      }
+
+      const objectEntry = asRecord(entry)
+      if (objectEntry) {
+        const code = typeof objectEntry.code === "string" ? objectEntry.code.trim() : ""
+        const message = typeof objectEntry.message === "string" ? objectEntry.message.trim() : ""
+        if (code.length > 0 && message.length > 0) {
+          normalizedErrors.push({ code, message })
+          continue
+        }
+      }
+
+      if (entry != null) {
+        normalizedErrors.push({
+          code: "task_error",
+          message: String(entry),
+        })
+      }
+    }
+  }
+
+  return {
+    status,
+    summary,
+    errors: normalizedErrors,
+  }
+}
+
+const parseStructuredResult = (assistantText: string): TaskExecutionParseOutcome => {
   const trimmed = assistantText.trim()
   if (trimmed.length === 0) {
-    return toFailureResult("invalid_result_json", "Task execution returned empty output")
+    return {
+      result: toFailureResult("invalid_result_json", "Task execution returned empty output"),
+      rawOutput: null,
+      parseErrorCode: "invalid_result_json",
+      parseErrorMessage: "Task execution returned empty output",
+    }
+  }
+
+  const validateParsedResult = (parsed: unknown): TaskExecutionParseOutcome => {
+    const normalized = normalizeExecutionResult(parsed)
+    const validated = taskExecutionResultSchema.safeParse(normalized)
+
+    if (!validated.success) {
+      return {
+        result: toFailureResult("invalid_result_schema", validated.error.message),
+        rawOutput: trimmed,
+        parseErrorCode: "invalid_result_schema",
+        parseErrorMessage: validated.error.message,
+      }
+    }
+
+    return {
+      result: validated.data,
+      rawOutput: null,
+      parseErrorCode: null,
+      parseErrorMessage: null,
+    }
   }
 
   try {
-    const parsed = JSON.parse(trimmed)
-    const validated = taskExecutionResultSchema.safeParse(parsed)
-
-    if (!validated.success) {
-      return toFailureResult("invalid_result_schema", validated.error.message)
-    }
-
-    return validated.data
+    return validateParsedResult(JSON.parse(trimmed))
   } catch {
     const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)\s*```/i)
 
     if (!fencedMatch?.[1]) {
-      return toFailureResult("invalid_result_json", "Task execution output must be valid JSON")
+      return {
+        result: toFailureResult("invalid_result_json", "Task execution output must be valid JSON"),
+        rawOutput: trimmed,
+        parseErrorCode: "invalid_result_json",
+        parseErrorMessage: "Task execution output must be valid JSON",
+      }
     }
 
     try {
-      const parsed = JSON.parse(fencedMatch[1])
-      const validated = taskExecutionResultSchema.safeParse(parsed)
-      if (!validated.success) {
-        return toFailureResult("invalid_result_schema", validated.error.message)
-      }
-
-      return validated.data
+      return validateParsedResult(JSON.parse(fencedMatch[1]))
     } catch {
-      return toFailureResult("invalid_result_json", "Task execution output must be valid JSON")
+      return {
+        result: toFailureResult("invalid_result_json", "Task execution output must be valid JSON"),
+        rawOutput: trimmed,
+        parseErrorCode: "invalid_result_json",
+        parseErrorMessage: "Task execution output must be valid JSON",
+      }
     }
   }
+}
+
+const serializePersistedResult = (
+  result: TaskExecutionResult,
+  rawOutput: string | null
+): string => {
+  if (!rawOutput) {
+    return JSON.stringify(result)
+  }
+
+  return JSON.stringify({
+    ...result,
+    rawOutput,
+  })
 }
 
 const mapRunStatus = (
@@ -348,6 +440,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
       })
 
       let result: TaskExecutionResult
+      let persistedRawOutput: string | null = null
 
       try {
         if (job.type === WATCHDOG_TASK_TYPE) {
@@ -391,7 +484,21 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               }
             )
 
-            result = parseStructuredResult(assistantOutput)
+            const parsedResult = parseStructuredResult(assistantOutput)
+            if (parsedResult.parseErrorCode) {
+              dependencies.logger.warn(
+                {
+                  jobId: job.id,
+                  parseErrorCode: parsedResult.parseErrorCode,
+                  parseErrorMessage: parsedResult.parseErrorMessage,
+                  rawOutput: parsedResult.rawOutput,
+                },
+                "Task execution returned non-conforming structured output"
+              )
+            }
+
+            result = parsedResult.result
+            persistedRawOutput = parsedResult.rawOutput
           }
         }
       } catch (error) {
@@ -408,7 +515,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
         finishedAt,
         runStatus.errorCode,
         runStatus.errorMessage,
-        JSON.stringify(result)
+        serializePersistedResult(result, persistedRawOutput)
       )
 
       try {

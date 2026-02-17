@@ -193,10 +193,79 @@ describe("task execution engine", () => {
     const runs = jobsRepository.listRunsByJobId("job-oneshot-1")
     expect(runs[0]?.status).toBe("failed")
     expect(runs[0]?.errorCode).toBe("invalid_result_json")
+    expect(runs[0]?.resultJson).toContain("rawOutput")
 
     const task = jobsRepository.getById("job-oneshot-1")
     expect(task?.terminalState).toBe("completed")
     expect(task?.nextRunAt).toBeNull()
+
+    db.close()
+  })
+
+  it("normalizes string-based errors from assistant output", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+
+    jobsRepository.createTask({
+      id: "job-oneshot-2",
+      type: "general-reminder",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      runAt: 1_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({ message: "Ping team" }),
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const claimed = jobsRepository.claimDue(1_000, 10, "lock-4", 60_000, 1_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due task claim")
+    }
+
+    const logger = createLoggerStub()
+    const engine = createTaskExecutionEngine({
+      logger,
+      ottoHome: tempRoot,
+      jobsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-4",
+        promptSession: async () =>
+          JSON.stringify({
+            status: "failed",
+            summary: "Could not complete reminder",
+            errors: ["telegram queue unavailable"],
+          }),
+      },
+      defaultWatchdogChatId: 777,
+      now: () => 3_500,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const runs = jobsRepository.listRunsByJobId("job-oneshot-2")
+    expect(runs[0]?.status).toBe("failed")
+    expect(runs[0]?.errorCode).toBe("task_error")
+    expect(runs[0]?.errorMessage).toBe("telegram queue unavailable")
+    expect(runs[0]?.resultJson).toContain("telegram queue unavailable")
+    expect(logger.warn).not.toHaveBeenCalled()
 
     db.close()
   })
