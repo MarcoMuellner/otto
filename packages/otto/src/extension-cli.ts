@@ -1,6 +1,5 @@
 import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 
 import {
   disableExtension,
@@ -19,7 +18,7 @@ type CliStreams = {
 type ExtensionCliEnvironment = NodeJS.ProcessEnv
 
 const resolveDefaultCatalogRoot = (): string => {
-  const currentFileDirectory = path.dirname(fileURLToPath(import.meta.url))
+  const currentFileDirectory = path.dirname(decodeURIComponent(new URL(import.meta.url).pathname))
   return path.join(currentFileDirectory, "assets", "extensions", "catalog")
 }
 
@@ -180,7 +179,8 @@ export const runExtensionCliCommand = async (
 }
 
 const isMainModule = process.argv[1]
-  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  ? path.resolve(process.argv[1]) ===
+    path.resolve(decodeURIComponent(new URL(import.meta.url).pathname))
   : false
 
 if (isMainModule) {
