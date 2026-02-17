@@ -234,6 +234,108 @@ require_task_runtime_paths() {
   fi
 }
 
+require_state_db() {
+  if [[ ! -f "${STATE_DB_PATH}" ]]; then
+    error "State database not found: ${STATE_DB_PATH}. Run setup first."
+    exit 1
+  fi
+}
+
+node_print_query_table() {
+  local query="$1"
+  local params_json="${2:-[]}"
+
+  node -e '
+const { DatabaseSync } = require("node:sqlite")
+
+const dbPath = process.argv[1]
+const query = process.argv[2]
+const paramsJson = process.argv[3] ?? "[]"
+const params = JSON.parse(paramsJson)
+
+const db = new DatabaseSync(dbPath)
+try {
+  const rows = db.prepare(query).all(...params)
+  if (!rows.length) {
+    console.log("(no rows)")
+    process.exit(0)
+  }
+
+  const columns = Object.keys(rows[0])
+  console.log(columns.join("\t"))
+  for (const row of rows) {
+    const line = columns
+      .map((column) => {
+        const value = row[column]
+        return value == null ? "" : String(value).replaceAll("\n", "\\n")
+      })
+      .join("\t")
+    console.log(line)
+  }
+} finally {
+  db.close()
+}
+' "${STATE_DB_PATH}" "${query}" "${params_json}"
+}
+
+node_print_tasks_table() {
+  local maybe_task_id="${1:-}"
+
+  node -e '
+const { DatabaseSync } = require("node:sqlite")
+
+const dbPath = process.argv[1]
+const taskId = process.argv[2] ?? ""
+const db = new DatabaseSync(dbPath)
+
+const printRows = (rows) => {
+  if (!rows.length) {
+    console.log("(no rows)")
+    return
+  }
+
+  const columns = [
+    "id",
+    "type",
+    "schedule_type",
+    "profile_id",
+    "status",
+    "next_run_at",
+    "terminal_state",
+  ]
+  console.log(columns.join("\t"))
+  for (const row of rows) {
+    console.log(columns.map((col) => (row[col] == null ? "" : String(row[col]))).join("\t"))
+  }
+}
+
+try {
+  const columns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map((row) => row.name))
+  const has = (column) => columns.has(column)
+  const selectExpr = [
+    "id",
+    "type",
+    has("schedule_type") ? "schedule_type" : "NULL AS schedule_type",
+    has("profile_id") ? "profile_id" : "NULL AS profile_id",
+    "status",
+    has("next_run_at") ? "next_run_at" : "NULL AS next_run_at",
+    has("terminal_state") ? "terminal_state" : "NULL AS terminal_state",
+  ].join(", ")
+
+  if (taskId) {
+    const rows = db.prepare(`SELECT ${selectExpr} FROM jobs WHERE id = ?`).all(taskId)
+    printRows(rows)
+    process.exit(0)
+  }
+
+  const rows = db.prepare(`SELECT ${selectExpr} FROM jobs ORDER BY id ASC`).all()
+  printRows(rows)
+} finally {
+  db.close()
+}
+' "${STATE_DB_PATH}" "${maybe_task_id}"
+}
+
 cmd_task_profiles_list() {
   require_task_runtime_paths
   mkdir -p "${TASK_PROFILE_DIR}"
@@ -310,7 +412,7 @@ cmd_task_profiles_install() {
 
 cmd_task_bind_profile() {
   require_task_runtime_paths
-  require_cmd sqlite3
+  require_state_db
 
   local task_id="${1:-}"
   local profile_id="${2:-}"
@@ -328,20 +430,45 @@ cmd_task_bind_profile() {
 
   validate_task_profile_file "${profile_path}" "${profile_id}"
 
-  if [[ ! -f "${STATE_DB_PATH}" ]]; then
-    error "State database not found: ${STATE_DB_PATH}. Run setup first."
-    exit 1
-  fi
+  if node -e '
+const { DatabaseSync } = require("node:sqlite")
 
-  local escaped_profile escaped_task changes
-  escaped_profile="$(sql_escape "${profile_id}")"
-  escaped_task="$(sql_escape "${task_id}")"
+const dbPath = process.argv[1]
+const taskId = process.argv[2]
+const profileId = process.argv[3]
+const now = Date.now()
 
-  changes="$(sqlite3 "${STATE_DB_PATH}" "UPDATE jobs SET profile_id='${escaped_profile}', updated_at=strftime('%s','now') * 1000 WHERE id='${escaped_task}'; SELECT changes();")"
+const db = new DatabaseSync(dbPath)
+try {
+  const columns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map((row) => row.name))
+  if (!columns.has("profile_id")) {
+    process.exit(3)
+  }
 
-  if [[ "${changes}" == "0" ]]; then
-    error "Task not found: ${task_id}"
-    exit 1
+  const result = db
+    .prepare("UPDATE jobs SET profile_id = ?, updated_at = ? WHERE id = ?")
+    .run(profileId, now, taskId)
+
+  if ((result.changes ?? 0) < 1) {
+    process.exit(2)
+  }
+} finally {
+  db.close()
+}
+' "${STATE_DB_PATH}" "${task_id}" "${profile_id}"
+  then
+    :
+  else
+    local update_status=$?
+    if [[ ${update_status} -eq 2 ]]; then
+      error "Task not found: ${task_id}"
+      exit 1
+    fi
+    if [[ ${update_status} -eq 3 ]]; then
+      error "Current state database does not support profile bindings yet. Run ottoctl update/setup first."
+      exit 1
+    fi
+    exit ${update_status}
   fi
 
   success "Bound task ${task_id} to profile ${profile_id}"
@@ -349,7 +476,7 @@ cmd_task_bind_profile() {
 
 cmd_task_show() {
   require_task_runtime_paths
-  require_cmd sqlite3
+  require_state_db
 
   local task_id="${1:-}"
   if [[ -z "${task_id}" ]]; then
@@ -357,32 +484,19 @@ cmd_task_show() {
     exit 1
   fi
 
-  if [[ ! -f "${STATE_DB_PATH}" ]]; then
-    error "State database not found: ${STATE_DB_PATH}. Run setup first."
-    exit 1
-  fi
-
-  local escaped_task
-  escaped_task="$(sql_escape "${task_id}")"
-
-  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, type, schedule_type, profile_id, status, next_run_at, terminal_state FROM jobs WHERE id='${escaped_task}';"
+  node_print_tasks_table "${task_id}"
 }
 
 cmd_task_list() {
   require_task_runtime_paths
-  require_cmd sqlite3
+  require_state_db
 
-  if [[ ! -f "${STATE_DB_PATH}" ]]; then
-    error "State database not found: ${STATE_DB_PATH}. Run setup first."
-    exit 1
-  fi
-
-  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, type, schedule_type, profile_id, status, next_run_at, terminal_state FROM jobs ORDER BY id ASC;"
+  node_print_tasks_table
 }
 
 cmd_task_audit() {
   require_task_runtime_paths
-  require_cmd sqlite3
+  require_state_db
 
   local limit="${1:-50}"
   if ! [[ "${limit}" =~ ^[0-9]+$ ]] || [[ "${limit}" -lt 1 ]] || [[ "${limit}" -gt 200 ]]; then
@@ -390,16 +504,15 @@ cmd_task_audit() {
     exit 1
   fi
 
-  if [[ ! -f "${STATE_DB_PATH}" ]]; then
-    error "State database not found: ${STATE_DB_PATH}. Run setup first."
-    exit 1
-  fi
-
   info "Recent task audit records (limit=${limit})"
-  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, task_id, action, lane, actor, created_at FROM task_audit_log ORDER BY created_at DESC LIMIT ${limit};"
+  node_print_query_table \
+    "SELECT id, task_id, action, lane, actor, created_at FROM task_audit_log ORDER BY created_at DESC LIMIT ?" \
+    "[${limit}]"
   echo
   info "Recent command audit records (limit=${limit})"
-  sqlite3 -header -column "${STATE_DB_PATH}" "SELECT id, command, lane, status, error_message, created_at FROM command_audit_log ORDER BY created_at DESC LIMIT ${limit};"
+  node_print_query_table \
+    "SELECT id, command, lane, status, error_message, created_at FROM command_audit_log ORDER BY created_at DESC LIMIT ?" \
+    "[${limit}]"
 }
 
 cmd_task() {
