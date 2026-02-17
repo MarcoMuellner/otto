@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "playwright-mcp",
+  "name": "Playwright MCP",
+  "version": "0.1.0",
+  "description": "Browser automation MCP server for web navigation and interaction.",
+  "tags": ["mcp", "browser", "playwright", "automation"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "mcp": {
+      "file": "mcp.jsonc",
+    },
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": ["npx"],
+    "env": [],
+    "files": [],
+  },
+  "dependencies": [],
+}

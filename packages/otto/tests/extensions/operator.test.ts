@@ -31,13 +31,32 @@ const writeCatalogExtension = async (
 ): Promise<void> => {
   const extensionRoot = path.join(catalogRoot, extensionId)
   await mkdir(path.join(extensionRoot, "tools"), { recursive: true })
-  await mkdir(path.join(extensionRoot, "skills"), { recursive: true })
+  await mkdir(path.join(extensionRoot, "skills", `${extensionId}-skill`), { recursive: true })
   await writeFile(
     path.join(extensionRoot, "tools", `${extensionId}.ts`),
     "export default {}\n",
     "utf8"
   )
-  await writeFile(path.join(extensionRoot, "skills", `${extensionId}.md`), "# skill\n", "utf8")
+  await writeFile(
+    path.join(extensionRoot, "skills", `${extensionId}-skill`, "SKILL.md"),
+    `---\nname: ${extensionId}-skill\ndescription: Example skill for ${extensionId}\n---\n\nUse this skill.\n`,
+    "utf8"
+  )
+  await writeFile(
+    path.join(extensionRoot, "mcp.jsonc"),
+    `${JSON.stringify(
+      {
+        [`${extensionId}-mcp`]: {
+          type: "local",
+          command: ["npx", "-y", "@playwright/mcp@latest", "--headless"],
+          enabled: true,
+        },
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  )
   await writeFile(
     path.join(extensionRoot, "manifest.jsonc"),
     `${JSON.stringify(
@@ -53,6 +72,9 @@ const writeCatalogExtension = async (
           },
           skills: {
             path: "skills",
+          },
+          mcp: {
+            file: "mcp.jsonc",
           },
         },
       },
@@ -87,7 +109,8 @@ describe("extension operator service", () => {
       "calendar",
       "1.2.0",
       "skills",
-      "calendar.md"
+      "calendar-skill",
+      "SKILL.md"
     )
     await expect(readFile(skillPath, "utf8")).resolves.toContain("skill")
     await expect(
@@ -97,11 +120,11 @@ describe("extension operator service", () => {
       )
     ).resolves.toContain("export default")
     await expect(
-      readFile(
-        path.join(ottoHome, ".opencode", "skills", "extensions", "calendar", "calendar.md"),
-        "utf8"
-      )
+      readFile(path.join(ottoHome, ".opencode", "skills", "calendar-skill", "SKILL.md"), "utf8")
     ).resolves.toContain("skill")
+    await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.toContain(
+      "calendar-mcp"
+    )
   })
 
   it("updates extension to latest and prunes old store version", async () => {
@@ -142,6 +165,9 @@ describe("extension operator service", () => {
         updatedAt: expect.any(Number),
       },
     ])
+    await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.toContain(
+      "calendar-mcp"
+    )
   })
 
   it("updates all installed extension ids", async () => {
@@ -196,6 +222,9 @@ describe("extension operator service", () => {
         "utf8"
       )
     ).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.not.toContain(
+      "calendar-mcp"
+    )
   })
 
   it("remove remains an uninstall alias", async () => {

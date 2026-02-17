@@ -1,5 +1,5 @@
 import path from "node:path"
-import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises"
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 
 import semver from "semver"
 
@@ -113,6 +113,57 @@ const loadManifest = async (manifestPath: string): Promise<ExtensionManifest> =>
   return parsed as ExtensionManifest
 }
 
+const resolveOpencodeConfigPath = (ottoHome: string): string => {
+  return path.join(ottoHome, "opencode.jsonc")
+}
+
+const loadOpencodeConfig = async (ottoHome: string): Promise<Record<string, unknown>> => {
+  const configPath = resolveOpencodeConfigPath(ottoHome)
+
+  try {
+    const source = await readFile(configPath, "utf8")
+    const parsed = parseJsonc(source)
+    if (typeof parsed !== "object" || parsed == null) {
+      throw new Error(`OpenCode config at ${configPath} must be an object`)
+    }
+    return parsed as Record<string, unknown>
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException
+    if (err.code === "ENOENT") {
+      return {}
+    }
+
+    throw error
+  }
+}
+
+const saveOpencodeConfig = async (
+  ottoHome: string,
+  config: Record<string, unknown>
+): Promise<void> => {
+  const configPath = resolveOpencodeConfigPath(ottoHome)
+  await mkdir(path.dirname(configPath), { recursive: true })
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8")
+}
+
+const loadMcpFragment = async (
+  extensionStorePath: string,
+  manifest: ExtensionManifest
+): Promise<Record<string, unknown>> => {
+  if (!manifest.payload.mcp?.file) {
+    return {}
+  }
+
+  const mcpPath = path.join(extensionStorePath, manifest.payload.mcp.file)
+  const source = await readFile(mcpPath, "utf8")
+  const parsed = parseJsonc(source)
+  if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) {
+    throw new Error(`MCP fragment at ${mcpPath} must be an object`)
+  }
+
+  return parsed as Record<string, unknown>
+}
+
 const syncRuntimeFootprintForExtension = async (
   ottoHome: string,
   extensionId: string,
@@ -135,18 +186,102 @@ const syncRuntimeFootprintForExtension = async (
 
   if (manifest.payload.skills?.path) {
     const sourceSkillsPath = path.join(storeVersionPath, manifest.payload.skills.path)
-    await mkdir(path.dirname(runtimePaths.skillsPath), { recursive: true })
-    await cp(sourceSkillsPath, runtimePaths.skillsPath, { recursive: true })
+    const skillsRuntimeRoot = path.join(ottoHome, ".opencode", "skills")
+    const skillEntries = await readdir(sourceSkillsPath, { withFileTypes: true })
+
+    await mkdir(skillsRuntimeRoot, { recursive: true })
+
+    for (const entry of skillEntries) {
+      if (!entry.isDirectory()) {
+        continue
+      }
+
+      const sourceEntryPath = path.join(sourceSkillsPath, entry.name)
+      const targetEntryPath = path.join(skillsRuntimeRoot, entry.name)
+
+      await rm(targetEntryPath, { recursive: true, force: true })
+      await cp(sourceEntryPath, targetEntryPath, { recursive: true })
+    }
+
+    const nonDirectoryEntries = skillEntries.filter((entry) => !entry.isDirectory())
+    if (nonDirectoryEntries.length > 0) {
+      await mkdir(runtimePaths.skillsPath, { recursive: true })
+      for (const entry of nonDirectoryEntries) {
+        await cp(
+          path.join(sourceSkillsPath, entry.name),
+          path.join(runtimePaths.skillsPath, entry.name),
+          {
+            recursive: true,
+          }
+        )
+      }
+    }
+  }
+
+  const mcpFragment = await loadMcpFragment(storeVersionPath, manifest)
+  if (Object.keys(mcpFragment).length > 0) {
+    const opencodeConfig = await loadOpencodeConfig(ottoHome)
+    const currentMcp =
+      typeof opencodeConfig.mcp === "object" &&
+      opencodeConfig.mcp !== null &&
+      !Array.isArray(opencodeConfig.mcp)
+        ? ({ ...(opencodeConfig.mcp as Record<string, unknown>) } satisfies Record<string, unknown>)
+        : {}
+
+    opencodeConfig.mcp = {
+      ...currentMcp,
+      ...mcpFragment,
+    }
+
+    await saveOpencodeConfig(ottoHome, opencodeConfig)
   }
 }
 
 const removeRuntimeFootprintForExtension = async (
   ottoHome: string,
-  extensionId: string
+  extensionId: string,
+  version: string
 ): Promise<void> => {
+  const paths = resolveExtensionPersistencePaths(ottoHome)
+  const storeVersionPath = path.join(paths.storeRoot, extensionId, version)
+  const manifest = await loadManifest(path.join(storeVersionPath, "manifest.jsonc"))
+
   const runtimePaths = resolveRuntimeExtensionPaths(ottoHome, extensionId)
   await rm(runtimePaths.toolsPath, { recursive: true, force: true })
   await rm(runtimePaths.skillsPath, { recursive: true, force: true })
+
+  if (manifest.payload.skills?.path) {
+    const sourceSkillsPath = path.join(storeVersionPath, manifest.payload.skills.path)
+    const skillEntries = await readdir(sourceSkillsPath, { withFileTypes: true }).catch(() => [])
+    for (const entry of skillEntries) {
+      if (!entry.isDirectory()) {
+        continue
+      }
+
+      await rm(path.join(ottoHome, ".opencode", "skills", entry.name), {
+        recursive: true,
+        force: true,
+      })
+    }
+  }
+
+  const mcpFragment = await loadMcpFragment(storeVersionPath, manifest)
+  if (Object.keys(mcpFragment).length > 0) {
+    const opencodeConfig = await loadOpencodeConfig(ottoHome)
+    const currentMcp =
+      typeof opencodeConfig.mcp === "object" &&
+      opencodeConfig.mcp !== null &&
+      !Array.isArray(opencodeConfig.mcp)
+        ? ({ ...(opencodeConfig.mcp as Record<string, unknown>) } satisfies Record<string, unknown>)
+        : {}
+
+    for (const key of Object.keys(mcpFragment)) {
+      delete currentMcp[key]
+    }
+
+    opencodeConfig.mcp = currentMcp
+    await saveOpencodeConfig(ottoHome, opencodeConfig)
+  }
 }
 
 const resolveCatalogEntryForInstall = (
@@ -284,9 +419,18 @@ export const installExtension = async (
     (entry) => entry.id === selected.id
   )
   const existingVersions = existing?.installedVersions ?? []
+  const previousInstalledVersion = resolveLatestVersion(existingVersions)
   const targetAlreadyInstalled = existingVersions.includes(selected.version)
 
   const pruneCandidates = existingVersions.filter((version) => version !== selected.version)
+
+  if (previousInstalledVersion && previousInstalledVersion !== selected.version) {
+    await removeRuntimeFootprintForExtension(
+      context.ottoHome,
+      selected.id,
+      previousInstalledVersion
+    )
+  }
 
   const paths = resolveExtensionPersistencePaths(context.ottoHome)
   const targetPath = path.join(paths.storeRoot, selected.id, selected.version)
@@ -387,7 +531,7 @@ export const removeExtension = async (
 
   await repository.setActiveVersion(parsed.id, null)
 
-  await removeRuntimeFootprintForExtension(context.ottoHome, parsed.id)
+  await removeRuntimeFootprintForExtension(context.ottoHome, parsed.id, installedVersion)
   await removeStoreVersionIfPresent(context.ottoHome, parsed.id, installedVersion)
   await repository.removeInstalledVersion(parsed.id, installedVersion)
 
