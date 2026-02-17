@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3"
+import type { DatabaseSync } from "node:sqlite"
 
 export type MessagePriority = "low" | "normal" | "high"
 export type OutboundMessageStatus = "queued" | "sent" | "failed" | "cancelled"
@@ -101,7 +101,7 @@ const isUniqueConstraintForColumn = (error: unknown, columnName: string): boolea
  * @param database Open SQLite database instance.
  * @returns Repository for session binding read/write operations.
  */
-export const createSessionBindingsRepository = (database: Database.Database) => {
+export const createSessionBindingsRepository = (database: DatabaseSync) => {
   const getStatement = database.prepare(
     `SELECT
       binding_key as bindingKey,
@@ -137,7 +137,7 @@ export const createSessionBindingsRepository = (database: Database.Database) => 
  * @param database Open SQLite database instance.
  * @returns Repository for inbound message records.
  */
-export const createInboundMessagesRepository = (database: Database.Database) => {
+export const createInboundMessagesRepository = (database: DatabaseSync) => {
   const insertStatement = database.prepare(
     `INSERT INTO messages_in
       (id, source_message_id, chat_id, user_id, content, received_at, session_id, created_at)
@@ -159,7 +159,7 @@ export const createInboundMessagesRepository = (database: Database.Database) => 
  * @param database Open SQLite database instance.
  * @returns Repository for outbound queue lifecycle operations.
  */
-export const createOutboundMessagesRepository = (database: Database.Database) => {
+export const createOutboundMessagesRepository = (database: DatabaseSync) => {
   const insertStatement = database.prepare(
     `INSERT INTO messages_out
       (id, dedupe_key, chat_id, content, priority, status, attempt_count, next_attempt_at, sent_at, failed_at, error_message, created_at, updated_at)
@@ -269,7 +269,7 @@ export const createOutboundMessagesRepository = (database: Database.Database) =>
  * @param database Open SQLite database instance.
  * @returns Repository for scheduler job records.
  */
-export const createJobsRepository = (database: Database.Database) => {
+export const createJobsRepository = (database: DatabaseSync) => {
   const upsertStatement = database.prepare(
     `INSERT INTO jobs
       (id, type, status, payload, last_run_at, next_run_at, lock_token, lock_expires_at, created_at, updated_at)
@@ -321,7 +321,7 @@ export const createJobsRepository = (database: Database.Database) => {
  * @param database Open SQLite database instance.
  * @returns Repository for approval workflow persistence.
  */
-export const createApprovalsRepository = (database: Database.Database) => {
+export const createApprovalsRepository = (database: DatabaseSync) => {
   const insertStatement = database.prepare(
     `INSERT INTO approvals
       (id, action_type, payload, reason, status, requested_at, expires_at, resolved_at, resolution_source, created_at, updated_at)
@@ -364,7 +364,7 @@ export const createApprovalsRepository = (database: Database.Database) => {
  * @param database Open SQLite database instance.
  * @returns Repository for external task observations.
  */
-export const createTaskObservationsRepository = (database: Database.Database) => {
+export const createTaskObservationsRepository = (database: DatabaseSync) => {
   const upsertStatement = database.prepare(
     `INSERT INTO task_observations
       (provider, external_id, title, status, due_at, observed_at, metadata)
@@ -392,7 +392,7 @@ export const createTaskObservationsRepository = (database: Database.Database) =>
  * @param database Open SQLite database instance.
  * @returns Repository for user profile persistence.
  */
-export const createUserProfileRepository = (database: Database.Database) => {
+export const createUserProfileRepository = (database: DatabaseSync) => {
   const getStatement = database.prepare(
     `SELECT
       timezone,

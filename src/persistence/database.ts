@@ -1,8 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-
-import Database from "better-sqlite3"
+import { DatabaseSync } from "node:sqlite"
 
 import { SQL_MIGRATIONS } from "./migrations.js"
 
@@ -36,14 +35,12 @@ export const resolvePersistenceDatabasePath = (
  * @param options Optional path overrides for runtime and tests.
  * @returns Open SQLite database instance with migrations applied.
  */
-export const openPersistenceDatabase = (
-  options: PersistenceDatabaseOptions = {}
-): Database.Database => {
+export const openPersistenceDatabase = (options: PersistenceDatabaseOptions = {}): DatabaseSync => {
   const dbPath = resolvePersistenceDatabasePath(options)
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
 
-  const database = new Database(dbPath)
-  database.pragma("journal_mode = WAL")
+  const database = new DatabaseSync(dbPath)
+  database.exec("PRAGMA journal_mode = WAL")
 
   applyMigrations(database)
 
@@ -55,8 +52,20 @@ export const openPersistenceDatabase = (
  *
  * @param database Open SQLite database instance.
  */
-export const applyMigrations = (database: Database.Database): void => {
-  const bootstrapMigrationTable = database.transaction(() => {
+export const applyMigrations = (database: DatabaseSync): void => {
+  const runTransaction = (operation: () => void): void => {
+    database.exec("BEGIN")
+
+    try {
+      operation()
+      database.exec("COMMIT")
+    } catch (error) {
+      database.exec("ROLLBACK")
+      throw error
+    }
+  }
+
+  runTransaction(() => {
     database.exec(
       `CREATE TABLE IF NOT EXISTS schema_migrations (
         id TEXT PRIMARY KEY,
@@ -64,8 +73,6 @@ export const applyMigrations = (database: Database.Database): void => {
       )`
     )
   })
-
-  bootstrapMigrationTable()
 
   const hasMigration = database.prepare("SELECT 1 FROM schema_migrations WHERE id = ?")
   const insertMigration = database.prepare(
@@ -78,14 +85,12 @@ export const applyMigrations = (database: Database.Database): void => {
       continue
     }
 
-    const runMigration = database.transaction(() => {
+    runTransaction(() => {
       for (const statement of migration.statements) {
         database.exec(statement)
       }
 
       insertMigration.run(migration.id, Date.now())
     })
-
-    runMigration()
   }
 }

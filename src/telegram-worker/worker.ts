@@ -14,7 +14,7 @@ import {
   extractTelegramAccessContext,
   logDeniedTelegramAccess,
 } from "./security.js"
-import type Database from "better-sqlite3"
+import type { DatabaseSync } from "node:sqlite"
 
 export type TelegramWorkerHandle = {
   stop: () => Promise<void>
@@ -37,7 +37,7 @@ export type TelegramBotRuntime = {
 
 export type TelegramWorkerDependencies = {
   createBotRuntime?: (botToken: string) => TelegramBotRuntime
-  openDatabase?: () => Database.Database
+  openDatabase?: () => DatabaseSync
   createSessionGateway?: (
     baseUrl: string
   ) => Promise<OpencodeSessionGateway> | OpencodeSessionGateway
