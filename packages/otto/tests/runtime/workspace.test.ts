@@ -34,6 +34,8 @@ describe("ensureWorkspaceDirectories", () => {
     // Assert
     expect(created).toContain(ottoHome)
     expect(created).toEqual([ottoHome, ...getWorkspaceDirectories(ottoHome)])
+    expect(created).toContain(path.join(ottoHome, "extensions"))
+    expect(created).toContain(path.join(ottoHome, "extensions", "store"))
   })
 })
 

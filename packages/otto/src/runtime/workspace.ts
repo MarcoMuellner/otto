@@ -9,6 +9,8 @@ const WORKSPACE_SUBDIRECTORIES = [
   "secrets",
   "logs",
   "task-config",
+  "extensions",
+  "extensions/store",
 ] as const
 const ASSET_FILES = ["opencode.jsonc", "AGENTS.md"] as const
 const ASSET_DIRECTORIES = [".opencode", "task-config"] as const
