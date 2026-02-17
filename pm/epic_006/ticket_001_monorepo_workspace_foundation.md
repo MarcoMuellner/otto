@@ -1,5 +1,9 @@
 # Ticket 001 - Monorepo Workspace Foundation
 
+## Status
+
+- `state`: `completed`
+
 ## Objective
 
 Introduce pnpm monorepo workspace structure with two packages (`packages/otto`, `packages/otto-extensions`) while preserving current runtime behavior.

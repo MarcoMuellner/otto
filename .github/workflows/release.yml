@@ -98,6 +98,28 @@ jobs:
           cp packages/otto/README.md release/stage/README.md
           tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" -C release/stage .
 
+      - name: Validate release artifact layout
+        shell: bash
+        run: |
+          ARCHIVE="release/otto-${{ steps.meta.outputs.version }}.tgz"
+          tar -tzf "${ARCHIVE}" > release/archive-contents.txt
+
+          required_paths=(
+            "./dist/index.mjs"
+            "./bin/ottoctl"
+            "./scripts/resolve-release.mjs"
+            "./install.sh"
+            "./package.json"
+            "./README.md"
+          )
+
+          for required_path in "${required_paths[@]}"; do
+            if ! grep -Fxq "${required_path}" release/archive-contents.txt; then
+              echo "Missing required artifact path: ${required_path}" >&2
+              exit 1
+            fi
+          done
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:

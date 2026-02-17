@@ -13,6 +13,12 @@ This repository is a pnpm workspace with two packages:
 
 These root scripts proxy to package-level scripts and preserve prior operator workflow.
 
+## Contributor Notes
+
+- Core runtime implementation and release artifacts live in `packages/otto`.
+- Extension catalog scaffolding lives in `packages/otto-extensions`.
+- Use root commands during development (`pnpm run check`, `pnpm run build`, `pnpm run test`) to run the canonical workspace flow.
+
 ## Install Entrypoint
 
 The installer remains available at the repository root for compatibility:
