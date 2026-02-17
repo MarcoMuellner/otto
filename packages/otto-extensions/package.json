@@ -1,0 +1,11 @@
+{
+  "name": "otto-extensions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Catalog package for installable Otto extensions (tools, skills, MCP, overlays).",
+  "scripts": {
+    "build": "node -e \"process.stdout.write('otto-extensions: nothing to build\\n')\"",
+    "test": "node -e \"process.stdout.write('otto-extensions: no tests yet\\n')\""
+  }
+}

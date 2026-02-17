@@ -4,6 +4,21 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "bin/ottoctl"
+      - "install.sh"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "tsconfig.json"
+      - "tsdown.config.ts"
+      - "vitest.config.ts"
+      - "README.md"
+      - "pnpm-workspace.yaml"
+      - "packages/otto/**"
+      - ".github/workflows/release.yml"
     tags:
       - "v*"
 
