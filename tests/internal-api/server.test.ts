@@ -60,6 +60,9 @@ describe("buildInternalApiServer", () => {
         baseUrl: "http://127.0.0.1:4180",
       },
       outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
     })
 
     // Act
@@ -91,6 +94,9 @@ describe("buildInternalApiServer", () => {
         baseUrl: "http://127.0.0.1:4180",
       },
       outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
     })
 
     // Act
@@ -116,6 +122,54 @@ describe("buildInternalApiServer", () => {
       dedupeKey: "dedupe-1",
     })
     expect(repository.enqueueOrIgnoreDedupe).toHaveBeenCalledOnce()
+
+    await app.close()
+  })
+
+  it("resolves chat id from session binding when chatId is omitted", async () => {
+    // Arrange
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => 777),
+      },
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/queue-telegram-message",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        sessionId: "session-1",
+        content: "hello from session",
+        dedupeKey: "dedupe-2",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      status: "enqueued",
+      dedupeKey: "dedupe-2",
+    })
+    const firstCall = vi.mocked(repository.enqueueOrIgnoreDedupe).mock.calls[0]?.[0]
+    expect(firstCall?.chatId).toBe(777)
 
     await app.close()
   })

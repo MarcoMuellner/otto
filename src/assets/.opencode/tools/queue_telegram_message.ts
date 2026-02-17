@@ -27,7 +27,12 @@ export default tool({
   description:
     "Queue a Telegram outbound message for durable delivery with dedupe and retry behavior.",
   args: {
-    chatId: tool.schema.number().int().positive().describe("Target Telegram chat id"),
+    chatId: tool.schema
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Optional target Telegram chat id; defaults to current Telegram session binding"),
     content: tool.schema.string().min(1).describe("Message content to send"),
     dedupeKey: tool.schema
       .string()
@@ -40,7 +45,7 @@ export default tool({
       .optional()
       .describe("Queue priority for this outbound message"),
   },
-  async execute(args): Promise<QueueTelegramMessageResponse> {
+  async execute(args, context): Promise<string> {
     const { baseUrl, token } = resolveInternalApiConfiguration()
     const response = await fetch(`${baseUrl}/internal/tools/queue-telegram-message`, {
       method: "POST",
@@ -48,7 +53,10 @@ export default tool({
         "content-type": "application/json",
         authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(args),
+      body: JSON.stringify({
+        ...args,
+        sessionId: context.sessionID,
+      }),
     })
 
     if (!response.ok) {
@@ -56,6 +64,7 @@ export default tool({
       throw new Error(`Queue request failed (${response.status}): ${body}`)
     }
 
-    return (await response.json()) as QueueTelegramMessageResponse
+    const result = (await response.json()) as QueueTelegramMessageResponse
+    return JSON.stringify(result)
   },
 })

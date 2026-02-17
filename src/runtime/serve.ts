@@ -9,6 +9,7 @@ import { resolveInternalApiConfig, startInternalApiServer } from "../internal-ap
 import { startOpencodeServer } from "../opencode/server.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
+import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { resolveTelegramWorkerConfig } from "../telegram-worker/config.js"
 import { startTelegramWorker, type TelegramWorkerHandle } from "../telegram-worker/worker.js"
 
@@ -60,6 +61,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
 
   const persistenceDatabase = openPersistenceDatabase({ ottoHome: config.ottoHome })
   const outboundMessagesRepository = createOutboundMessagesRepository(persistenceDatabase)
+  const sessionBindingsRepository = createSessionBindingsRepository(persistenceDatabase)
   const internalApiConfig = await resolveInternalApiConfig(config.ottoHome)
 
   process.env.OTTO_INTERNAL_API_URL = internalApiConfig.baseUrl
@@ -72,6 +74,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       logger,
       config: internalApiConfig,
       outboundMessagesRepository,
+      sessionBindingsRepository,
     })
   } catch (error) {
     persistenceDatabase.close()

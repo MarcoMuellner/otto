@@ -119,6 +119,26 @@ export const createSessionBindingsRepository = (database: DatabaseSync) => {
        updated_at = excluded.updated_at`
   )
 
+  const getTelegramBindingBySessionIdStatement = database.prepare(
+    `SELECT
+      binding_key as bindingKey
+     FROM session_bindings
+     WHERE session_id = ?
+       AND binding_key LIKE 'telegram:chat:%:assistant'
+     ORDER BY updated_at DESC
+     LIMIT 1`
+  )
+
+  const parseTelegramChatIdFromBindingKey = (bindingKey: string): number | null => {
+    const match = /^telegram:chat:(-?\d+):assistant$/.exec(bindingKey)
+    if (!match) {
+      return null
+    }
+
+    const parsed = Number(match[1])
+    return Number.isInteger(parsed) ? parsed : null
+  }
+
   return {
     getByBindingKey: (bindingKey: string): SessionBindingRecord | null => {
       const row = getStatement.get(bindingKey) as SessionBindingRecord | undefined
@@ -126,6 +146,17 @@ export const createSessionBindingsRepository = (database: DatabaseSync) => {
     },
     upsert: (bindingKey: string, sessionId: string, updatedAt = Date.now()): void => {
       setStatement.run(bindingKey, sessionId, updatedAt)
+    },
+    getTelegramChatIdBySessionId: (sessionId: string): number | null => {
+      const row = getTelegramBindingBySessionIdStatement.get(sessionId) as
+        | { bindingKey: string }
+        | undefined
+
+      if (!row) {
+        return null
+      }
+
+      return parseTelegramChatIdFromBindingKey(row.bindingKey)
     },
   }
 }

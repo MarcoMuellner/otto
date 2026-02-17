@@ -4,7 +4,7 @@ import path from "node:path"
 
 import Fastify, { type FastifyInstance } from "fastify"
 import type { Logger } from "pino"
-import { ZodError } from "zod"
+import { z, ZodError } from "zod"
 
 import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbound-enqueue.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
@@ -26,7 +26,18 @@ type InternalApiServerDependencies = {
   logger: Logger
   config: InternalApiConfig
   outboundMessagesRepository: OutboundMessageEnqueueRepository
+  sessionBindingsRepository: {
+    getTelegramChatIdBySessionId: (sessionId: string) => number | null
+  }
 }
+
+const queueTelegramMessageApiSchema = z.object({
+  sessionId: z.string().trim().min(1).optional(),
+  chatId: z.number().int().optional(),
+  content: z.string().trim().min(1),
+  dedupeKey: z.string().trim().min(1).max(512).optional(),
+  priority: z.enum(["low", "normal", "high"]).optional(),
+})
 
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
   const host = environment.OTTO_INTERNAL_API_HOST?.trim() || DEFAULT_HOST
@@ -137,10 +148,34 @@ export const buildInternalApiServer = (
     }
 
     try {
-      const result = enqueueTelegramMessage(request.body, dependencies.outboundMessagesRepository)
+      const payload = queueTelegramMessageApiSchema.parse(request.body)
+      const resolvedChatId =
+        payload.chatId ??
+        (payload.sessionId
+          ? dependencies.sessionBindingsRepository.getTelegramChatIdBySessionId(payload.sessionId)
+          : null)
+
+      if (!resolvedChatId) {
+        return reply.code(400).send({
+          error: "missing_chat",
+          message: "chatId is required unless sessionId is mapped to a Telegram chat binding",
+        })
+      }
+
+      const result = enqueueTelegramMessage(
+        {
+          chatId: resolvedChatId,
+          content: payload.content,
+          dedupeKey: payload.dedupeKey,
+          priority: payload.priority,
+        },
+        dependencies.outboundMessagesRepository
+      )
       dependencies.logger.info(
         {
           route: "queue-telegram-message",
+          sessionId: payload.sessionId,
+          chatId: resolvedChatId,
           status: result.status,
           queuedCount: result.queuedCount,
           duplicateCount: result.duplicateCount,
