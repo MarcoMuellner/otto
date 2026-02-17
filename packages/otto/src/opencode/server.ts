@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 
 import { createOpencodeServer } from "@opencode-ai/sdk"
+import { parseJsonc } from "otto-extension-sdk"
 
 type ServeServerInput = {
   hostname: string
@@ -24,7 +25,7 @@ const parseOpencodeConfig = async (configPath: string): Promise<Record<string, u
   const source = await readFile(configPath, "utf8")
 
   try {
-    const parsed = JSON.parse(source)
+    const parsed = parseJsonc(source)
 
     if (typeof parsed !== "object" || parsed === null) {
       throw new Error("OpenCode config must be an object")
