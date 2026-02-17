@@ -1,5 +1,5 @@
 import path from "node:path"
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises"
 
 import semver from "semver"
 
@@ -113,39 +113,6 @@ const loadManifest = async (manifestPath: string): Promise<ExtensionManifest> =>
   return parsed as ExtensionManifest
 }
 
-const resolveOpencodeConfigPath = (ottoHome: string): string => {
-  return path.join(ottoHome, "opencode.jsonc")
-}
-
-const loadOpencodeConfig = async (ottoHome: string): Promise<Record<string, unknown>> => {
-  const configPath = resolveOpencodeConfigPath(ottoHome)
-
-  try {
-    const source = await readFile(configPath, "utf8")
-    const parsed = parseJsonc(source)
-    if (typeof parsed !== "object" || parsed == null) {
-      throw new Error(`OpenCode config at ${configPath} must be an object`)
-    }
-    return parsed as Record<string, unknown>
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException
-    if (err.code === "ENOENT") {
-      return {}
-    }
-
-    throw error
-  }
-}
-
-const saveOpencodeConfig = async (
-  ottoHome: string,
-  config: Record<string, unknown>
-): Promise<void> => {
-  const configPath = resolveOpencodeConfigPath(ottoHome)
-  await mkdir(path.dirname(configPath), { recursive: true })
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8")
-}
-
 const loadMcpFragment = async (
   extensionStorePath: string,
   manifest: ExtensionManifest
@@ -218,23 +185,7 @@ const syncRuntimeFootprintForExtension = async (
     }
   }
 
-  const mcpFragment = await loadMcpFragment(storeVersionPath, manifest)
-  if (Object.keys(mcpFragment).length > 0) {
-    const opencodeConfig = await loadOpencodeConfig(ottoHome)
-    const currentMcp =
-      typeof opencodeConfig.mcp === "object" &&
-      opencodeConfig.mcp !== null &&
-      !Array.isArray(opencodeConfig.mcp)
-        ? ({ ...(opencodeConfig.mcp as Record<string, unknown>) } satisfies Record<string, unknown>)
-        : {}
-
-    opencodeConfig.mcp = {
-      ...currentMcp,
-      ...mcpFragment,
-    }
-
-    await saveOpencodeConfig(ottoHome, opencodeConfig)
-  }
+  await loadMcpFragment(storeVersionPath, manifest)
 }
 
 const removeRuntimeFootprintForExtension = async (
@@ -265,23 +216,7 @@ const removeRuntimeFootprintForExtension = async (
     }
   }
 
-  const mcpFragment = await loadMcpFragment(storeVersionPath, manifest)
-  if (Object.keys(mcpFragment).length > 0) {
-    const opencodeConfig = await loadOpencodeConfig(ottoHome)
-    const currentMcp =
-      typeof opencodeConfig.mcp === "object" &&
-      opencodeConfig.mcp !== null &&
-      !Array.isArray(opencodeConfig.mcp)
-        ? ({ ...(opencodeConfig.mcp as Record<string, unknown>) } satisfies Record<string, unknown>)
-        : {}
-
-    for (const key of Object.keys(mcpFragment)) {
-      delete currentMcp[key]
-    }
-
-    opencodeConfig.mcp = currentMcp
-    await saveOpencodeConfig(ottoHome, opencodeConfig)
-  }
+  await loadMcpFragment(storeVersionPath, manifest)
 }
 
 const resolveCatalogEntryForInstall = (

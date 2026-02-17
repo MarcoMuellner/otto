@@ -122,9 +122,6 @@ describe("extension operator service", () => {
     await expect(
       readFile(path.join(ottoHome, ".opencode", "skills", "calendar-skill", "SKILL.md"), "utf8")
     ).resolves.toContain("skill")
-    await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.toContain(
-      "calendar-mcp"
-    )
   })
 
   it("updates extension to latest and prunes old store version", async () => {
@@ -165,9 +162,6 @@ describe("extension operator service", () => {
         updatedAt: expect.any(Number),
       },
     ])
-    await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.toContain(
-      "calendar-mcp"
-    )
   })
 
   it("updates all installed extension ids", async () => {
@@ -222,9 +216,6 @@ describe("extension operator service", () => {
         "utf8"
       )
     ).rejects.toMatchObject({ code: "ENOENT" })
-    await expect(readFile(path.join(ottoHome, "opencode.jsonc"), "utf8")).resolves.not.toContain(
-      "calendar-mcp"
-    )
   })
 
   it("remove remains an uninstall alias", async () => {

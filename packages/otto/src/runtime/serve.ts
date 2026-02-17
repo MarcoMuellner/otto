@@ -13,6 +13,7 @@ import { createOutboundMessagesRepository } from "../persistence/repositories.js
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
+import { materializeEffectiveOpencodeConfig } from "../extensions/index.js"
 import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { createTaskExecutionEngine } from "../scheduler/executor.js"
 import { startSchedulerKernel } from "../scheduler/kernel.js"
@@ -70,6 +71,17 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   })
 
   process.chdir(config.ottoHome)
+
+  const effectiveConfig = await materializeEffectiveOpencodeConfig(config.ottoHome)
+  logger.info(
+    {
+      command: "serve",
+      opencodeConfigPath: effectiveConfig.configPath,
+      mergedMcpKeys: effectiveConfig.mergedMcpKeys,
+      effectiveOpencodeConfig: effectiveConfig.source,
+    },
+    "Effective OpenCode config materialized"
+  )
 
   const persistenceDatabase = openPersistenceDatabase({ ottoHome: config.ottoHome })
   const jobsRepository = createJobsRepository(persistenceDatabase)

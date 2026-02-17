@@ -12,6 +12,7 @@ export {
   updateAllExtensions,
   updateExtension,
 } from "./operator.js"
+export { materializeEffectiveOpencodeConfig } from "./opencode-config.js"
 export type {
   ExtensionStateRecord,
   ExtensionStateRepository,
