@@ -1,5 +1,7 @@
 # Ticket 008 - Google Tasks Adapter and Completion Reconciliation
 
+> Superseded by Epic 003 (`pm/epic_003/ticket_003_external_reconciliation.md`).
+
 ## Objective
 
 Integrate Google Tasks state observation to reconcile whether proactive reminders are already completed outside Telegram.

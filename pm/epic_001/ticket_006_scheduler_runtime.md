@@ -1,5 +1,8 @@
 # Ticket 006 - Scheduler Runtime (One-Shot + Heartbeat Framework)
 
+> Superseded by Epic 002 (`pm/epic_002/`).
+> Use `pm/epic_002/ticket_001_minute_scheduler_kernel.md` onward.
+
 ## Objective
 
 Build scheduler infrastructure for recurring jobs: one-shot tick every 1-2 minutes and heartbeat windows (morning/midday/evening).

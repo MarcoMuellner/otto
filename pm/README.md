@@ -2,6 +2,14 @@
 
 This directory stores deployable epics and tickets.
 
+## Current Epic Layout
+
+- `epic_001`: Telegram runtime foundation (completed through ticket_005).
+- `epic_002`: Scheduler and task orchestration engine (next execution epic).
+- `epic_003`: Proactive actions and approval-governed automation.
+- `epic_004`: Heartbeats, onboarding, and operations hardening.
+- `epic_005`: Voice and multimodal intake.
+
 ## Structure
 
 - `epic_XXX/epic_XXX.md`: overarching epic ticket

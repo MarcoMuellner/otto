@@ -1,5 +1,7 @@
 # Ticket 009 - Proactive One-Shot Evaluation Engine
 
+> Superseded by Epic 003 (`pm/epic_003/ticket_002_proactive_evaluator.md`).
+
 ## Objective
 
 Implement the one-shot proactive engine that runs every 1-2 minutes, evaluates pending obligations, and sends actionable nudges.

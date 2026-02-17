@@ -1,5 +1,7 @@
 # Ticket 011 - Voice Message Intake and Transcription
 
+> Superseded by Epic 005 (`pm/epic_005/`).
+
 ## Objective
 
 Add Telegram voice message support and transcription so voice input becomes first-class inbound communication.

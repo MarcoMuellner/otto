@@ -1,19 +1,28 @@
-# Epic 001 - Proactive Telegram Communication Platform
+# Epic 001 - Telegram Runtime Foundation
 
 ## Status
 
 - `id`: `epic_001`
 - `type`: epic ticket
-- `goal`: deliver a production-ready two-way Telegram communication platform for Otto, including proactive messaging, scheduled heartbeats, approvals for write actions, and durable state.
+- `state`: `completed`
+- `completed_through_ticket`: `ticket_005`
+- `goal`: deliver the production-ready Telegram runtime foundation (worker security, session continuity, persistence, outbound queue, and tool bridge plumbing).
 
-## Why
+## Outcome
 
-Otto must move from reactive command handling to proactive daily assistance. Telegram is the primary interaction channel, so the platform must support both inbound chat handling and outbound autonomous nudges in a reliable, auditable way.
+Epic 001 delivered the required platform baseline:
+
+- Telegram worker runtime integrated into service operation.
+- Single-user DM gate and auditable deny logging.
+- Durable SQLite persistence with migrations and repositories.
+- Inbound Telegram text -> OpenCode session bridge with stable session continuity.
+- Outbound queue with retry/dedupe semantics and delivery worker.
+- OpenCode tool bridge via internal API for deterministic outbound enqueue.
 
 ## Decisions Locked In
 
 - Single user only, strict 1:1 DM.
-- Hard allowlist (`allowed_user_id` / allowed chat id).
+- Hard allowlist (`allowed_user_id`).
 - No autonomous write actions during unsupervised runs without explicit approval.
 - Completion can be inferred from user replies or external channel reconciliation (for example Google Tasks).
 - Timezone and quiet-hours are user-specific and configurable.
@@ -38,26 +47,27 @@ Otto must move from reactive command handling to proactive daily assistance. Tel
 
 ## Success Criteria
 
-- Telegram worker can receive messages and send proactive messages reliably.
-- One-shot scheduler runs every 1-2 minutes.
-- Heartbeats run morning/midday/evening and produce useful outbound summaries.
-- Approval flow blocks unsupervised writes until user confirmation.
-- Persistent state guarantees idempotency, retries, and observability.
+- Telegram worker can receive messages and send replies reliably.
+- Outbound queue and retries are restart-safe and auditable.
+- Tool-driven enqueue path is operational through Otto internal API.
+- Persistent state guarantees idempotency and observability for messaging flows.
 
-## Delivery Plan (Deployable Tickets)
+## Delivered Tickets
 
 1. `ticket_001`: Worker foundation and runtime wiring.
 2. `ticket_002`: Security and single-user DM enforcement.
 3. `ticket_003`: Persistent storage schema and repositories.
 4. `ticket_004`: Inbound Telegram text flow and OpenCode session bridge.
 5. `ticket_005`: Outbound message queue with retries and dedupe.
-6. `ticket_006`: Scheduler runtime (one-shot + heartbeat trigger framework).
-7. `ticket_007`: Approval workflow for write actions.
-8. `ticket_008`: Google Tasks integration and completion reconciliation.
-9. `ticket_009`: Proactive one-shot evaluator and reminder delivery.
-10. `ticket_010`: Heartbeat generation pipeline.
-11. `ticket_011`: Voice message transcription pipeline.
-12. `ticket_012`: Onboarding/profile (timezone + quiet hours) and operational hardening.
+
+## Superseded Planning Note
+
+Original Ticket 006-012 definitions in this folder are superseded by new epics:
+
+- `pm/epic_002/` - Scheduler and task orchestration engine.
+- `pm/epic_003/` - Proactive execution and approval-governed actions.
+- `pm/epic_004/` - Heartbeats, onboarding, profile, and ops hardening.
+- `pm/epic_005/` - Voice intake and multimodal input.
 
 ## Out of Scope for Epic 001
 

@@ -1,5 +1,7 @@
 # Ticket 010 - Heartbeat Pipeline (Morning/Midday/Evening)
 
+> Superseded by Epic 004 (`pm/epic_004/ticket_001_heartbeat_pipeline.md`).
+
 ## Objective
 
 Implement scheduled heartbeat outputs that provide concise situational summaries and proactive prompts three times daily.

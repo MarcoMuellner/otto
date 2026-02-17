@@ -1,5 +1,7 @@
 # Ticket 007 - Approval Workflow for Write Actions
 
+> Superseded by Epic 003 (`pm/epic_003/ticket_001_approval_workflow.md`).
+
 ## Objective
 
 Enforce explicit user approval for unsupervised write actions proposed by proactive runs.
