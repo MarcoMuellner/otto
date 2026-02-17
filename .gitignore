@@ -1,12 +1,14 @@
 .idea/
 node_modules/
 dist/
+packages/otto/dist/
 coverage/
+packages/otto/coverage/
 .env
 .env.*
 .opencode
-!src/assets/.opencode/
-!src/assets/.opencode/**
+!packages/otto/src/assets/.opencode/
+!packages/otto/src/assets/.opencode/**
 .DS_Store
 .githuman
 /opencode-telegram-bridge-main/

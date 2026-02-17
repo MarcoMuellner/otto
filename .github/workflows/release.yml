@@ -5,19 +5,18 @@ on:
     branches:
       - main
     paths:
-      - "src/**"
-      - "tests/**"
-      - "scripts/**"
-      - "bin/ottoctl"
-      - "install.sh"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "tsconfig.json"
-      - "tsdown.config.ts"
-      - "vitest.config.ts"
-      - "README.md"
-      - "pnpm-workspace.yaml"
-      - "packages/otto/**"
+      - "packages/otto/src/**"
+      - "packages/otto/tests/**"
+      - "packages/otto/scripts/**"
+      - "packages/otto/bin/ottoctl"
+      - "packages/otto/install.sh"
+      - "packages/otto/package.json"
+      - "packages/otto/README.md"
+      - "packages/otto/tsconfig.json"
+      - "packages/otto/tsdown.config.ts"
+      - "packages/otto/vitest.config.ts"
+      - "packages/otto/.prettierrc.json"
+      - "packages/otto/.oxlintrc.json"
       - ".github/workflows/release.yml"
     tags:
       - "v*"
@@ -63,7 +62,7 @@ jobs:
           else
             TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
             TAG_NAME="nightly-${TIMESTAMP}-${SHORT_SHA}"
-            PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+            PACKAGE_VERSION="$(node -p "require('./packages/otto/package.json').version")"
             VERSION="${PACKAGE_VERSION}-nightly.${TIMESTAMP}+${SHORT_SHA}"
             RELEASE_NAME="Otto Nightly ${TIMESTAMP} (${SHORT_SHA})"
             PRERELEASE="true"
@@ -87,14 +86,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          chmod +x bin/ottoctl install.sh
-          tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" \
-            dist \
-            bin/ottoctl \
-            scripts/resolve-release.mjs \
-            install.sh \
-            package.json \
-            README.md
+          mkdir -p release/stage/bin release/stage/scripts
+          chmod +x packages/otto/bin/ottoctl packages/otto/install.sh
+          cp -R packages/otto/dist release/stage/dist
+          cp packages/otto/bin/ottoctl release/stage/bin/ottoctl
+          cp packages/otto/scripts/resolve-release.mjs release/stage/scripts/resolve-release.mjs
+          cp packages/otto/install.sh release/stage/install.sh
+          cp packages/otto/package.json release/stage/package.json
+          cp packages/otto/README.md release/stage/README.md
+          tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" -C release/stage .
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
