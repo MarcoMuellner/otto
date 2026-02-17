@@ -1,7 +1,6 @@
 import path from "node:path"
 import { readFile } from "node:fs/promises"
 
-import { parse as parseJsonc } from "jsonc-parser"
 import { z } from "zod"
 
 export type TaskExecutionLane = "interactive" | "scheduled"
@@ -46,19 +45,147 @@ const TASK_CONFIG_DIRECTORY_NAME = "task-config"
 const BASE_CONFIG_FILE_NAME = "base.jsonc"
 const PROFILES_DIRECTORY_NAME = "profiles"
 
+const stripJsonComments = (source: string): string => {
+  let result = ""
+  let index = 0
+  let inString = false
+  let quote: '"' | "'" | null = null
+  let escaped = false
+  let inLineComment = false
+  let inBlockComment = false
+
+  while (index < source.length) {
+    const current = source[index]
+    const next = source[index + 1]
+
+    if (inLineComment) {
+      if (current === "\n") {
+        inLineComment = false
+        result += "\n"
+      }
+      index += 1
+      continue
+    }
+
+    if (inBlockComment) {
+      if (current === "*" && next === "/") {
+        inBlockComment = false
+        index += 2
+        continue
+      }
+
+      if (current === "\n") {
+        result += "\n"
+      }
+      index += 1
+      continue
+    }
+
+    if (inString) {
+      result += current
+      if (escaped) {
+        escaped = false
+      } else if (current === "\\") {
+        escaped = true
+      } else if (quote && current === quote) {
+        inString = false
+        quote = null
+      }
+      index += 1
+      continue
+    }
+
+    if (current === '"' || current === "'") {
+      inString = true
+      quote = current
+      result += current
+      index += 1
+      continue
+    }
+
+    if (current === "/" && next === "/") {
+      inLineComment = true
+      index += 2
+      continue
+    }
+
+    if (current === "/" && next === "*") {
+      inBlockComment = true
+      index += 2
+      continue
+    }
+
+    result += current
+    index += 1
+  }
+
+  return result
+}
+
+const stripTrailingCommas = (source: string): string => {
+  let result = ""
+  let index = 0
+  let inString = false
+  let quote: '"' | "'" | null = null
+  let escaped = false
+
+  while (index < source.length) {
+    const current = source[index]
+
+    if (inString) {
+      result += current
+      if (escaped) {
+        escaped = false
+      } else if (current === "\\") {
+        escaped = true
+      } else if (quote && current === quote) {
+        inString = false
+        quote = null
+      }
+      index += 1
+      continue
+    }
+
+    if (current === '"' || current === "'") {
+      inString = true
+      quote = current
+      result += current
+      index += 1
+      continue
+    }
+
+    if (current === ",") {
+      let lookahead = index + 1
+      while (lookahead < source.length && /\s/.test(source[lookahead] ?? "")) {
+        lookahead += 1
+      }
+
+      const lookaheadChar = source[lookahead]
+      if (lookaheadChar === "}" || lookaheadChar === "]") {
+        index += 1
+        continue
+      }
+    }
+
+    result += current
+    index += 1
+  }
+
+  return result
+}
+
+const parseJsonc = (source: string): unknown => {
+  const withoutComments = stripJsonComments(source)
+  const withoutTrailingCommas = stripTrailingCommas(withoutComments)
+  return JSON.parse(withoutTrailingCommas)
+}
+
 const parseJsonFile = <T>(source: string, schema: z.ZodSchema<T>, filePath: string): T => {
-  const parseErrors: Array<{
-    error: number
-    offset: number
-    length: number
-  }> = []
+  let parsed: unknown
 
-  const parsed = parseJsonc(source, parseErrors, {
-    allowTrailingComma: true,
-    disallowComments: false,
-  })
-
-  if (parseErrors.length > 0) {
+  try {
+    parsed = parseJsonc(source)
+  } catch {
     throw new Error(`Invalid JSONC in task config file: ${filePath}`)
   }
 
