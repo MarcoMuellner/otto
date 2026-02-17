@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "invalid-json",
+  "name": "Invalid JSON",
+  "version": "0.1.0",
+  "description": "This fixture is intentionally invalid JSONC",
+  "payload": {
+    "skills": {
+      "path": "skills"
+    }
+  // missing closing braces on purpose

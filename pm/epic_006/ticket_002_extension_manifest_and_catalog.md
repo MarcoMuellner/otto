@@ -17,7 +17,7 @@ Installable capability bundles need deterministic structure to avoid ad-hoc exte
   - skills
   - MCP config
   - OpenCode/task-config overlay fragments
-- Add catalog loader/validator utility in core package.
+- Add catalog loader/validator utility in `packages/otto-extension-sdk` and wire a CLI wrapper from core.
 - Seed 1-2 internal example extensions for contract validation.
 
 ## Non-Goals

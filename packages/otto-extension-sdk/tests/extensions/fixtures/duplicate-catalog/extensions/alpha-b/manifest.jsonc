@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "alpha",
+  "name": "Alpha Duplicate",
+  "version": "1.0.0",
+  "description": "Second alpha extension with duplicate id+version.",
+  "payload": {
+    "skills": {
+      "path": "skills",
+    },
+  },
+}

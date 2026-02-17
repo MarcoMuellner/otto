@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "alpha",
+  "name": "Alpha",
+  "version": "1.0.0",
+  "description": "First alpha extension.",
+  "payload": {
+    "skills": {
+      "path": "skills",
+    },
+  },
+}

@@ -1,0 +1,28 @@
+{
+  "name": "otto-extension-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint src tests",
+    "test": "vitest run",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\" package.json tsconfig.json vitest.config.ts",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
+    "build": "node -e \"process.stdout.write('otto-extension-sdk: no build output (TS source package)\\n')\""
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "oxlint": "^1.47.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  }
+}

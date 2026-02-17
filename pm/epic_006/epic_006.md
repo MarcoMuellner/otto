@@ -13,8 +13,9 @@ Otto needs fast capability growth without repeatedly editing core runtime code. 
 
 ## Decisions Locked In
 
-- Monorepo contains exactly two packages:
+- Monorepo packages are:
   - `packages/otto` (runtime, scheduler, internal API, CLI behavior)
+  - `packages/otto-extension-sdk` (shared extension contract validation library)
   - `packages/otto-extensions` (curated extension catalog)
 - Extension model is unified: one extension may include tools, skills, MCP config, and config overlays.
 - Otto does not implement a parallel capability engine; extension payloads map to OpenCode-native configuration.

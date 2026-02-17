@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "broken-skill-path",
+  "name": "Broken Skill Path",
+  "version": "0.1.0",
+  "description": "Fixture with missing skills path.",
+  "payload": {
+    "skills": {
+      "path": "skills",
+    },
+  },
+}
