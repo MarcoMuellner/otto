@@ -36,6 +36,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Extension store root: `~/.otto/extensions/store/<id>/<version>`
 - Extension activation state file: `~/.otto/extensions/state.json`
 - `ottoctl extension install/update` retains one installed version per extension id by pruning older versions
+- `ottoctl extension install/update` immediately activates extension tools and skills into `~/.otto/.opencode`
+- `ottoctl extension disable` removes the installed extension footprint (runtime + store)
 - `ottoctl update` prompts for Telegram credentials when missing and stores them at `~/.local/share/otto/secrets/telegram.env` (skip is allowed)
 
 ## Install (Release Artifact)
@@ -75,6 +77,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl extension install <id>[@version]` (default installs latest catalog version)
   - `ottoctl extension update <id>`
   - `ottoctl extension update --all`
+  - `ottoctl extension disable <id>`
   - `ottoctl extension remove <id>[@version]`
   - `ottoctl update` (defaults to latest stable)
   - `ottoctl update --nightly` (latest nightly)

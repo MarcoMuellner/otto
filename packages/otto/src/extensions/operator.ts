@@ -1,11 +1,13 @@
 import path from "node:path"
-import { cp, readdir, rm } from "node:fs/promises"
+import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises"
 
 import semver from "semver"
 
 import {
   formatValidationReport,
   type ExtensionCatalogEntry,
+  parseJsonc,
+  type ExtensionManifest,
   validateExtensionCatalog,
 } from "otto-extension-sdk"
 
@@ -85,6 +87,66 @@ const removeStoreVersionIfPresent = async (
   if (remaining.length === 0) {
     await rm(extensionRootPath, { recursive: true, force: true })
   }
+}
+
+const resolveRuntimeExtensionPaths = (
+  ottoHome: string,
+  extensionId: string
+): {
+  toolsPath: string
+  skillsPath: string
+} => {
+  return {
+    toolsPath: path.join(ottoHome, ".opencode", "tools", "extensions", extensionId),
+    skillsPath: path.join(ottoHome, ".opencode", "skills", "extensions", extensionId),
+  }
+}
+
+const loadManifest = async (manifestPath: string): Promise<ExtensionManifest> => {
+  const source = await readFile(manifestPath, "utf8")
+  const parsed = parseJsonc(source)
+
+  if (typeof parsed !== "object" || parsed == null) {
+    throw new Error(`Invalid extension manifest at ${manifestPath}`)
+  }
+
+  return parsed as ExtensionManifest
+}
+
+const syncRuntimeFootprintForExtension = async (
+  ottoHome: string,
+  extensionId: string,
+  version: string
+): Promise<void> => {
+  const paths = resolveExtensionPersistencePaths(ottoHome)
+  const storeVersionPath = path.join(paths.storeRoot, extensionId, version)
+  const manifestPath = path.join(storeVersionPath, "manifest.jsonc")
+  const manifest = await loadManifest(manifestPath)
+
+  const runtimePaths = resolveRuntimeExtensionPaths(ottoHome, extensionId)
+  await rm(runtimePaths.toolsPath, { recursive: true, force: true })
+  await rm(runtimePaths.skillsPath, { recursive: true, force: true })
+
+  if (manifest.payload.tools?.path) {
+    const sourceToolsPath = path.join(storeVersionPath, manifest.payload.tools.path)
+    await mkdir(path.dirname(runtimePaths.toolsPath), { recursive: true })
+    await cp(sourceToolsPath, runtimePaths.toolsPath, { recursive: true })
+  }
+
+  if (manifest.payload.skills?.path) {
+    const sourceSkillsPath = path.join(storeVersionPath, manifest.payload.skills.path)
+    await mkdir(path.dirname(runtimePaths.skillsPath), { recursive: true })
+    await cp(sourceSkillsPath, runtimePaths.skillsPath, { recursive: true })
+  }
+}
+
+const removeRuntimeFootprintForExtension = async (
+  ottoHome: string,
+  extensionId: string
+): Promise<void> => {
+  const runtimePaths = resolveRuntimeExtensionPaths(ottoHome, extensionId)
+  await rm(runtimePaths.toolsPath, { recursive: true, force: true })
+  await rm(runtimePaths.skillsPath, { recursive: true, force: true })
 }
 
 const resolveCatalogEntryForInstall = (
@@ -225,14 +287,6 @@ export const installExtension = async (
   const targetAlreadyInstalled = existingVersions.includes(selected.version)
 
   const pruneCandidates = existingVersions.filter((version) => version !== selected.version)
-  for (const candidate of pruneCandidates) {
-    const guard = await repository.canRemoveVersion(selected.id, candidate)
-    if (!guard.allowed) {
-      throw new Error(
-        `Cannot prune '${selected.id}@${candidate}' during install because it is active`
-      )
-    }
-  }
 
   const paths = resolveExtensionPersistencePaths(context.ottoHome)
   const targetPath = path.join(paths.storeRoot, selected.id, selected.version)
@@ -240,6 +294,8 @@ export const installExtension = async (
   await cp(selected.directory, targetPath, { recursive: true })
 
   await repository.recordInstalledVersion(selected.id, selected.version)
+  await repository.setActiveVersion(selected.id, selected.version)
+  await syncRuntimeFootprintForExtension(context.ottoHome, selected.id, selected.version)
 
   for (const candidate of pruneCandidates) {
     await removeStoreVersionIfPresent(context.ottoHome, selected.id, candidate)
@@ -329,11 +385,9 @@ export const removeExtension = async (
     )
   }
 
-  const guard = await repository.canRemoveVersion(parsed.id, installedVersion)
-  if (!guard.allowed) {
-    throw new Error(`Cannot remove active extension '${parsed.id}@${installedVersion}'`)
-  }
+  await repository.setActiveVersion(parsed.id, null)
 
+  await removeRuntimeFootprintForExtension(context.ottoHome, parsed.id)
   await removeStoreVersionIfPresent(context.ottoHome, parsed.id, installedVersion)
   await repository.removeInstalledVersion(parsed.id, installedVersion)
 
@@ -341,4 +395,19 @@ export const removeExtension = async (
     id: parsed.id,
     removedVersion: installedVersion,
   }
+}
+
+/**
+ * Disables an installed extension by removing its runtime footprint and uninstalling the
+ * retained version so extension behavior is immediately removed from runtime.
+ *
+ * @param context Extension operator context with Otto home and catalog root.
+ * @param extensionId Extension id to disable.
+ * @returns Removal metadata.
+ */
+export const disableExtension = async (
+  context: ExtensionOperatorContext,
+  extensionId: string
+): Promise<ExtensionRemoveResult> => {
+  return removeExtension(context, extensionId)
 }

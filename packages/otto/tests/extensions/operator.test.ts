@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import {
   createExtensionStateRepository,
+  disableExtension,
   installExtension,
   listExtensions,
   removeExtension,
@@ -29,7 +30,13 @@ const writeCatalogExtension = async (
   description = "Example extension"
 ): Promise<void> => {
   const extensionRoot = path.join(catalogRoot, extensionId)
+  await mkdir(path.join(extensionRoot, "tools"), { recursive: true })
   await mkdir(path.join(extensionRoot, "skills"), { recursive: true })
+  await writeFile(
+    path.join(extensionRoot, "tools", `${extensionId}.ts`),
+    "export default {}\n",
+    "utf8"
+  )
   await writeFile(path.join(extensionRoot, "skills", `${extensionId}.md`), "# skill\n", "utf8")
   await writeFile(
     path.join(extensionRoot, "manifest.jsonc"),
@@ -41,6 +48,9 @@ const writeCatalogExtension = async (
         version,
         description,
         payload: {
+          tools: {
+            path: "tools",
+          },
           skills: {
             path: "skills",
           },
@@ -54,7 +64,7 @@ const writeCatalogExtension = async (
 }
 
 describe("extension operator service", () => {
-  it("installs latest version and keeps command idempotent", async () => {
+  it("installs latest version, activates runtime footprint, and keeps command idempotent", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -80,6 +90,18 @@ describe("extension operator service", () => {
       "calendar.md"
     )
     await expect(readFile(skillPath, "utf8")).resolves.toContain("skill")
+    await expect(
+      readFile(
+        path.join(ottoHome, ".opencode", "tools", "extensions", "calendar", "calendar.ts"),
+        "utf8"
+      )
+    ).resolves.toContain("export default")
+    await expect(
+      readFile(
+        path.join(ottoHome, ".opencode", "skills", "extensions", "calendar", "calendar.md"),
+        "utf8"
+      )
+    ).resolves.toContain("skill")
   })
 
   it("updates extension to latest and prunes old store version", async () => {
@@ -113,7 +135,7 @@ describe("extension operator service", () => {
       {
         id: "calendar",
         installedVersions: ["1.1.0"],
-        activeVersion: null,
+        activeVersion: "1.1.0",
         installedAtByVersion: {
           "1.1.0": expect.any(Number),
         },
@@ -148,7 +170,7 @@ describe("extension operator service", () => {
     ])
   })
 
-  it("removes installed version and denies removing active versions", async () => {
+  it("disables installed extension by removing runtime and store footprint", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -157,16 +179,38 @@ describe("extension operator service", () => {
     await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
     await installExtension({ ottoHome, catalogRoot }, "calendar")
 
-    const repository = createExtensionStateRepository(ottoHome)
-    await repository.setActiveVersion("calendar", "1.0.0")
+    // Act
+    const removed = await disableExtension({ ottoHome, catalogRoot }, "calendar")
 
-    // Act + Assert
-    await expect(removeExtension({ ottoHome, catalogRoot }, "calendar")).rejects.toThrow(
-      "Cannot remove active extension"
-    )
+    // Assert
+    expect(removed).toEqual({ id: "calendar", removedVersion: "1.0.0" })
+    await expect(
+      readFile(
+        path.join(ottoHome, ".opencode", "tools", "extensions", "calendar", "calendar.ts"),
+        "utf8"
+      )
+    ).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(
+      readFile(
+        path.join(ottoHome, "extensions", "store", "calendar", "1.0.0", "manifest.jsonc"),
+        "utf8"
+      )
+    ).rejects.toMatchObject({ code: "ENOENT" })
+  })
 
-    await repository.setActiveVersion("calendar", null)
+  it("remove remains an uninstall alias", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const catalogRoot = path.join(tempRoot, "catalog")
+    const ottoHome = path.join(tempRoot, ".otto")
+    await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
+    await installExtension({ ottoHome, catalogRoot }, "calendar")
+
+    // Act
     const removed = await removeExtension({ ottoHome, catalogRoot }, "calendar")
+
+    // Assert
     expect(removed).toEqual({ id: "calendar", removedVersion: "1.0.0" })
   })
 

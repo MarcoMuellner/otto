@@ -576,6 +576,9 @@ cmd_extension() {
     update)
       run_extension_cli update "$@"
       ;;
+    disable)
+      run_extension_cli disable "$@"
+      ;;
     remove)
       run_extension_cli remove "$@"
       ;;
@@ -879,6 +882,7 @@ Usage:
   ottoctl extension install <id>[@version]
   ottoctl extension update <id>
   ottoctl extension update --all
+  ottoctl extension disable <id>
   ottoctl extension remove <id>[@version]
   ottoctl update [--nightly] [--repo owner/repo]
 EOF

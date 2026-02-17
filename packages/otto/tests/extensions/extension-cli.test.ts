@@ -46,7 +46,7 @@ const writeCatalogExtension = async (
 }
 
 describe("extension cli", () => {
-  it("supports install, update --all, list, and remove", async () => {
+  it("supports install, update --all, list, and disable", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -78,17 +78,17 @@ describe("extension cli", () => {
     await runExtensionCliCommand(["install", "notes"], streams, env)
     const updateAllCode = await runExtensionCliCommand(["update", "--all"], streams, env)
     const listCode = await runExtensionCliCommand(["list"], streams, env)
-    const removeCode = await runExtensionCliCommand(["remove", "notes"], streams, env)
+    const disableCode = await runExtensionCliCommand(["disable", "notes"], streams, env)
 
     // Assert
     expect(installCode).toBe(0)
     expect(updateAllCode).toBe(0)
     expect(listCode).toBe(0)
-    expect(removeCode).toBe(0)
+    expect(disableCode).toBe(0)
     expect(errors).toEqual([])
-    expect(outputs.join("\n")).toContain("Installed calendar@1.0.0")
-    expect(outputs.join("\n")).toContain("Updated calendar@1.1.0")
-    expect(outputs.join("\n")).toContain("Removed notes@1.0.0")
+    expect(outputs.join("\n")).toContain("Installed and activated calendar@1.0.0")
+    expect(outputs.join("\n")).toContain("Updated and activated calendar@1.1.0")
+    expect(outputs.join("\n")).toContain("Disabled notes@1.0.0")
   })
 
   it("returns error code for unknown command", async () => {

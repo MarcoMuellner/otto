@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import {
+  disableExtension,
   installExtension,
   listExtensions,
   removeExtension,
@@ -29,6 +30,7 @@ Commands:
   install <id>[@version]
   update <id>
   update --all
+  disable <id>
   remove <id>[@version]
 `
 
@@ -107,7 +109,9 @@ export const runExtensionCliCommand = async (
 
       const result = await installExtension(context, target)
       const mode = result.wasAlreadyInstalled ? "(already installed)" : ""
-      streams.stdout.log(`Installed ${result.id}@${result.installedVersion} ${mode}`.trim())
+      streams.stdout.log(
+        `Installed and activated ${result.id}@${result.installedVersion} ${mode}`.trim()
+      )
       if (result.prunedVersions.length > 0) {
         streams.stdout.log(`Pruned older versions: ${result.prunedVersions.join(", ")}`)
       }
@@ -127,7 +131,7 @@ export const runExtensionCliCommand = async (
         }
 
         for (const result of results) {
-          streams.stdout.log(`Updated ${result.id}@${result.installedVersion}`)
+          streams.stdout.log(`Updated and activated ${result.id}@${result.installedVersion}`)
         }
         return 0
       }
@@ -138,10 +142,21 @@ export const runExtensionCliCommand = async (
       }
 
       const result = await updateExtension(context, extensionId)
-      streams.stdout.log(`Updated ${result.id}@${result.installedVersion}`)
+      streams.stdout.log(`Updated and activated ${result.id}@${result.installedVersion}`)
       if (result.prunedVersions.length > 0) {
         streams.stdout.log(`Pruned older versions: ${result.prunedVersions.join(", ")}`)
       }
+      return 0
+    }
+
+    if (command === "disable") {
+      const extensionId = rest[0]
+      if (!extensionId || rest.length > 1 || extensionId.includes("@")) {
+        throw new Error("Usage: extension-cli disable <id>")
+      }
+
+      const result = await disableExtension(context, extensionId)
+      streams.stdout.log(`Disabled ${result.id}@${result.removedVersion}`)
       return 0
     }
 

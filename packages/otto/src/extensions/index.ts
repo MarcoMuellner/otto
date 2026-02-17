@@ -5,6 +5,7 @@ export {
   resolveExtensionPersistencePaths,
 } from "./state.js"
 export {
+  disableExtension,
   installExtension,
   listExtensions,
   removeExtension,

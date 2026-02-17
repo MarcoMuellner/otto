@@ -3,6 +3,7 @@ export {
   resolveDefaultExtensionCatalogRoot,
   validateExtensionCatalog,
 } from "./catalog.js";
+export { parseJsonc } from "./jsonc.js";
 export type {
   ExtensionCatalogEntry,
   ExtensionCatalogValidationResult,
