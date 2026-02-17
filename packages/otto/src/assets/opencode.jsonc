@@ -2,9 +2,7 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "openai/gpt-5.3-codex",
   "small_model": "openai/gpt-5.3-codex",
-  "plugin": [
-    "opencode-agent-memory"
-  ],
+  "plugin": ["opencode-agent-memory"],
   "agent": {
     "assistant": {
       "model": "openai/gpt-5.3-codex",
@@ -26,37 +24,20 @@
         "todoread": "allow",
         "todowrite": "allow",
         "external_directory": "allow",
-        "memory_*": "allow"
-      }
+        "memory_*": "allow",
+      },
     },
     "build": {
-      "disable": true
+      "disable": true,
     },
     "plan": {
-      "disable": true
-    }
+      "disable": true,
+    },
   },
   "default_agent": "assistant",
-  "instructions": [
-    "AGENTS.md"
-  ],
+  "instructions": ["AGENTS.md"],
   "permission": "allow",
-  "mcp": {
-    "gcal": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "@cocal/google-calendar-mcp"
-      ],
-      "environment": {
-        "GOOGLE_OAUTH_CREDENTIALS": "secrets/gcp-oauth.keys.json",
-        "ENABLED_TOOLS": "list-calendars,list-events,search-events,get-event,get-freebusy,get-current-time,create-event,update-event,delete-event,respond-to-event"
-      },
-      "enabled": true
-    }
-  },
   "share": "disabled",
   "autoupdate": false,
-  "snapshot": false
+  "snapshot": false,
 }

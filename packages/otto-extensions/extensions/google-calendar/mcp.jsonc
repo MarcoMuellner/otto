@@ -1,0 +1,11 @@
+{
+  "gcal": {
+    "type": "local",
+    "command": ["npx", "-y", "@cocal/google-calendar-mcp"],
+    "environment": {
+      "GOOGLE_OAUTH_CREDENTIALS": "secrets/gcp-oauth.keys.json",
+      "ENABLED_TOOLS": "list-calendars,list-events,search-events,get-event,get-freebusy,get-current-time,create-event,update-event,delete-event,respond-to-event",
+    },
+    "enabled": true,
+  },
+}

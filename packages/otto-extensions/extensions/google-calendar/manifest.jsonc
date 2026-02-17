@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "google-calendar",
+  "name": "Google Calendar MCP",
+  "version": "0.1.0",
+  "description": "Google Calendar MCP server for scheduling, availability checks, and event updates.",
+  "tags": ["mcp", "calendar", "google", "productivity"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "mcp": {
+      "file": "mcp.jsonc",
+    },
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": ["npx"],
+    "env": [],
+    "files": ["secrets/gcp-oauth.keys.json"],
+  },
+  "dependencies": [],
+}
