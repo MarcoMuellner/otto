@@ -7,7 +7,7 @@ MODEL_ROOT="${OTTO_ROOT}/models/parakeet-v3"
 VENV_DIR="${MODEL_ROOT}/.venv"
 MODEL_NAME="${OTTO_PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}"
 COMMAND_PATH="${BIN_DIR}/parakeet-v3-transcribe"
-TORCH_INDEX_URL_JETSON="${OTTO_TORCH_INDEX_URL_JETSON:-https://pypi.jetson-ai-lab.dev/jp6/cu126}"
+TORCH_INDEX_URL_JETSON="${OTTO_TORCH_INDEX_URL_JETSON:-https://pypi.jetson-ai-lab.io/jp6/cu126}"
 ENABLE_WARMUP="${OTTO_PARAKEET_WARMUP:-0}"
 
 BLUE=$'\033[0;34m'
@@ -26,6 +26,35 @@ require_cmd() {
     error "Required command '$1' not found"
     exit 1
   fi
+}
+
+ensure_ffmpeg() {
+  if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+    info "ffmpeg is already installed"
+    return 0
+  fi
+
+  warn "ffmpeg is missing; attempting automatic installation"
+
+  if command -v apt-get >/dev/null 2>&1; then
+    local apt_prefix=""
+    if [[ "${EUID}" -ne 0 ]]; then
+      if command -v sudo >/dev/null 2>&1; then
+        apt_prefix="sudo"
+      else
+        warn "sudo is not available; cannot install ffmpeg automatically"
+        return 1
+      fi
+    fi
+
+    if ${apt_prefix} apt-get update && ${apt_prefix} apt-get install -y ffmpeg; then
+      success "Installed ffmpeg"
+      return 0
+    fi
+  fi
+
+  warn "Automatic ffmpeg installation failed. Install ffmpeg manually and rerun this script."
+  return 1
 }
 
 ensure_venv_pip() {
@@ -77,7 +106,7 @@ PY
 
   if is_jetson_platform; then
     info "Installing Jetson CUDA-enabled PyTorch from ${TORCH_INDEX_URL_JETSON}"
-    if ! "${VENV_DIR}/bin/python" -m pip install --upgrade --extra-index-url "${TORCH_INDEX_URL_JETSON}" torch; then
+    if ! "${VENV_DIR}/bin/python" -m pip install --upgrade --force-reinstall --index-url "${TORCH_INDEX_URL_JETSON}" torch; then
       error "Failed to install CUDA-enabled torch for Jetson"
       return 1
     fi
@@ -104,6 +133,7 @@ PY
 
 info "Preparing local Parakeet v3 runtime"
 require_cmd python3
+ensure_ffmpeg
 
 mkdir -p "${MODEL_ROOT}" "${BIN_DIR}"
 
