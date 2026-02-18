@@ -138,6 +138,39 @@ const parseTranscriptionProvider = (
   )
 }
 
+const LEGACY_PARAKEET_MODELS = new Set(["parakeet-v3", "nvidia/parakeet-tdt-0.6b-v3"])
+
+const resolveTranscriptionModel = (
+  provider: TranscriptionProvider,
+  configuredModel: string
+): string => {
+  const trimmed = configuredModel.trim()
+  if (provider !== "worker") {
+    return trimmed
+  }
+
+  if (
+    trimmed.length === 0 ||
+    LEGACY_PARAKEET_MODELS.has(trimmed) ||
+    trimmed.toLowerCase().includes("parakeet")
+  ) {
+    return "small"
+  }
+
+  return trimmed
+}
+
+const resolveTranscriptionLanguage = (
+  provider: TranscriptionProvider,
+  configuredLanguage: string
+): string => {
+  if (provider !== "worker") {
+    return configuredLanguage
+  }
+
+  return "auto"
+}
+
 /**
  * Resolves Telegram worker runtime settings from persisted Otto settings and credential files
  * so startup behavior is stable across install/update flows without env var dependence.
@@ -197,8 +230,8 @@ export const resolveTelegramWorkerConfig = (
       provider,
       timeoutMs: settings.transcription.timeoutMs,
       workerStartupTimeoutMs: settings.transcription.workerStartupTimeoutMs,
-      language: settings.transcription.language,
-      model: settings.transcription.model,
+      language: resolveTranscriptionLanguage(provider, settings.transcription.language),
+      model: resolveTranscriptionModel(provider, settings.transcription.model),
       command: settings.transcription.command,
       commandArgs: settings.transcription.commandArgs,
       workerScriptPath: settings.transcription.workerScriptPath,

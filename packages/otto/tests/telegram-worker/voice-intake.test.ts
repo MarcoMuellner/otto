@@ -30,6 +30,29 @@ describe("voice intake", () => {
     expect(result).toEqual({ accepted: true })
   })
 
+  it("accepts payloads when Telegram duration is zero", () => {
+    // Arrange
+    const payload = {
+      inputType: "voice" as const,
+      fileId: "file-1",
+      fileUniqueId: "unique-1",
+      durationSec: 0,
+      mimeType: "audio/ogg",
+      fileSizeBytes: 2048,
+    }
+
+    // Act
+    const result = validateVoicePayload(payload, {
+      enabled: true,
+      maxDurationSec: 60,
+      maxBytes: 10_000,
+      downloadTimeoutMs: 20_000,
+    })
+
+    // Assert
+    expect(result).toEqual({ accepted: true })
+  })
+
   it("rejects payloads that exceed configured size", () => {
     // Arrange
     const payload = {

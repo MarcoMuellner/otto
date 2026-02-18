@@ -333,6 +333,10 @@ const configPath = process.argv[1]
 const enabled = process.argv[2] === "1"
 const command = process.argv[3] === "" ? null : process.argv[3]
 const provider = process.argv[4] === "http" ? "http" : process.argv[4] === "command" ? "command" : "worker"
+const LEGACY_PARAKEET_MODELS = new Set([
+  "parakeet-v3",
+  "nvidia/parakeet-tdt-0.6b-v3",
+])
 
 let parsed = {
   version: 1,
@@ -360,8 +364,18 @@ parsed.telegram = {
     provider,
     timeoutMs: Number.isInteger(transcription.timeoutMs) && transcription.timeoutMs >= 300000 ? transcription.timeoutMs : 300000,
     workerStartupTimeoutMs: Number.isInteger(transcription.workerStartupTimeoutMs) && transcription.workerStartupTimeoutMs >= 600000 ? transcription.workerStartupTimeoutMs : 600000,
-    language: typeof transcription.language === "string" && transcription.language.length > 0 ? transcription.language : "en-US",
-    model: typeof transcription.model === "string" && transcription.model.length > 0 ? transcription.model : "parakeet-v3",
+    language: provider === "worker"
+      ? "auto"
+      : (typeof transcription.language === "string" && transcription.language.length > 0 ? transcription.language : "auto"),
+    model: (() => {
+      const configuredModel = typeof transcription.model === "string" ? transcription.model.trim() : ""
+      if (provider === "worker") {
+        if (configuredModel.length === 0 || LEGACY_PARAKEET_MODELS.has(configuredModel) || configuredModel.toLowerCase().includes("parakeet")) {
+          return "small"
+        }
+      }
+      return configuredModel.length > 0 ? configuredModel : "small"
+    })(),
     command,
     commandArgs: Array.isArray(transcription.commandArgs) && transcription.commandArgs.every((value) => typeof value === "string")
       ? transcription.commandArgs
@@ -386,31 +400,13 @@ fs.writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8")
 ' "${config_path}" "${enabled}" "${command_value}" "${provider_value}"
 }
 
-attempt_auto_provision_parakeet() {
+attempt_auto_provision_faster_whisper() {
 
   local install_helper="${CURRENT_LINK}/scripts/install-parakeet-v3.sh"
 
-  if command -v parakeet-v3-transcribe >/dev/null 2>&1; then
-    printf '%s' "parakeet-v3-transcribe"
-    return 0
-  fi
-
-  if command -v parakeet-transcribe >/dev/null 2>&1; then
-    printf '%s' "parakeet-transcribe"
-    return 0
-  fi
-
   if [[ -x "${install_helper}" ]]; then
-    if "${install_helper}"; then
-      if command -v parakeet-v3-transcribe >/dev/null 2>&1; then
-        printf '%s' "parakeet-v3-transcribe"
-        return 0
-      fi
-      if command -v parakeet-transcribe >/dev/null 2>&1; then
-        printf '%s' "parakeet-transcribe"
-        return 0
-      fi
-    fi
+    "${install_helper}"
+    return $?
   fi
 
   return 1
@@ -424,7 +420,7 @@ cmd_configure_voice_transcription() {
 
   local enable_voice=""
   while true; do
-    read -r -p "Enable local voice transcription (Parakeet v3) now? [y/N]: " enable_voice
+    read -r -p "Enable local voice transcription (Faster-Whisper) now? [y/N]: " enable_voice
     case "${enable_voice:-N}" in
       Y|y)
         break
@@ -440,15 +436,14 @@ cmd_configure_voice_transcription() {
     esac
   done
 
-  info "Attempting automatic local Parakeet v3 provisioning..."
-  local command_name=""
-  if command_name="$(attempt_auto_provision_parakeet)"; then
-    update_telegram_voice_settings "1" "${command_name}" "worker"
-    success "Voice transcription enabled with persistent worker backend"
+  info "Attempting automatic local Faster-Whisper provisioning..."
+  if attempt_auto_provision_faster_whisper; then
+    update_telegram_voice_settings "1" "" "worker"
+    success "Voice transcription enabled with persistent Faster-Whisper worker backend"
     return 0
   fi
 
-  warn "Automatic Parakeet setup is not available in this installation"
+  warn "Automatic Faster-Whisper setup is not available in this installation"
   update_telegram_voice_settings "1" "" "worker"
   warn "Voice intake stays enabled, but transcription worker could not be provisioned"
   warn "Telegram voice messages will receive a 'cannot transcribe yet' notice until provisioning succeeds"

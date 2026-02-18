@@ -231,7 +231,7 @@ const resolveDefaultWorkerScriptPath = (): string => {
 
 const resolveDefaultWorkerPythonPath = (): string => {
   const ottoRoot = process.env.OTTO_ROOT ?? path.join(homedir(), ".local", "share", "otto")
-  return path.join(ottoRoot, "models", "parakeet-v3", ".venv", "bin", "python")
+  return path.join(ottoRoot, "models", "faster-whisper", ".venv", "bin", "python")
 }
 
 const parseWorkerProtocol = (line: string): WorkerProtocolMessage | null => {
@@ -491,7 +491,7 @@ const createWorkerTranscriptionGateway = async (
 
   if (!existsSync(resolvedPythonPath)) {
     throw new Error(
-      `Transcription worker Python runtime not found at ${resolvedPythonPath}. Run ottoctl configure-voice-transcription to provision Parakeet.`
+      `Transcription worker Python runtime not found at ${resolvedPythonPath}. Run ottoctl configure-voice-transcription to provision Faster-Whisper.`
     )
   }
 

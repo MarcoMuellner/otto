@@ -31,8 +31,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Service runtime env vars are stored in `~/.local/share/otto/secrets/runtime.env` and loaded on boot (systemd `EnvironmentFile`, launchd plist environment)
 - Manage runtime env vars with `ottoctl env set <KEY> <VALUE>`, `ottoctl env unset <KEY>`, and `ottoctl env list`
 - Telegram worker runtime defaults (heartbeat, retries, prompt timeout, OpenCode bridge URL) are fixed by runtime code and no longer configured through env vars
-- Telegram voice/transcription settings live in `~/.config/otto/config.jsonc` under `telegram.voice` and `telegram.transcription`; local installs use provider `worker` so Parakeet stays loaded in a background process during Otto runtime
-- `ottoctl configure-voice-transcription` attempts one-shot local provisioning via `scripts/install-parakeet-v3.sh` (Python venv + NeMo + Parakeet model cache) and falls back safely when auto-provisioning is unavailable
+- Telegram voice/transcription settings live in `~/.config/otto/config.jsonc` under `telegram.voice` and `telegram.transcription`; local installs use provider `worker` so Faster-Whisper stays loaded in a background process during Otto runtime
+- `ottoctl configure-voice-transcription` attempts one-shot local provisioning via `scripts/install-parakeet-v3.sh` (Python venv + Faster-Whisper model cache) and falls back safely when auto-provisioning is unavailable
 - Internal API env (optional): `OTTO_INTERNAL_API_HOST` (default `127.0.0.1`, loopback only), `OTTO_INTERNAL_API_PORT` (default `4180`)
 - Internal API token: persisted in `~/.otto/secrets/internal-api.token` and exported at runtime as `OTTO_INTERNAL_API_URL` + `OTTO_INTERNAL_API_TOKEN` for OpenCode tools
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
@@ -72,7 +72,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl restart`
   - `ottoctl stop`
   - `ottoctl configure-telegram` (interactive Telegram credential setup, skippable)
-  - `ottoctl configure-voice-transcription` (interactive local Parakeet v3 setup, best-effort and skippable)
+  - `ottoctl configure-voice-transcription` (interactive local Faster-Whisper setup, best-effort and skippable)
   - `ottoctl env list|path|set|unset` (manage service boot-time environment variables)
   - `ottoctl task profiles list`
   - `ottoctl task profiles validate [profile-id]`

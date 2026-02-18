@@ -24,8 +24,8 @@ const defaultSettings = {
     provider: "command" as const,
     timeoutMs: 300_000,
     workerStartupTimeoutMs: 600_000,
-    language: "en-US",
-    model: "parakeet-v3",
+    language: "auto",
+    model: "small",
     command: null,
     commandArgs: ["{input}"],
     workerScriptPath: null,
@@ -110,7 +110,7 @@ describe("resolveTelegramWorkerConfig", () => {
     expect(config.botToken).toBe("bot-token")
     expect(config.allowedUserId).toBe(1001)
     expect(config.voice.enabled).toBe(true)
-    expect(config.transcription.model).toBe("parakeet-v3")
+    expect(config.transcription.model).toBe("small")
   })
 
   it("throws when bot token is missing", () => {
@@ -159,5 +159,31 @@ describe("resolveTelegramWorkerConfig", () => {
         credentials
       )
     ).toThrow("transcription.baseUrl")
+  })
+
+  it("migrates legacy Parakeet worker model to whisper default", () => {
+    // Arrange
+    const credentials = {
+      botToken: "bot-token",
+      allowedUserId: 1001,
+    }
+
+    // Act
+    const config = resolveTelegramWorkerConfig(
+      {
+        ...defaultSettings,
+        transcription: {
+          ...defaultSettings.transcription,
+          provider: "worker",
+          model: "parakeet-v3",
+          language: "en-US",
+        },
+      },
+      credentials
+    )
+
+    // Assert
+    expect(config.transcription.model).toBe("small")
+    expect(config.transcription.language).toBe("auto")
   })
 })

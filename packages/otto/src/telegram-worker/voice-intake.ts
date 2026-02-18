@@ -50,7 +50,7 @@ export const validateVoicePayload = (
   voice: TelegramVoiceMessage,
   config: TelegramVoiceConfig
 ): VoiceValidationResult => {
-  if (!voice.fileId || voice.durationSec < 1) {
+  if (!voice.fileId || voice.durationSec < 0) {
     return {
       accepted: false,
       reason: "invalid_voice_payload",

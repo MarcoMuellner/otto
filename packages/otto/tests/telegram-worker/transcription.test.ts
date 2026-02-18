@@ -28,8 +28,8 @@ describe("transcription gateway", () => {
       provider: "command",
       timeoutMs: 30_000,
       workerStartupTimeoutMs: 60_000,
-      language: "en-US",
-      model: "parakeet-v3",
+      language: "auto",
+      model: "small",
       command: "node",
       commandArgs: ["-e", 'process.stdout.write("hello from command")'],
       workerScriptPath: null,
@@ -42,8 +42,8 @@ describe("transcription gateway", () => {
     const result = await gateway.transcribe({
       audioFilePath: inputPath,
       mimeType: "audio/ogg",
-      language: "en-US",
-      model: "parakeet-v3",
+      language: "auto",
+      model: "small",
       timeoutMs: 10_000,
     })
 
@@ -76,8 +76,8 @@ describe("transcription gateway", () => {
       provider: "http",
       timeoutMs: 30_000,
       workerStartupTimeoutMs: 60_000,
-      language: "en-US",
-      model: "parakeet-v3",
+      language: "auto",
+      model: "small",
       command: null,
       commandArgs: ["{input}"],
       workerScriptPath: null,
@@ -90,8 +90,8 @@ describe("transcription gateway", () => {
     const result = await gateway.transcribe({
       audioFilePath: inputPath,
       mimeType: "audio/ogg",
-      language: "en-US",
-      model: "parakeet-v3",
+      language: "auto",
+      model: "small",
       timeoutMs: 10_000,
     })
 
