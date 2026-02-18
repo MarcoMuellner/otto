@@ -378,6 +378,7 @@ fs.writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8")
 }
 
 attempt_auto_provision_parakeet() {
+
   local install_helper="${CURRENT_LINK}/scripts/install-parakeet-v3.sh"
 
   if command -v parakeet-v3-transcribe >/dev/null 2>&1; then
