@@ -26,6 +26,33 @@ require_cmd() {
   fi
 }
 
+ensure_venv_pip() {
+  if "${VENV_DIR}/bin/python" -m pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  warn "pip is missing in virtual environment, attempting bootstrap"
+
+  if "${VENV_DIR}/bin/python" -m ensurepip --upgrade >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    local get_pip
+    get_pip="$(mktemp)"
+    if curl -fsSL "https://bootstrap.pypa.io/get-pip.py" -o "${get_pip}"; then
+      if "${VENV_DIR}/bin/python" "${get_pip}" >/dev/null 2>&1; then
+        rm -f "${get_pip}"
+        return 0
+      fi
+    fi
+    rm -f "${get_pip}"
+  fi
+
+  error "Unable to bootstrap pip in ${VENV_DIR}. Install python3-venv/python3-pip and retry."
+  return 1
+}
+
 info "Preparing local Parakeet v3 runtime"
 require_cmd python3
 
@@ -36,6 +63,7 @@ if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
   python3 -m venv "${VENV_DIR}"
 fi
 
+ensure_venv_pip
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip >/dev/null
 
 if ! "${VENV_DIR}/bin/python" -c "import nemo.collections.asr" >/dev/null 2>&1; then
