@@ -4,7 +4,6 @@ import path from "node:path"
 import { createInterface } from "node:readline"
 import { existsSync } from "node:fs"
 import { randomUUID } from "node:crypto"
-import { fileURLToPath } from "node:url"
 import { homedir } from "node:os"
 
 import type { TelegramTranscriptionConfig } from "./config.js"
@@ -212,7 +211,8 @@ const createHttpTranscriptionGateway = (
 }
 
 const resolveDefaultWorkerScriptPath = (): string => {
-  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url))
+  const modulePath = decodeURIComponent(new URL(import.meta.url).pathname)
+  const moduleDirectory = path.dirname(modulePath)
   const candidatePaths = [
     path.resolve(moduleDirectory, "../../scripts/parakeet-worker.py"),
     path.resolve(process.cwd(), "scripts/parakeet-worker.py"),
