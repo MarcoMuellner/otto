@@ -1,5 +1,6 @@
 import type { Logger } from "pino"
 
+import { ensureOttoConfigFile } from "../config/otto-config.js"
 import { resolveTelegramWorkerConfig } from "../telegram-worker/config.js"
 import { startTelegramWorker } from "../telegram-worker/worker.js"
 
@@ -29,8 +30,9 @@ const waitForShutdownSignal = async (): Promise<NodeJS.Signals> => {
  * @param logger Command-scoped logger for worker lifecycle events.
  */
 export const runTelegramWorker = async (logger: Logger): Promise<void> => {
-  const config = resolveTelegramWorkerConfig()
-  const worker = await startTelegramWorker(logger, config)
+  const { config: ottoConfig } = await ensureOttoConfigFile()
+  const telegramConfig = resolveTelegramWorkerConfig(ottoConfig.telegram)
+  const worker = await startTelegramWorker(logger, telegramConfig)
 
   const signal = await waitForShutdownSignal()
   logger.info({ signal }, "Telegram worker shutdown signal received")

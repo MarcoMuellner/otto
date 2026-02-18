@@ -1,14 +1,22 @@
 import type { Logger } from "pino"
 import { Telegraf } from "telegraf"
+import { randomUUID } from "node:crypto"
 
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createInboundMessagesRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
+import { createVoiceInboundMessagesRepository } from "../persistence/repositories.js"
 import type { TelegramWorkerConfig } from "./config.js"
 import { createInboundBridge } from "./inbound.js"
 import type { OpencodeSessionGateway } from "./opencode.js"
 import { createOutboundQueueProcessor } from "./outbound-queue.js"
+import { createTranscriptionGateway, type TranscriptionGateway } from "./transcription.js"
+import {
+  downloadVoiceFile,
+  validateVoicePayload,
+  type TelegramVoiceMessage,
+} from "./voice-intake.js"
 import {
   evaluateTelegramAccess,
   extractTelegramAccessContext,
@@ -28,10 +36,25 @@ export type TelegramInboundUpdate = {
   update: unknown
 }
 
+export type TelegramInboundVoiceUpdate = {
+  sourceMessageId: string
+  chatId: number
+  userId: number
+  voice: TelegramVoiceMessage
+  update: unknown
+}
+
+export type TelegramVoiceDownload = {
+  url: string
+  fileSizeBytes: number | null
+}
+
 export type TelegramBotRuntime = {
   onTextMessage: (handler: (update: TelegramInboundUpdate) => Promise<void>) => void
+  onVoiceMessage: (handler: (update: TelegramInboundVoiceUpdate) => Promise<void>) => void
   sendMessage: (chatId: number, text: string) => Promise<void>
   sendChatAction?: (chatId: number, action: "typing") => Promise<void>
+  resolveVoiceDownload: (fileId: string) => Promise<TelegramVoiceDownload>
   launch: () => Promise<void>
   stop: () => Promise<void>
 }
@@ -42,6 +65,9 @@ export type TelegramWorkerDependencies = {
   createSessionGateway?: (
     baseUrl: string
   ) => Promise<OpencodeSessionGateway> | OpencodeSessionGateway
+  createTranscriptionGateway?: (
+    config: TelegramWorkerConfig["transcription"]
+  ) => Promise<TranscriptionGateway> | TranscriptionGateway
 }
 
 const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
@@ -64,11 +90,45 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
         })
       })
     },
+    onVoiceMessage: (handler) => {
+      bot.on("message", async (context) => {
+        const message = context.message
+        if (!message || !("voice" in message)) {
+          return
+        }
+
+        const voice = message.voice
+        await handler({
+          sourceMessageId: String(message.message_id),
+          chatId: context.chat.id,
+          userId: context.from?.id ?? 0,
+          voice: {
+            fileId: voice.file_id,
+            fileUniqueId: voice.file_unique_id,
+            durationSec: voice.duration,
+            mimeType: voice.mime_type ?? "audio/ogg",
+            fileSizeBytes: voice.file_size ?? null,
+          },
+          update: context.update,
+        })
+      })
+    },
     sendMessage: async (chatId, text) => {
       await bot.telegram.sendMessage(chatId, text)
     },
     sendChatAction: async (chatId, action) => {
       await bot.telegram.sendChatAction(chatId, action)
+    },
+    resolveVoiceDownload: async (fileId) => {
+      const file = await bot.telegram.getFile(fileId)
+      if (!file.file_path) {
+        throw new Error("Telegram file path is missing for voice message")
+      }
+
+      return {
+        url: `https://api.telegram.org/file/bot${botToken}/${file.file_path}`,
+        fileSizeBytes: file.file_size ?? null,
+      }
     },
     launch: async () => {
       await bot.launch()
@@ -105,6 +165,7 @@ export const startTelegramWorker = async (
   const sessionBindingsRepository = createSessionBindingsRepository(database)
   const inboundMessagesRepository = createInboundMessagesRepository(database)
   const outboundMessagesRepository = createOutboundMessagesRepository(database)
+  const voiceInboundMessagesRepository = createVoiceInboundMessagesRepository(database)
   const sessionGatewayFactory =
     dependencies.createSessionGateway ??
     (async (baseUrl: string): Promise<OpencodeSessionGateway> => {
@@ -113,6 +174,22 @@ export const startTelegramWorker = async (
     })
 
   const sessionGateway = await sessionGatewayFactory(config.opencodeBaseUrl)
+  const transcriptionGatewayFactory =
+    dependencies.createTranscriptionGateway ?? createTranscriptionGateway
+  let transcriptionGateway: TranscriptionGateway | null = null
+
+  if (config.voice.enabled) {
+    try {
+      transcriptionGateway = await transcriptionGatewayFactory(config.transcription)
+    } catch (error) {
+      const err = error as Error
+      logger.warn(
+        { error: err.message },
+        "Voice transcription gateway is unavailable; voice messages will receive fallback notice"
+      )
+      transcriptionGateway = null
+    }
+  }
   const bot =
     dependencies.createBotRuntime?.(config.botToken) ?? createTelegrafRuntime(config.botToken)
   const inFlightChats = new Set<number>()
@@ -185,6 +262,150 @@ export const startTelegramWorker = async (
     }
   })
 
+  bot.onVoiceMessage(async (update) => {
+    const context = extractTelegramAccessContext(update.update)
+    const decision = evaluateTelegramAccess(context, {
+      allowedUserId: config.allowedUserId,
+    })
+    logDeniedTelegramAccess(logger, decision, context)
+
+    if (!decision.allowed) {
+      return
+    }
+
+    if (!config.voice.enabled) {
+      await bot.sendMessage(
+        update.chatId,
+        "Voice input is currently disabled. Please send text for now."
+      )
+      return
+    }
+
+    if (!transcriptionGateway) {
+      await bot.sendMessage(
+        update.chatId,
+        "I cannot transcribe voice messages on this installation yet. Please send text for now."
+      )
+      return
+    }
+
+    if (inFlightChats.has(update.chatId)) {
+      await bot.sendMessage(
+        update.chatId,
+        "I am still processing your previous message. Please wait."
+      )
+      return
+    }
+
+    const now = Date.now()
+    const insertResult = voiceInboundMessagesRepository.insertOrIgnore({
+      id: randomUUID(),
+      sourceMessageId: update.sourceMessageId,
+      chatId: update.chatId,
+      userId: update.userId,
+      telegramFileId: update.voice.fileId,
+      telegramFileUniqueId: update.voice.fileUniqueId,
+      durationSeconds: update.voice.durationSec,
+      mimeType: update.voice.mimeType,
+      fileSizeBytes: update.voice.fileSizeBytes,
+      downloadedSizeBytes: null,
+      status: "accepted",
+      rejectReason: null,
+      errorMessage: null,
+      transcript: null,
+      transcriptLanguage: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    if (insertResult === "duplicate") {
+      logger.info(
+        { sourceMessageId: update.sourceMessageId },
+        "Skipping duplicate inbound Telegram voice message"
+      )
+      return
+    }
+
+    const validation = validateVoicePayload(update.voice, config.voice)
+    if (!validation.accepted) {
+      voiceInboundMessagesRepository.markRejected(update.sourceMessageId, validation.reason)
+      await bot.sendMessage(update.chatId, validation.message)
+      return
+    }
+
+    inFlightChats.add(update.chatId)
+
+    let downloadedBytes: number | null = null
+    try {
+      const descriptor = await bot.resolveVoiceDownload(update.voice.fileId)
+      const downloaded = await downloadVoiceFile(descriptor, config.voice)
+      downloadedBytes = downloaded.bytes
+
+      try {
+        const transcription = await transcriptionGateway.transcribe({
+          audioFilePath: downloaded.filePath,
+          mimeType: update.voice.mimeType,
+          language: config.transcription.language,
+          model: config.transcription.model,
+          timeoutMs: config.transcription.timeoutMs,
+        })
+
+        voiceInboundMessagesRepository.markTranscribed(
+          update.sourceMessageId,
+          transcription.text,
+          transcription.language,
+          Date.now(),
+          downloadedBytes
+        )
+
+        await bridge.handleTextMessage({
+          sourceMessageId: update.sourceMessageId,
+          chatId: update.chatId,
+          userId: update.userId,
+          text: transcription.text,
+        })
+      } finally {
+        await downloaded.cleanup()
+      }
+    } catch (error) {
+      const err = error as Error
+      const normalized = err.message.toLowerCase()
+
+      if (normalized.includes("size limit") || normalized.includes("too large")) {
+        voiceInboundMessagesRepository.markRejected(
+          update.sourceMessageId,
+          "size_exceeded",
+          Date.now(),
+          downloadedBytes
+        )
+        await bot.sendMessage(
+          update.chatId,
+          `That voice message is too large. Please keep it under ${Math.floor(config.voice.maxBytes / (1024 * 1024))} MB.`
+        )
+        return
+      }
+
+      voiceInboundMessagesRepository.markFailed(
+        update.sourceMessageId,
+        err.message,
+        Date.now(),
+        downloadedBytes
+      )
+
+      logger.error(
+        { error: err.message, chatId: update.chatId, sourceMessageId: update.sourceMessageId },
+        "Failed to process Telegram voice message"
+      )
+
+      await bot.sendMessage(
+        update.chatId,
+        "I could not transcribe that voice message right now. Please try again in a moment."
+      )
+    } finally {
+      inFlightChats.delete(update.chatId)
+    }
+  })
+
   void bot.launch().catch((error) => {
     const err = error as Error
     logger.error(
@@ -203,6 +424,8 @@ export const startTelegramWorker = async (
       hasBotToken: true,
       allowedUserId: config.allowedUserId,
       opencodeBaseUrl: config.opencodeBaseUrl,
+      voiceEnabled: config.voice.enabled,
+      transcriptionProvider: config.transcription.provider,
     },
     "Telegram worker started"
   )

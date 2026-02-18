@@ -181,6 +181,9 @@ main() {
   info "Configuring Telegram credentials (optional)..."
   "${BIN_DIR}/ottoctl" configure-telegram || true
 
+  info "Configuring local voice transcription (optional)..."
+  "${BIN_DIR}/ottoctl" configure-voice-transcription || true
+
   info "Installing and starting service..."
   "${BIN_DIR}/ottoctl" start
 

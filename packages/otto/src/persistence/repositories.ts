@@ -25,6 +25,28 @@ export type InboundMessageRecord = {
   createdAt: number
 }
 
+export type VoiceInboundStatus = "accepted" | "rejected" | "transcribed" | "failed"
+
+export type VoiceInboundMessageRecord = {
+  id: string
+  sourceMessageId: string
+  chatId: number
+  userId: number | null
+  telegramFileId: string
+  telegramFileUniqueId: string | null
+  durationSeconds: number
+  mimeType: string | null
+  fileSizeBytes: number | null
+  downloadedSizeBytes: number | null
+  status: VoiceInboundStatus
+  rejectReason: string | null
+  errorMessage: string | null
+  transcript: string | null
+  transcriptLanguage: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 export type OutboundMessageRecord = {
   id: string
   dedupeKey: string | null
@@ -246,6 +268,101 @@ export const createInboundMessagesRepository = (database: DatabaseSync) => {
   return {
     insert: (record: InboundMessageRecord): void => {
       insertStatement.run(record)
+    },
+  }
+}
+
+/**
+ * Persists voice intake records independently from text prompts so media metadata,
+ * transcription outcomes, and failure reasons stay auditable.
+ *
+ * @param database Open SQLite database instance.
+ * @returns Repository for voice inbound lifecycle writes.
+ */
+export const createVoiceInboundMessagesRepository = (database: DatabaseSync) => {
+  const insertStatement = database.prepare(
+    `INSERT INTO messages_in_voice
+      (id, source_message_id, chat_id, user_id, telegram_file_id, telegram_file_unique_id, duration_seconds, mime_type, file_size_bytes, downloaded_size_bytes, status, reject_reason, error_message, transcript, transcript_language, created_at, updated_at)
+     VALUES
+      (@id, @sourceMessageId, @chatId, @userId, @telegramFileId, @telegramFileUniqueId, @durationSeconds, @mimeType, @fileSizeBytes, @downloadedSizeBytes, @status, @rejectReason, @errorMessage, @transcript, @transcriptLanguage, @createdAt, @updatedAt)`
+  )
+
+  const updateStatusStatement = database.prepare(
+    `UPDATE messages_in_voice
+     SET downloaded_size_bytes = COALESCE(@downloadedSizeBytes, downloaded_size_bytes),
+         status = @status,
+         reject_reason = @rejectReason,
+         error_message = @errorMessage,
+         transcript = @transcript,
+         transcript_language = @transcriptLanguage,
+         updated_at = @updatedAt
+     WHERE source_message_id = @sourceMessageId`
+  )
+
+  return {
+    insertOrIgnore: (record: VoiceInboundMessageRecord): "inserted" | "duplicate" => {
+      try {
+        insertStatement.run(record)
+        return "inserted"
+      } catch (error) {
+        if (isUniqueConstraintForColumn(error, "source_message_id")) {
+          return "duplicate"
+        }
+
+        throw error
+      }
+    },
+    markRejected: (
+      sourceMessageId: string,
+      rejectReason: string,
+      updatedAt = Date.now(),
+      downloadedSizeBytes: number | null = null
+    ): void => {
+      updateStatusStatement.run({
+        sourceMessageId,
+        downloadedSizeBytes,
+        status: "rejected",
+        rejectReason,
+        errorMessage: null,
+        transcript: null,
+        transcriptLanguage: null,
+        updatedAt,
+      })
+    },
+    markTranscribed: (
+      sourceMessageId: string,
+      transcript: string,
+      transcriptLanguage: string | null,
+      updatedAt = Date.now(),
+      downloadedSizeBytes: number | null = null
+    ): void => {
+      updateStatusStatement.run({
+        sourceMessageId,
+        downloadedSizeBytes,
+        status: "transcribed",
+        rejectReason: null,
+        errorMessage: null,
+        transcript,
+        transcriptLanguage,
+        updatedAt,
+      })
+    },
+    markFailed: (
+      sourceMessageId: string,
+      errorMessage: string,
+      updatedAt = Date.now(),
+      downloadedSizeBytes: number | null = null
+    ): void => {
+      updateStatusStatement.run({
+        sourceMessageId,
+        downloadedSizeBytes,
+        status: "failed",
+        rejectReason: null,
+        errorMessage,
+        transcript: null,
+        transcriptLanguage: null,
+        updatedAt,
+      })
     },
   }
 }

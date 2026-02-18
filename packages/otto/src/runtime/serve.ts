@@ -186,7 +186,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   })
 
   try {
-    const telegramConfig = resolveTelegramWorkerConfig()
+    const telegramConfig = resolveTelegramWorkerConfig(config.telegram)
     telegramWorker = await startTelegramWorker(logger, telegramConfig)
     logger.info({ enabled: telegramConfig.enabled }, "Telegram worker startup completed")
   } catch (error) {

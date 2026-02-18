@@ -61,7 +61,10 @@ describe("ensureOttoConfigFile", () => {
     const result = await ensureOttoConfigFile(homeDirectory)
 
     expect(result.created).toBe(false)
-    expect(result.config).toEqual(custom)
+    expect(result.config).toEqual({
+      ...custom,
+      telegram: buildDefaultOttoConfig(homeDirectory).telegram,
+    })
   })
 
   it("throws when existing config is invalid", async () => {

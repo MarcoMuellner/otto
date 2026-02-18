@@ -59,6 +59,7 @@ describe("openPersistenceDatabase", () => {
         "approvals",
         "jobs",
         "messages_in",
+        "messages_in_voice",
         "messages_out",
         "schema_migrations",
         "session_bindings",

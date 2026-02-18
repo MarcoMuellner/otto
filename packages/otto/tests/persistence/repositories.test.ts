@@ -13,6 +13,7 @@ import {
   createTaskAuditRepository,
   createTaskObservationsRepository,
   createUserProfileRepository,
+  createVoiceInboundMessagesRepository,
   openPersistenceDatabase,
 } from "../../src/persistence/index.js"
 
@@ -152,6 +153,64 @@ describe("persistence repositories", () => {
       nextAttemptAt: null,
       failedAt: 900,
       errorMessage: "rate limited",
+    })
+
+    db.close()
+  })
+
+  it("stores voice inbound records and updates transcription status", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createVoiceInboundMessagesRepository(db)
+
+    // Act
+    const result = repository.insertOrIgnore({
+      id: "voice-1",
+      sourceMessageId: "source-voice-1",
+      chatId: 42,
+      userId: 99,
+      telegramFileId: "file-1",
+      telegramFileUniqueId: "unique-1",
+      durationSeconds: 12,
+      mimeType: "audio/ogg",
+      fileSizeBytes: 2048,
+      downloadedSizeBytes: null,
+      status: "accepted",
+      rejectReason: null,
+      errorMessage: null,
+      transcript: null,
+      transcriptLanguage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.markTranscribed("source-voice-1", "hello world", "en", 200, 2048)
+
+    // Assert
+    expect(result).toBe("inserted")
+    const record = db
+      .prepare(
+        `SELECT
+          status,
+          transcript,
+          transcript_language as transcriptLanguage,
+          downloaded_size_bytes as downloadedSizeBytes
+         FROM messages_in_voice
+         WHERE source_message_id = ?`
+      )
+      .get("source-voice-1") as {
+      status: string
+      transcript: string
+      transcriptLanguage: string
+      downloadedSizeBytes: number
+    }
+
+    expect(record).toEqual({
+      status: "transcribed",
+      transcript: "hello world",
+      transcriptLanguage: "en",
+      downloadedSizeBytes: 2048,
     })
 
     db.close()

@@ -201,4 +201,29 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_command_audit_created ON command_audit_log (created_at DESC)`,
     ],
   },
+  {
+    id: "012_messages_in_voice",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS messages_in_voice (
+        id TEXT PRIMARY KEY,
+        source_message_id TEXT NOT NULL UNIQUE,
+        chat_id INTEGER NOT NULL,
+        user_id INTEGER,
+        telegram_file_id TEXT NOT NULL,
+        telegram_file_unique_id TEXT,
+        duration_seconds INTEGER NOT NULL,
+        mime_type TEXT,
+        file_size_bytes INTEGER,
+        downloaded_size_bytes INTEGER,
+        status TEXT NOT NULL,
+        reject_reason TEXT,
+        error_message TEXT,
+        transcript TEXT,
+        transcript_language TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_messages_in_voice_status ON messages_in_voice (status, updated_at DESC)`,
+    ],
+  },
 ]

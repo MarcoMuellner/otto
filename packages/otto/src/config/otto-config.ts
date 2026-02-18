@@ -3,6 +3,60 @@ import path from "node:path"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { z } from "zod"
 
+const DEFAULT_TELEGRAM_VOICE_SETTINGS = {
+  enabled: false,
+  maxDurationSec: 180,
+  maxBytes: 10 * 1024 * 1024,
+  downloadTimeoutMs: 20_000,
+}
+
+const DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS = {
+  provider: "command" as "command" | "http",
+  timeoutMs: 90_000,
+  language: "en-US",
+  model: "parakeet-v3",
+  command: null,
+  commandArgs: ["{input}"],
+  baseUrl: "http://127.0.0.1:9000",
+  httpPath: "/v1/audio/transcriptions",
+}
+
+const telegramVoiceSettingsSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    maxDurationSec: z.number().int().min(1).default(180),
+    maxBytes: z
+      .number()
+      .int()
+      .min(1_024)
+      .default(10 * 1024 * 1024),
+    downloadTimeoutMs: z.number().int().min(1_000).default(20_000),
+  })
+  .default(DEFAULT_TELEGRAM_VOICE_SETTINGS)
+
+const telegramTranscriptionSettingsSchema = z
+  .object({
+    provider: z.enum(["command", "http"]).default("command"),
+    timeoutMs: z.number().int().min(5_000).default(90_000),
+    language: z.string().min(1).default("en-US"),
+    model: z.string().min(1).default("parakeet-v3"),
+    command: z.string().min(1).nullable().default(null),
+    commandArgs: z.array(z.string()).default(["{input}"]),
+    baseUrl: z.string().url().default("http://127.0.0.1:9000"),
+    httpPath: z.string().min(1).default("/v1/audio/transcriptions"),
+  })
+  .default(DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS)
+
+const telegramSettingsSchema = z
+  .object({
+    voice: telegramVoiceSettingsSchema,
+    transcription: telegramTranscriptionSettingsSchema,
+  })
+  .default({
+    voice: DEFAULT_TELEGRAM_VOICE_SETTINGS,
+    transcription: DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS,
+  })
+
 const ottoConfigSchema = z.object({
   version: z.literal(1),
   ottoHome: z.string().min(1, "ottoHome must be a non-empty string"),
@@ -14,9 +68,11 @@ const ottoConfigSchema = z.object({
       .min(1, "opencode.port must be >= 1")
       .max(65535, "opencode.port must be <= 65535"),
   }),
+  telegram: telegramSettingsSchema,
 })
 
 export type OttoConfig = z.infer<typeof ottoConfigSchema>
+export type OttoTelegramSettings = OttoConfig["telegram"]
 
 export type ResolvedOttoConfig = {
   config: OttoConfig
@@ -51,6 +107,13 @@ export const buildDefaultOttoConfig = (homeDirectory = homedir()): OttoConfig =>
     opencode: {
       hostname: "0.0.0.0",
       port: 4096,
+    },
+    telegram: {
+      voice: { ...DEFAULT_TELEGRAM_VOICE_SETTINGS },
+      transcription: {
+        ...DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS,
+        commandArgs: [...DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS.commandArgs],
+      },
     },
   }
 }

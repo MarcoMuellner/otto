@@ -89,16 +89,6 @@ sql_escape() {
   printf '%s' "${value}"
 }
 
-xml_escape() {
-  local value="$1"
-  value="${value//&/&amp;}"
-  value="${value//</&lt;}"
-  value="${value//>/&gt;}"
-  value="${value//\"/&quot;}"
-  value="${value//\'/&apos;}"
-  printf '%s' "${value}"
-}
-
 persist_telegram_credentials() {
   mkdir -p "${SECRETS_DIR}"
   chmod 700 "${SECRETS_DIR}"
@@ -175,6 +165,137 @@ ensure_telegram_credentials() {
   fi
 
   return 1
+}
+
+resolve_otto_config_path() {
+  echo "${HOME}/.config/otto/config.jsonc"
+}
+
+update_telegram_voice_settings() {
+  local enabled="$1"
+  local command_value="$2"
+
+  local config_path
+  config_path="$(resolve_otto_config_path)"
+
+  node -e '
+const fs = require("node:fs")
+const path = require("node:path")
+
+const configPath = process.argv[1]
+const enabled = process.argv[2] === "1"
+const command = process.argv[3] === "" ? null : process.argv[3]
+
+let parsed = {
+  version: 1,
+  ottoHome: path.join(process.env.HOME, ".otto"),
+  opencode: { hostname: "0.0.0.0", port: 4096 },
+}
+
+if (fs.existsSync(configPath)) {
+  parsed = JSON.parse(fs.readFileSync(configPath, "utf8"))
+}
+
+const telegram = parsed.telegram || {}
+const voice = telegram.voice || {}
+const transcription = telegram.transcription || {}
+
+parsed.telegram = {
+  ...telegram,
+  voice: {
+    enabled,
+    maxDurationSec: Number.isInteger(voice.maxDurationSec) ? voice.maxDurationSec : 180,
+    maxBytes: Number.isInteger(voice.maxBytes) ? voice.maxBytes : 10 * 1024 * 1024,
+    downloadTimeoutMs: Number.isInteger(voice.downloadTimeoutMs) ? voice.downloadTimeoutMs : 20000,
+  },
+  transcription: {
+    provider: transcription.provider === "http" ? "http" : "command",
+    timeoutMs: Number.isInteger(transcription.timeoutMs) ? transcription.timeoutMs : 90000,
+    language: typeof transcription.language === "string" && transcription.language.length > 0 ? transcription.language : "en-US",
+    model: typeof transcription.model === "string" && transcription.model.length > 0 ? transcription.model : "parakeet-v3",
+    command,
+    commandArgs: Array.isArray(transcription.commandArgs) && transcription.commandArgs.every((value) => typeof value === "string")
+      ? transcription.commandArgs
+      : ["{input}"],
+    baseUrl: typeof transcription.baseUrl === "string" && transcription.baseUrl.length > 0
+      ? transcription.baseUrl
+      : "http://127.0.0.1:9000",
+    httpPath: typeof transcription.httpPath === "string" && transcription.httpPath.length > 0
+      ? transcription.httpPath
+      : "/v1/audio/transcriptions",
+  },
+}
+
+fs.mkdirSync(path.dirname(configPath), { recursive: true })
+fs.writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8")
+' "${config_path}" "${enabled}" "${command_value}"
+}
+
+attempt_auto_provision_parakeet() {
+  local install_helper="${CURRENT_LINK}/scripts/install-parakeet-v3.sh"
+
+  if command -v parakeet-v3-transcribe >/dev/null 2>&1; then
+    printf '%s' "parakeet-v3-transcribe"
+    return 0
+  fi
+
+  if command -v parakeet-transcribe >/dev/null 2>&1; then
+    printf '%s' "parakeet-transcribe"
+    return 0
+  fi
+
+  if [[ -x "${install_helper}" ]]; then
+    if "${install_helper}"; then
+      if command -v parakeet-v3-transcribe >/dev/null 2>&1; then
+        printf '%s' "parakeet-v3-transcribe"
+        return 0
+      fi
+      if command -v parakeet-transcribe >/dev/null 2>&1; then
+        printf '%s' "parakeet-transcribe"
+        return 0
+      fi
+    fi
+  fi
+
+  return 1
+}
+
+cmd_configure_voice_transcription() {
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    info "Voice transcription setup skipped in non-interactive mode"
+    return 0
+  fi
+
+  local enable_voice=""
+  while true; do
+    read -r -p "Enable local voice transcription (Parakeet v3) now? [y/N]: " enable_voice
+    case "${enable_voice:-N}" in
+      Y|y)
+        break
+        ;;
+      N|n|"")
+        update_telegram_voice_settings "0" ""
+        info "Voice transcription disabled in settings"
+        return 0
+        ;;
+      *)
+        warn "Please answer y or N"
+        ;;
+    esac
+  done
+
+  info "Attempting automatic local Parakeet v3 provisioning..."
+  local command_name=""
+  if command_name="$(attempt_auto_provision_parakeet)"; then
+    update_telegram_voice_settings "1" "${command_name}"
+    success "Voice transcription enabled with command: ${command_name}"
+    return 0
+  fi
+
+  warn "Automatic Parakeet setup is not available in this installation"
+  update_telegram_voice_settings "1" ""
+  warn "Voice intake stays enabled, but transcription command is unset"
+  warn "Telegram voice messages will receive a 'cannot transcribe yet' notice until command is installed"
 }
 
 validate_task_profile_file() {
@@ -671,7 +792,6 @@ ExecStart=${node_path} ${CURRENT_LINK}/dist/index.mjs serve
 WorkingDirectory=${HOME}
 Restart=on-failure
 RestartSec=5
-EnvironmentFile=-${TELEGRAM_ENV_FILE}
 Environment=HOME=${HOME}
 Environment=PATH=${PATH}
 Environment=NODE_ENV=production
@@ -696,20 +816,6 @@ install_service_macos() {
   node_path="$(command -v node)"
 
   mkdir -p "${HOME}/Library/LaunchAgents"
-
-  local telegram_env_keys=""
-
-  if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-    telegram_env_keys+="
-    <key>TELEGRAM_BOT_TOKEN</key>
-    <string>$(xml_escape "${TELEGRAM_BOT_TOKEN}")</string>"
-  fi
-
-  if [[ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ]]; then
-    telegram_env_keys+="
-    <key>TELEGRAM_ALLOWED_USER_ID</key>
-    <string>$(xml_escape "${TELEGRAM_ALLOWED_USER_ID}")</string>"
-  fi
 
   cat > "${PLIST_FILE}" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -738,7 +844,6 @@ install_service_macos() {
     <string>${PATH}</string>
     <key>NODE_ENV</key>
     <string>production</string>
-${telegram_env_keys}
   </dict>
   <key>StandardOutPath</key>
   <string>${HOME}/.local/share/otto/logs/service.log</string>
@@ -838,6 +943,7 @@ cmd_update() {
   write_install_meta "${repo}"
   run_setup
   ensure_telegram_credentials || true
+  cmd_configure_voice_transcription || true
   install_service
   restart_service
 
@@ -871,6 +977,7 @@ Usage:
   ottoctl start
   ottoctl stop
   ottoctl configure-telegram
+  ottoctl configure-voice-transcription
   ottoctl task profiles list
   ottoctl task profiles validate [profile-id]
   ottoctl task profiles install <profile-file.jsonc>
@@ -912,6 +1019,10 @@ main() {
     configure-telegram)
       shift
       cmd_configure_telegram "$@"
+      ;;
+    configure-voice-transcription)
+      shift
+      cmd_configure_voice_transcription "$@"
       ;;
     task)
       shift

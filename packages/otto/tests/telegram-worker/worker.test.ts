@@ -7,12 +7,14 @@ import type { Logger } from "pino"
 
 import { openPersistenceDatabase } from "../../src/persistence/index.js"
 import { startTelegramWorker, type TelegramBotRuntime } from "../../src/telegram-worker/worker.js"
+import type { TelegramWorkerConfig } from "../../src/telegram-worker/config.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-worker-")
 const cleanupPaths: string[] = []
 
 afterEach(async () => {
   vi.useRealTimers()
+  vi.unstubAllGlobals()
   await Promise.all(
     cleanupPaths.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true }))
   )
@@ -39,7 +41,7 @@ const createLoggerStub = () => {
 }
 
 const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
-  let handler:
+  let textHandler:
     | ((update: {
         sourceMessageId: string
         chatId: number
@@ -48,16 +50,38 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
         update: unknown
       }) => Promise<void>)
     | null = null
+  let voiceHandler:
+    | ((update: {
+        sourceMessageId: string
+        chatId: number
+        userId: number
+        voice: {
+          fileId: string
+          fileUniqueId: string | null
+          durationSec: number
+          mimeType: string
+          fileSizeBytes: number | null
+        }
+        update: unknown
+      }) => Promise<void>)
+    | null = null
 
   const sentMessages: Array<{ chatId: number; text: string }> = []
 
   const runtime: TelegramBotRuntime = {
     onTextMessage: (nextHandler) => {
-      handler = nextHandler
+      textHandler = nextHandler
+    },
+    onVoiceMessage: (nextHandler) => {
+      voiceHandler = nextHandler
     },
     sendMessage: async (chatId, text) => {
       sentMessages.push({ chatId, text })
     },
+    resolveVoiceDownload: async () => ({
+      url: "http://127.0.0.1/voice.ogg",
+      fileSizeBytes: 123,
+    }),
     launch: async () => {
       if (options.launchError) {
         throw options.launchError
@@ -76,12 +100,65 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
       text: string
       update: unknown
     }) => {
-      if (!handler) {
+      if (!textHandler) {
         throw new Error("Handler not registered")
       }
 
-      await handler(update)
+      await textHandler(update)
     },
+    dispatchVoice: async (update: {
+      sourceMessageId: string
+      chatId: number
+      userId: number
+      voice: {
+        fileId: string
+        fileUniqueId: string | null
+        durationSec: number
+        mimeType: string
+        fileSizeBytes: number | null
+      }
+      update: unknown
+    }) => {
+      if (!voiceHandler) {
+        throw new Error("Voice handler not registered")
+      }
+
+      await voiceHandler(update)
+    },
+  }
+}
+
+const createWorkerConfig = (
+  overrides: Partial<TelegramWorkerConfig> = {}
+): TelegramWorkerConfig => {
+  return {
+    enabled: true,
+    botToken: "token",
+    allowedUserId: 1001,
+    heartbeatMs: 2_000,
+    outboundPollMs: 2_000,
+    outboundMaxAttempts: 5,
+    outboundRetryBaseMs: 5_000,
+    outboundRetryMaxMs: 300_000,
+    opencodeBaseUrl: "http://127.0.0.1:4096",
+    promptTimeoutMs: 10_000,
+    voice: {
+      enabled: false,
+      maxDurationSec: 180,
+      maxBytes: 10 * 1024 * 1024,
+      downloadTimeoutMs: 20_000,
+    },
+    transcription: {
+      provider: "command",
+      timeoutMs: 90_000,
+      language: "en-US",
+      model: "parakeet-v3",
+      command: "parakeet-cli",
+      commandArgs: ["{input}"],
+      baseUrl: "http://127.0.0.1:9000",
+      httpPath: "/v1/audio/transcriptions",
+    },
+    ...overrides,
   }
 }
 
@@ -98,16 +175,7 @@ describe("startTelegramWorker", () => {
     const worker = await startTelegramWorker(
       logger,
       {
-        enabled: true,
-        botToken: "token",
-        allowedUserId: 1001,
-        heartbeatMs: 2_000,
-        outboundPollMs: 2_000,
-        outboundMaxAttempts: 5,
-        outboundRetryBaseMs: 5_000,
-        outboundRetryMaxMs: 300_000,
-        opencodeBaseUrl: "http://127.0.0.1:4096",
-        promptTimeoutMs: 10_000,
+        ...createWorkerConfig(),
       },
       {
         createBotRuntime: () => fakeBot.runtime,
@@ -123,7 +191,7 @@ describe("startTelegramWorker", () => {
 
     // Assert
     expect(info).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         heartbeatMs: 2_000,
         outboundPollMs: 2_000,
         outboundMaxAttempts: 5,
@@ -132,7 +200,7 @@ describe("startTelegramWorker", () => {
         hasBotToken: true,
         allowedUserId: 1001,
         opencodeBaseUrl: "http://127.0.0.1:4096",
-      },
+      }),
       "Telegram worker started"
     )
     expect(debug).toHaveBeenCalledWith({ heartbeatMs: 2_000 }, "Telegram worker heartbeat")
@@ -148,16 +216,7 @@ describe("startTelegramWorker", () => {
     const worker = await startTelegramWorker(
       logger,
       {
-        enabled: true,
-        botToken: "token",
-        allowedUserId: 1001,
-        heartbeatMs: 2_000,
-        outboundPollMs: 2_000,
-        outboundMaxAttempts: 5,
-        outboundRetryBaseMs: 5_000,
-        outboundRetryMaxMs: 300_000,
-        opencodeBaseUrl: "http://127.0.0.1:4096",
-        promptTimeoutMs: 10_000,
+        ...createWorkerConfig(),
       },
       {
         createBotRuntime: () => fakeBot.runtime,
@@ -203,18 +262,7 @@ describe("startTelegramWorker", () => {
     const { logger, info } = createLoggerStub()
 
     // Act
-    const worker = await startTelegramWorker(logger, {
-      enabled: false,
-      botToken: "",
-      allowedUserId: 0,
-      heartbeatMs: 2_000,
-      outboundPollMs: 2_000,
-      outboundMaxAttempts: 5,
-      outboundRetryBaseMs: 5_000,
-      outboundRetryMaxMs: 300_000,
-      opencodeBaseUrl: "http://127.0.0.1:4096",
-      promptTimeoutMs: 10_000,
-    })
+    const worker = await startTelegramWorker(logger, createWorkerConfig({ enabled: false }))
     await worker.stop()
 
     // Assert
@@ -232,16 +280,7 @@ describe("startTelegramWorker", () => {
     const worker = await startTelegramWorker(
       logger,
       {
-        enabled: true,
-        botToken: "token",
-        allowedUserId: 1001,
-        heartbeatMs: 2_000,
-        outboundPollMs: 2_000,
-        outboundMaxAttempts: 5,
-        outboundRetryBaseMs: 5_000,
-        outboundRetryMaxMs: 300_000,
-        opencodeBaseUrl: "http://127.0.0.1:4096",
-        promptTimeoutMs: 10_000,
+        ...createWorkerConfig(),
       },
       {
         createBotRuntime: () => fakeBot.runtime,
@@ -263,6 +302,134 @@ describe("startTelegramWorker", () => {
       { error: "launch failed" },
       "Telegram bot launch failed; inbound updates may be unavailable"
     )
+
+    await worker.stop()
+  })
+
+  it("rejects oversized voice payload before transcription", async () => {
+    // Arrange
+    const { logger } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+    const transcribe = vi.fn(async () => ({ text: "ok", language: "en" }))
+
+    const worker = await startTelegramWorker(
+      logger,
+      createWorkerConfig({
+        voice: {
+          enabled: true,
+          maxDurationSec: 180,
+          maxBytes: 128,
+          downloadTimeoutMs: 20_000,
+        },
+      }),
+      {
+        createBotRuntime: () => fakeBot.runtime,
+        openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+        createSessionGateway: () => ({
+          ensureSession: async () => "session-1",
+          promptSession: async () => "ok",
+        }),
+        createTranscriptionGateway: () => ({ transcribe }),
+      }
+    )
+
+    // Act
+    await fakeBot.dispatchVoice({
+      sourceMessageId: "voice-oversize-1",
+      chatId: 2002,
+      userId: 1001,
+      voice: {
+        fileId: "file-1",
+        fileUniqueId: "unique-1",
+        durationSec: 8,
+        mimeType: "audio/ogg",
+        fileSizeBytes: 1024,
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    // Assert
+    expect(transcribe).not.toHaveBeenCalled()
+    const lastMessage = fakeBot.sentMessages[fakeBot.sentMessages.length - 1]
+    expect(lastMessage?.text).toContain("too large")
+
+    await worker.stop()
+  })
+
+  it("transcribes voice input and forwards transcript into inbound bridge", async () => {
+    // Arrange
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(Buffer.from("voice-audio"), {
+          status: 200,
+          headers: {
+            "content-length": "11",
+          },
+        })
+      })
+    )
+
+    const { logger } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+    const ensureSession = vi.fn(async () => "session-1")
+    const promptSession = vi.fn(async () => "assistant reply")
+
+    const worker = await startTelegramWorker(
+      logger,
+      createWorkerConfig({
+        voice: {
+          enabled: true,
+          maxDurationSec: 180,
+          maxBytes: 1024 * 1024,
+          downloadTimeoutMs: 20_000,
+        },
+      }),
+      {
+        createBotRuntime: () => fakeBot.runtime,
+        openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+        createSessionGateway: () => ({
+          ensureSession,
+          promptSession,
+        }),
+        createTranscriptionGateway: () => ({
+          transcribe: async () => ({ text: "voice transcript", language: "en-US" }),
+        }),
+      }
+    )
+
+    // Act
+    await fakeBot.dispatchVoice({
+      sourceMessageId: "voice-success-1",
+      chatId: 2002,
+      userId: 1001,
+      voice: {
+        fileId: "file-1",
+        fileUniqueId: "unique-1",
+        durationSec: 8,
+        mimeType: "audio/ogg",
+        fileSizeBytes: 1024,
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    // Assert
+    expect(ensureSession).toHaveBeenCalled()
+    expect(promptSession).toHaveBeenCalledWith("session-1", "voice transcript")
 
     await worker.stop()
   })

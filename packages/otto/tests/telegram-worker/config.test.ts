@@ -1,105 +1,160 @@
-import { describe, expect, it } from "vitest"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 
-import { resolveTelegramWorkerConfig } from "../../src/telegram-worker/config.js"
+import { afterEach, describe, expect, it } from "vitest"
+
+import {
+  loadTelegramCredentials,
+  resolveTelegramWorkerConfig,
+  resolveTelegramSecretsFilePath,
+} from "../../src/telegram-worker/config.js"
+
+const TEMP_PREFIX = path.join(tmpdir(), "otto-telegram-config-")
+const cleanupPaths: string[] = []
+
+const defaultSettings = {
+  voice: {
+    enabled: false,
+    maxDurationSec: 180,
+    maxBytes: 10 * 1024 * 1024,
+    downloadTimeoutMs: 20_000,
+  },
+  transcription: {
+    provider: "command" as const,
+    timeoutMs: 90_000,
+    language: "en-US",
+    model: "parakeet-v3",
+    command: null,
+    commandArgs: ["{input}"],
+    baseUrl: "http://127.0.0.1:9000",
+    httpPath: "/v1/audio/transcriptions",
+  },
+}
+
+afterEach(async () => {
+  await Promise.all(
+    cleanupPaths.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true }))
+  )
+})
+
+describe("loadTelegramCredentials", () => {
+  it("loads bot token and allowlisted user from secrets file", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const secretsPath = path.join(tempRoot, "telegram.env")
+    await writeFile(secretsPath, "TELEGRAM_BOT_TOKEN=abc\nTELEGRAM_ALLOWED_USER_ID=123\n", "utf8")
+
+    // Act
+    const credentials = loadTelegramCredentials(secretsPath)
+
+    // Assert
+    expect(credentials).toEqual({
+      botToken: "abc",
+      allowedUserId: 123,
+    })
+  })
+
+  it("returns null credentials when file is missing", () => {
+    // Arrange
+    const secretsPath = path.join(tmpdir(), "missing-telegram.env")
+
+    // Act
+    const credentials = loadTelegramCredentials(secretsPath)
+
+    // Assert
+    expect(credentials).toEqual({
+      botToken: null,
+      allowedUserId: null,
+    })
+  })
+
+  it("resolves default secrets location under user home", () => {
+    // Arrange
+    const home = "/tmp/test-home"
+
+    // Act
+    const resolved = resolveTelegramSecretsFilePath(home)
+
+    // Assert
+    expect(resolved).toBe("/tmp/test-home/.local/share/otto/secrets/telegram.env")
+  })
+})
 
 describe("resolveTelegramWorkerConfig", () => {
-  it("uses safe defaults when optional values are missing", () => {
+  it("resolves worker config from settings and credentials", () => {
     // Arrange
-    const environment = {
-      OTTO_TELEGRAM_WORKER_ENABLED: "0",
-    }
-
-    // Act
-    const config = resolveTelegramWorkerConfig(environment)
-
-    // Assert
-    expect(config).toEqual({
-      enabled: false,
-      botToken: "",
-      allowedUserId: 0,
-      heartbeatMs: 60_000,
-      outboundPollMs: 2_000,
-      outboundMaxAttempts: 5,
-      outboundRetryBaseMs: 5_000,
-      outboundRetryMaxMs: 300_000,
-      opencodeBaseUrl: "http://127.0.0.1:4096",
-      promptTimeoutMs: 120_000,
-    })
-  })
-
-  it("resolves enabled worker policy fields", () => {
-    // Arrange
-    const environment = {
-      TELEGRAM_BOT_TOKEN: "bot-token",
-      TELEGRAM_ALLOWED_USER_ID: "123",
-    }
-
-    // Act
-    const config = resolveTelegramWorkerConfig(environment)
-
-    // Assert
-    expect(config).toEqual({
-      enabled: true,
+    const credentials = {
       botToken: "bot-token",
-      allowedUserId: 123,
-      heartbeatMs: 60_000,
-      outboundPollMs: 2_000,
-      outboundMaxAttempts: 5,
-      outboundRetryBaseMs: 5_000,
-      outboundRetryMaxMs: 300_000,
-      opencodeBaseUrl: "http://127.0.0.1:4096",
-      promptTimeoutMs: 120_000,
-    })
+      allowedUserId: 1001,
+    }
+
+    // Act
+    const config = resolveTelegramWorkerConfig(
+      {
+        ...defaultSettings,
+        voice: {
+          ...defaultSettings.voice,
+          enabled: true,
+        },
+      },
+      credentials
+    )
+
+    // Assert
+    expect(config.enabled).toBe(true)
+    expect(config.botToken).toBe("bot-token")
+    expect(config.allowedUserId).toBe(1001)
+    expect(config.voice.enabled).toBe(true)
+    expect(config.transcription.model).toBe("parakeet-v3")
   })
 
-  it("throws when heartbeat interval is invalid", () => {
+  it("throws when bot token is missing", () => {
     // Arrange
-    const environment = {
-      OTTO_TELEGRAM_WORKER_HEARTBEAT_MS: "200",
+    const credentials = {
+      botToken: null,
+      allowedUserId: 1001,
     }
 
     // Act and Assert
-    expect(() => resolveTelegramWorkerConfig(environment)).toThrow(
-      "OTTO_TELEGRAM_WORKER_HEARTBEAT_MS"
+    expect(() => resolveTelegramWorkerConfig(defaultSettings, credentials)).toThrow(
+      "TELEGRAM_BOT_TOKEN"
     )
   })
 
-  it("throws when required allowlist values are missing while enabled", () => {
+  it("throws when allowed user id is missing", () => {
     // Arrange
-    const environment = {
-      TELEGRAM_BOT_TOKEN: "bot-token",
+    const credentials = {
+      botToken: "bot-token",
+      allowedUserId: null,
     }
 
     // Act and Assert
-    expect(() => resolveTelegramWorkerConfig(environment)).toThrow("TELEGRAM_ALLOWED_USER_ID")
-  })
-
-  it("throws when prompt timeout is too small", () => {
-    // Arrange
-    const environment = {
-      TELEGRAM_BOT_TOKEN: "bot-token",
-      TELEGRAM_ALLOWED_USER_ID: "123",
-      OTTO_TELEGRAM_PROMPT_TIMEOUT_MS: "1000",
-    }
-
-    // Act and Assert
-    expect(() => resolveTelegramWorkerConfig(environment)).toThrow(
-      "OTTO_TELEGRAM_PROMPT_TIMEOUT_MS"
+    expect(() => resolveTelegramWorkerConfig(defaultSettings, credentials)).toThrow(
+      "TELEGRAM_ALLOWED_USER_ID"
     )
   })
 
-  it("throws when outbound retry max is below retry base", () => {
+  it("throws when transcription base URL is invalid", () => {
     // Arrange
-    const environment = {
-      TELEGRAM_BOT_TOKEN: "bot-token",
-      TELEGRAM_ALLOWED_USER_ID: "123",
-      OTTO_TELEGRAM_OUTBOUND_RETRY_BASE_MS: "5000",
-      OTTO_TELEGRAM_OUTBOUND_RETRY_MAX_MS: "1000",
+    const credentials = {
+      botToken: "bot-token",
+      allowedUserId: 1001,
     }
 
     // Act and Assert
-    expect(() => resolveTelegramWorkerConfig(environment)).toThrow(
-      "OTTO_TELEGRAM_OUTBOUND_RETRY_MAX_MS"
-    )
+    expect(() =>
+      resolveTelegramWorkerConfig(
+        {
+          ...defaultSettings,
+          transcription: {
+            ...defaultSettings.transcription,
+            baseUrl: "localhost:9000",
+          },
+        },
+        credentials
+      )
+    ).toThrow("transcription.baseUrl")
   })
 })
