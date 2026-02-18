@@ -1170,6 +1170,10 @@ cmd_update() {
 
   info "Using artifact ${artifact_name} (${tag})"
 
+  if ! cd "${HOME}"; then
+    warn "Could not change working directory to ${HOME}; continuing update anyway"
+  fi
+
   install_release "${tag}" "${artifact_url}"
   write_install_meta "${repo}"
   run_setup

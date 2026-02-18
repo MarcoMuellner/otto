@@ -57,6 +57,30 @@ ensure_ffmpeg() {
   return 1
 }
 
+install_python_venv_prereqs() {
+  if ! command -v apt-get >/dev/null 2>&1; then
+    return 1
+  fi
+
+  local apt_prefix=""
+  if [[ "${EUID}" -ne 0 ]]; then
+    if command -v sudo >/dev/null 2>&1; then
+      apt_prefix="sudo"
+    else
+      warn "sudo is not available; cannot install python3-venv/python3-pip automatically"
+      return 1
+    fi
+  fi
+
+  info "Attempting to install python3-venv and python3-pip"
+  if ${apt_prefix} apt-get update && ${apt_prefix} apt-get install -y python3-venv python3-pip; then
+    success "Installed python3-venv/python3-pip"
+    return 0
+  fi
+
+  return 1
+}
+
 ensure_venv_pip() {
   if "${VENV_DIR}/bin/python" -m pip --version >/dev/null 2>&1; then
     return 0
@@ -95,7 +119,18 @@ if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
   python3 -m venv "${VENV_DIR}"
 fi
 
-ensure_venv_pip
+if ! ensure_venv_pip; then
+  warn "pip bootstrap failed in existing virtual environment"
+
+  if install_python_venv_prereqs; then
+    warn "Recreating virtual environment after installing Python prerequisites"
+    rm -rf "${VENV_DIR}"
+    python3 -m venv "${VENV_DIR}"
+  fi
+
+  ensure_venv_pip
+fi
+
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip >/dev/null
 
 info "Installing faster-whisper runtime"
