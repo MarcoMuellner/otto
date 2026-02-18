@@ -1,0 +1,62 @@
+{
+  "registryVersion": 1,
+  "generatedAt": "2026-02-18T10:52:31.791Z",
+  "extensions": {
+    "google-calendar": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/google-calendar-0.1.0.tgz",
+          "sha256": "545d405a7809a97418b15e02ac8a52529ad26e2f946409f638b60e84254a366f",
+          "sizeBytes": 1713,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "Google Calendar MCP server for scheduling, availability checks, and event updates.",
+          "payloadTypes": [
+            "skills",
+            "mcp"
+          ]
+        }
+      }
+    },
+    "obsidian": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/obsidian-0.1.0.tgz",
+          "sha256": "9fe0907d79b454c029cb391d9754e0827d3e2c8d3b2f63ddcc1ee7570ddd62b2",
+          "sizeBytes": 5227,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "Obsidian-focused writing and editing skill set for OpenCode.",
+          "payloadTypes": [
+            "skills"
+          ]
+        }
+      }
+    },
+    "playwright-mcp": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/playwright-mcp-0.1.0.tgz",
+          "sha256": "591e625fb9c0708f927680ff4f2580b11a0ce4d18a22505a4a9f836e4b786385",
+          "sizeBytes": 1648,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "Browser automation MCP server for web navigation and interaction.",
+          "payloadTypes": [
+            "skills",
+            "mcp"
+          ]
+        }
+      }
+    }
+  }
+}

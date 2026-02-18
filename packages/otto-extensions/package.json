@@ -5,7 +5,12 @@
   "type": "module",
   "description": "Catalog package for installable Otto extensions (tools, skills, MCP, overlays).",
   "scripts": {
+    "registry:generate": "node scripts/generate-registry.mjs",
     "build": "node -e \"process.stdout.write('otto-extensions: nothing to build\\n')\"",
     "test": "node -e \"process.stdout.write('otto-extensions: no tests yet\\n')\""
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1",
+    "semver": "^7.7.4"
   }
 }

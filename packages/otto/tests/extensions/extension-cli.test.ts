@@ -1,49 +1,22 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { afterEach, describe, expect, it } from "vitest"
 
 import { runExtensionCliCommand } from "../../src/extension-cli.js"
+import { createRegistryHarness, type RegistryHarness } from "./registry-harness.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-extension-cli-")
 const cleanupPaths: string[] = []
+const cleanupHarnesses: RegistryHarness[] = []
 
 afterEach(async () => {
+  await Promise.all(cleanupHarnesses.splice(0).map(async (harness) => harness.close()))
   await Promise.all(
     cleanupPaths.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true }))
   )
 })
-
-const writeCatalogExtension = async (
-  catalogRoot: string,
-  extensionId: string,
-  version: string
-): Promise<void> => {
-  const extensionRoot = path.join(catalogRoot, extensionId)
-  await mkdir(path.join(extensionRoot, "skills"), { recursive: true })
-  await writeFile(path.join(extensionRoot, "skills", `${extensionId}.md`), "# skill\n", "utf8")
-  await writeFile(
-    path.join(extensionRoot, "manifest.jsonc"),
-    `${JSON.stringify(
-      {
-        schemaVersion: 1,
-        id: extensionId,
-        name: `${extensionId} extension`,
-        version,
-        description: "Example",
-        payload: {
-          skills: {
-            path: "skills",
-          },
-        },
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  )
-}
 
 describe("extension cli", () => {
   it("supports install, update --all, list, and disable", async () => {
@@ -52,9 +25,10 @@ describe("extension cli", () => {
     cleanupPaths.push(tempRoot)
 
     const ottoHome = path.join(tempRoot, ".otto")
-    const catalogRoot = path.join(tempRoot, "catalog")
-    await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
-    await writeCatalogExtension(catalogRoot, "notes", "1.0.0")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await harness.publishExtensionVersion("notes", "1.0.0")
 
     const outputs: string[] = []
     const errors: string[] = []
@@ -69,12 +43,12 @@ describe("extension cli", () => {
 
     const env = {
       OTTO_HOME: ottoHome,
-      OTTO_EXTENSION_CATALOG_ROOT: catalogRoot,
+      OTTO_EXTENSION_REGISTRY_URL: harness.registryUrl,
     }
 
     // Act
     const installCode = await runExtensionCliCommand(["install", "calendar"], streams, env)
-    await writeCatalogExtension(catalogRoot, "calendar", "1.1.0")
+    await harness.publishExtensionVersion("calendar", "1.1.0")
     await runExtensionCliCommand(["install", "notes"], streams, env)
     const updateAllCode = await runExtensionCliCommand(["update", "--all"], streams, env)
     const listCode = await runExtensionCliCommand(["list"], streams, env)

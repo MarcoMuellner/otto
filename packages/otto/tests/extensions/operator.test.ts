@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -13,106 +13,56 @@ import {
   updateAllExtensions,
   updateExtension,
 } from "../../src/extensions/index.js"
+import { createRegistryHarness, type RegistryHarness } from "./registry-harness.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-extension-operator-")
 const cleanupPaths: string[] = []
+const cleanupHarnesses: RegistryHarness[] = []
 
 afterEach(async () => {
+  await Promise.all(cleanupHarnesses.splice(0).map(async (harness) => harness.close()))
   await Promise.all(
     cleanupPaths.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true }))
   )
 })
-
-const writeCatalogExtension = async (
-  catalogRoot: string,
-  extensionId: string,
-  version: string,
-  description = "Example extension"
-): Promise<void> => {
-  const extensionRoot = path.join(catalogRoot, extensionId)
-  await mkdir(path.join(extensionRoot, "tools"), { recursive: true })
-  await mkdir(path.join(extensionRoot, "skills", `${extensionId}-skill`), { recursive: true })
-  await writeFile(
-    path.join(extensionRoot, "tools", `${extensionId}.ts`),
-    "export default {}\n",
-    "utf8"
-  )
-  await writeFile(
-    path.join(extensionRoot, "skills", `${extensionId}-skill`, "SKILL.md"),
-    `---\nname: ${extensionId}-skill\ndescription: Example skill for ${extensionId}\n---\n\nUse this skill.\n`,
-    "utf8"
-  )
-  await writeFile(
-    path.join(extensionRoot, "mcp.jsonc"),
-    `${JSON.stringify(
-      {
-        [`${extensionId}-mcp`]: {
-          type: "local",
-          command: ["npx", "-y", "@playwright/mcp@latest", "--headless"],
-          enabled: true,
-        },
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  )
-  await writeFile(
-    path.join(extensionRoot, "manifest.jsonc"),
-    `${JSON.stringify(
-      {
-        schemaVersion: 1,
-        id: extensionId,
-        name: `${extensionId} extension`,
-        version,
-        description,
-        payload: {
-          tools: {
-            path: "tools",
-          },
-          skills: {
-            path: "skills",
-          },
-          mcp: {
-            file: "mcp.jsonc",
-          },
-        },
-      },
-      null,
-      2
-    )}\n`,
-    "utf8"
-  )
-}
 
 describe("extension operator service", () => {
   it("installs latest version, activates runtime footprint, and keeps command idempotent", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
-    const catalogRoot = path.join(tempRoot, "catalog")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
     const ottoHome = path.join(tempRoot, ".otto")
-    await writeCatalogExtension(catalogRoot, "calendar", "1.2.0")
+    await harness.publishExtensionVersion("calendar", "1.2.0")
 
     // Act
-    const first = await installExtension({ ottoHome, catalogRoot }, "calendar")
-    const second = await installExtension({ ottoHome, catalogRoot }, "calendar")
+    const first = await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    const second = await installExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
 
     // Assert
     expect(first.installedVersion).toBe("1.2.0")
     expect(second.wasAlreadyInstalled).toBe(true)
 
-    const skillPath = path.join(
-      ottoHome,
-      "extensions",
-      "store",
-      "calendar",
-      "1.2.0",
-      "skills",
-      "calendar-skill",
-      "SKILL.md"
-    )
-    await expect(readFile(skillPath, "utf8")).resolves.toContain("skill")
+    await expect(
+      readFile(
+        path.join(
+          ottoHome,
+          "extensions",
+          "store",
+          "calendar",
+          "1.2.0",
+          "skills",
+          "calendar-skill",
+          "SKILL.md"
+        ),
+        "utf8"
+      )
+    ).resolves.toContain("skill")
     await expect(
       readFile(
         path.join(ottoHome, ".opencode", "tools", "extensions", "calendar", "calendar.ts"),
@@ -128,15 +78,19 @@ describe("extension operator service", () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
-    const catalogRoot = path.join(tempRoot, "catalog")
-    const ottoHome = path.join(tempRoot, ".otto")
-    await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
-    await installExtension({ ottoHome, catalogRoot }, "calendar")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
 
-    await writeCatalogExtension(catalogRoot, "calendar", "1.1.0")
+    const ottoHome = path.join(tempRoot, ".otto")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    await harness.publishExtensionVersion("calendar", "1.1.0")
 
     // Act
-    const updated = await updateExtension({ ottoHome, catalogRoot }, "calendar")
+    const updated = await updateExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
 
     // Assert
     expect(updated.installedVersion).toBe("1.1.0")
@@ -168,19 +122,20 @@ describe("extension operator service", () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
-    const catalogRoot = path.join(tempRoot, "catalog")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
     const ottoHome = path.join(tempRoot, ".otto")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await harness.publishExtensionVersion("notes", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "notes")
 
-    await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
-    await writeCatalogExtension(catalogRoot, "notes", "1.0.0")
-    await installExtension({ ottoHome, catalogRoot }, "calendar")
-    await installExtension({ ottoHome, catalogRoot }, "notes")
-
-    await writeCatalogExtension(catalogRoot, "calendar", "1.1.0")
-    await writeCatalogExtension(catalogRoot, "notes", "1.2.0")
+    await harness.publishExtensionVersion("calendar", "1.1.0")
+    await harness.publishExtensionVersion("notes", "1.2.0")
 
     // Act
-    const updates = await updateAllExtensions({ ottoHome, catalogRoot })
+    const updates = await updateAllExtensions({ ottoHome, registryUrl: harness.registryUrl })
 
     // Assert
     expect(updates).toHaveLength(2)
@@ -194,13 +149,18 @@ describe("extension operator service", () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
-    const catalogRoot = path.join(tempRoot, "catalog")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
     const ottoHome = path.join(tempRoot, ".otto")
-    await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
-    await installExtension({ ottoHome, catalogRoot }, "calendar")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
 
     // Act
-    const removed = await disableExtension({ ottoHome, catalogRoot }, "calendar")
+    const removed = await disableExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
 
     // Assert
     expect(removed).toEqual({ id: "calendar", removedVersion: "1.0.0" })
@@ -222,30 +182,37 @@ describe("extension operator service", () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
-    const catalogRoot = path.join(tempRoot, "catalog")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
     const ottoHome = path.join(tempRoot, ".otto")
-    await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
-    await installExtension({ ottoHome, catalogRoot }, "calendar")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
 
     // Act
-    const removed = await removeExtension({ ottoHome, catalogRoot }, "calendar")
+    const removed = await removeExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
 
     // Assert
     expect(removed).toEqual({ id: "calendar", removedVersion: "1.0.0" })
   })
 
-  it("lists catalog and installed update availability", async () => {
+  it("lists registry and installed update availability", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
-    const catalogRoot = path.join(tempRoot, "catalog")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
     const ottoHome = path.join(tempRoot, ".otto")
-    await writeCatalogExtension(catalogRoot, "calendar", "1.0.0")
-    await installExtension({ ottoHome, catalogRoot }, "calendar")
-    await writeCatalogExtension(catalogRoot, "calendar", "1.1.0")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    await harness.publishExtensionVersion("calendar", "1.1.0")
 
     // Act
-    const summary = await listExtensions({ ottoHome, catalogRoot })
+    const summary = await listExtensions({ ottoHome, registryUrl: harness.registryUrl })
 
     // Assert
     expect(summary.catalog[0]?.latestVersion).toBe("1.1.0")

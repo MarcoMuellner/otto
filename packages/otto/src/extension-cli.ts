@@ -2,6 +2,7 @@ import os from "node:os"
 import path from "node:path"
 
 import {
+  DEFAULT_EXTENSION_REGISTRY_URL,
   disableExtension,
   installExtension,
   listExtensions,
@@ -16,12 +17,6 @@ type CliStreams = {
 }
 
 type ExtensionCliEnvironment = NodeJS.ProcessEnv
-
-const resolveDefaultCatalogRoot = (): string => {
-  const entrypointPath = process.argv[1] ? path.resolve(process.argv[1]) : path.resolve("dist")
-  const currentFileDirectory = path.dirname(entrypointPath)
-  return path.join(currentFileDirectory, "assets", "extensions", "catalog")
-}
 
 const usage = `Usage: extension-cli <command> [options]
 
@@ -69,7 +64,7 @@ const printList = (
  *
  * @param args CLI arguments after `extension`.
  * @param streams Output streams used by command execution.
- * @param environment Environment values for Otto home and catalog root.
+ * @param environment Environment values for Otto home and registry URL.
  * @returns Process exit code.
  */
 export const runExtensionCliCommand = async (
@@ -79,10 +74,11 @@ export const runExtensionCliCommand = async (
 ): Promise<number> => {
   const [command, ...rest] = args
   const ottoHome = environment.OTTO_HOME ?? path.join(os.homedir(), ".otto")
-  const catalogRoot = environment.OTTO_EXTENSION_CATALOG_ROOT ?? resolveDefaultCatalogRoot()
+  const registryUrl =
+    environment.OTTO_EXTENSION_REGISTRY_URL?.trim() || DEFAULT_EXTENSION_REGISTRY_URL
   const context = {
     ottoHome,
-    catalogRoot,
+    registryUrl,
   }
 
   try {

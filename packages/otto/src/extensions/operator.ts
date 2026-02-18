@@ -3,14 +3,14 @@ import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises"
 
 import semver from "semver"
 
-import {
-  formatValidationReport,
-  type ExtensionCatalogEntry,
-  parseJsonc,
-  type ExtensionManifest,
-  validateExtensionCatalog,
-} from "otto-extension-sdk"
+import { parseJsonc, type ExtensionManifest } from "otto-extension-sdk"
 
+import {
+  fetchExtensionRegistryIndex,
+  installRegistryArchiveToPath,
+  listRegistryExtensions,
+  resolveRegistryEntry,
+} from "./registry.js"
 import {
   createExtensionStateRepository,
   ensureExtensionPersistenceDirectories,
@@ -49,28 +49,6 @@ const parseTargetSpecifier = (value: string): { id: string; version: string | nu
   }
 
   return { id, version }
-}
-
-const resolveCatalogEntries = async (
-  catalogRoot: string
-): Promise<{ entries: ExtensionCatalogEntry[]; byId: Map<string, ExtensionCatalogEntry[]> }> => {
-  const validation = await validateExtensionCatalog(catalogRoot)
-  if (!validation.ok) {
-    throw new Error(formatValidationReport(validation, catalogRoot))
-  }
-
-  const byId = new Map<string, ExtensionCatalogEntry[]>()
-  for (const entry of validation.entries) {
-    const group = byId.get(entry.id) ?? []
-    group.push(entry)
-    byId.set(entry.id, group)
-  }
-
-  for (const group of byId.values()) {
-    group.sort((left, right) => semver.rcompare(left.version, right.version))
-  }
-
-  return { entries: validation.entries, byId }
 }
 
 const removeStoreVersionIfPresent = async (
@@ -219,32 +197,6 @@ const removeRuntimeFootprintForExtension = async (
   await loadMcpFragment(storeVersionPath, manifest)
 }
 
-const resolveCatalogEntryForInstall = (
-  byId: Map<string, ExtensionCatalogEntry[]>,
-  extensionId: string,
-  version: string | null
-): ExtensionCatalogEntry => {
-  const candidates = byId.get(extensionId)
-  if (!candidates || candidates.length === 0) {
-    throw new Error(`Extension '${extensionId}' is not present in catalog`)
-  }
-
-  if (!version) {
-    const latest = candidates[0]
-    if (!latest) {
-      throw new Error(`Could not resolve latest version for extension '${extensionId}'`)
-    }
-    return latest
-  }
-
-  const exact = candidates.find((candidate) => candidate.version === version)
-  if (!exact) {
-    throw new Error(`Extension '${extensionId}@${version}' is not present in catalog`)
-  }
-
-  return exact
-}
-
 export type ExtensionOperatorListResult = {
   catalog: Array<{
     id: string
@@ -273,14 +225,14 @@ export type ExtensionRemoveResult = {
 
 type ExtensionOperatorContext = {
   ottoHome: string
-  catalogRoot: string
+  registryUrl: string
 }
 
 /**
  * Lists catalog availability and locally installed extension versions so operators can quickly
  * inspect what is available and what is currently installed.
  *
- * @param context Extension operator context with Otto home and catalog root.
+ * @param context Extension operator context with Otto home and registry URL.
  * @returns Catalog and installed extension summary.
  */
 export const listExtensions = async (
@@ -288,32 +240,19 @@ export const listExtensions = async (
 ): Promise<ExtensionOperatorListResult> => {
   await ensureExtensionPersistenceDirectories(context.ottoHome)
 
-  const { byId } = await resolveCatalogEntries(context.catalogRoot)
+  const index = await fetchExtensionRegistryIndex(context.registryUrl)
+  const registryCatalog = listRegistryExtensions(index)
+  const latestById = new Map(registryCatalog.map((entry) => [entry.id, entry.latestVersion]))
+
   const repository = createExtensionStateRepository(context.ottoHome)
   const installed = await repository.listInstalledExtensions()
 
-  const catalog = [...byId.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([id, entries]) => {
-      const versions = entries.map((entry) => entry.version)
-      const latestVersion = versions[0]
-      if (!latestVersion) {
-        throw new Error(`Catalog for '${id}' has no versions`)
-      }
-
-      return {
-        id,
-        versions,
-        latestVersion,
-      }
-    })
-
   const installedSummary = installed
     .map((entry) => {
-      const latestCatalogVersion = byId.get(entry.id)?.[0]?.version ?? null
+      const latestCatalogVersion = latestById.get(entry.id) ?? null
       const installedVersion = resolveLatestVersion(entry.installedVersions)
       if (!installedVersion) {
-        throw new Error(`Installed extension '${entry.id}' has no versions`) // invariant
+        throw new Error(`Installed extension '${entry.id}' has no versions`)
       }
 
       return {
@@ -326,16 +265,16 @@ export const listExtensions = async (
     .sort((left, right) => left.id.localeCompare(right.id))
 
   return {
-    catalog,
+    catalog: registryCatalog,
     installed: installedSummary,
   }
 }
 
 /**
- * Installs an extension from catalog into local store and prunes older installed versions so
+ * Installs an extension from registry into local store and prunes older installed versions so
  * operator-managed state remains single-version per extension id.
  *
- * @param context Extension operator context with Otto home and catalog root.
+ * @param context Extension operator context with Otto home and registry URL.
  * @param target User target string in `<id>` or `<id>@<version>` form.
  * @returns Installation result and pruned version metadata.
  */
@@ -346,8 +285,8 @@ export const installExtension = async (
   await ensureExtensionPersistenceDirectories(context.ottoHome)
 
   const parsed = parseTargetSpecifier(target)
-  const { byId } = await resolveCatalogEntries(context.catalogRoot)
-  const selected = resolveCatalogEntryForInstall(byId, parsed.id, parsed.version)
+  const index = await fetchExtensionRegistryIndex(context.registryUrl)
+  const selected = resolveRegistryEntry(index, parsed.id, parsed.version)
 
   const repository = createExtensionStateRepository(context.ottoHome)
   const existing = (await repository.listInstalledExtensions()).find(
@@ -370,7 +309,7 @@ export const installExtension = async (
   const paths = resolveExtensionPersistencePaths(context.ottoHome)
   const targetPath = path.join(paths.storeRoot, selected.id, selected.version)
   await rm(targetPath, { recursive: true, force: true })
-  await cp(selected.directory, targetPath, { recursive: true })
+  await installRegistryArchiveToPath(selected, targetPath)
 
   await repository.recordInstalledVersion(selected.id, selected.version)
   await repository.setActiveVersion(selected.id, selected.version)
@@ -390,10 +329,10 @@ export const installExtension = async (
 }
 
 /**
- * Updates a single installed extension by installing the latest catalog version and pruning
+ * Updates a single installed extension by installing the latest registry version and pruning
  * stale versions from local store/state.
  *
- * @param context Extension operator context with Otto home and catalog root.
+ * @param context Extension operator context with Otto home and registry URL.
  * @param extensionId Extension id to update.
  * @returns Installation result for the updated extension.
  */
@@ -405,10 +344,10 @@ export const updateExtension = async (
 }
 
 /**
- * Updates all currently installed extensions to latest catalog versions so operators can run
- * a single command for bulk catalog refresh.
+ * Updates all currently installed extensions to latest registry versions so operators can run
+ * a single command for bulk extension refresh.
  *
- * @param context Extension operator context with Otto home and catalog root.
+ * @param context Extension operator context with Otto home and registry URL.
  * @returns Per-extension update results.
  */
 export const updateAllExtensions = async (
@@ -433,7 +372,7 @@ export const updateAllExtensions = async (
  * Removes the currently installed extension version from store/state with active guardrails so
  * destructive operations remain safe and deterministic.
  *
- * @param context Extension operator context with Otto home and catalog root.
+ * @param context Extension operator context with Otto home and registry URL.
  * @param target User target string in `<id>` or `<id>@<version>` form.
  * @returns Removal metadata.
  */
@@ -480,7 +419,7 @@ export const removeExtension = async (
  * Disables an installed extension by removing its runtime footprint and uninstalling the
  * retained version so extension behavior is immediately removed from runtime.
  *
- * @param context Extension operator context with Otto home and catalog root.
+ * @param context Extension operator context with Otto home and registry URL.
  * @param extensionId Extension id to disable.
  * @returns Removal metadata.
  */

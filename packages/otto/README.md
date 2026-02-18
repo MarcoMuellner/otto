@@ -35,6 +35,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
 - Extension store root: `~/.otto/extensions/store/<id>/<version>`
 - Extension activation state file: `~/.otto/extensions/state.json`
+- Extension registry index default: `https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/index.json`
+- Extension registry override env (optional): `OTTO_EXTENSION_REGISTRY_URL`
 - `ottoctl extension install/update` retains one installed version per extension id by pruning older versions
 - `ottoctl extension install/update` immediately activates extension tools and skills into `~/.otto/.opencode`
 - `ottoctl extension disable` removes the installed extension footprint (runtime + store)
@@ -74,7 +76,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl task show <task-id>`
   - `ottoctl task audit [limit]`
   - `ottoctl extension list`
-  - `ottoctl extension install <id>[@version]` (default installs latest catalog version)
+  - `ottoctl extension install <id>[@version]` (default installs latest registry version)
   - `ottoctl extension update <id>`
   - `ottoctl extension update --all`
   - `ottoctl extension disable <id>`

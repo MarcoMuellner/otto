@@ -2,6 +2,20 @@
 
 Catalog package for versioned Otto extensions.
 
+The published remote registry index used by `ottoctl extension ...` lives at:
+
+- `registry/index.json`
+
+Each extension version is packaged as a tarball under:
+
+- `registry/artifacts/<id>-<version>.tgz`
+
+Generate registry artifacts and index from current extension sources:
+
+```bash
+pnpm -C packages/otto-extensions run registry:generate
+```
+
 ## Layout
 
 - `extensions/<id>/manifest.jsonc`

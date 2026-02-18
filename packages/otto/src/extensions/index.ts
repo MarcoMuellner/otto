@@ -13,6 +13,7 @@ export {
   updateExtension,
 } from "./operator.js"
 export { materializeEffectiveOpencodeConfig } from "./opencode-config.js"
+export { DEFAULT_EXTENSION_REGISTRY_URL } from "./registry.js"
 export type {
   ExtensionStateRecord,
   ExtensionStateRepository,
