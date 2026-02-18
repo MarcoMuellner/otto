@@ -7,6 +7,7 @@ CURRENT_LINK="${OTTO_ROOT}/current"
 INSTALL_META="${OTTO_ROOT}/install.env"
 SECRETS_DIR="${OTTO_ROOT}/secrets"
 TELEGRAM_ENV_FILE="${SECRETS_DIR}/telegram.env"
+RUNTIME_ENV_FILE="${SECRETS_DIR}/runtime.env"
 BIN_DIR="${OTTO_BIN_DIR:-$HOME/.local/bin}"
 SERVICE_NAME="otto"
 PLIST_LABEL="com.otto.assistant"
@@ -75,6 +76,15 @@ load_telegram_env() {
   fi
 }
 
+load_runtime_env() {
+  if [[ -f "${RUNTIME_ENV_FILE}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${RUNTIME_ENV_FILE}"
+    set +a
+  fi
+}
+
 has_telegram_credentials() {
   [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && [[ -n "${TELEGRAM_ALLOWED_USER_ID:-}" ]]
 }
@@ -83,10 +93,146 @@ is_positive_integer() {
   [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]]
 }
 
+is_valid_env_key() {
+  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
 sql_escape() {
   local value="$1"
   value="${value//\'/\'\'}"
   printf '%s' "${value}"
+}
+
+xml_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  value="${value//\'/&apos;}"
+  printf '%s' "${value}"
+}
+
+ensure_runtime_env_file() {
+  mkdir -p "${SECRETS_DIR}"
+  chmod 700 "${SECRETS_DIR}"
+  touch "${RUNTIME_ENV_FILE}"
+  chmod 600 "${RUNTIME_ENV_FILE}"
+}
+
+set_runtime_env_value() {
+  local key="$1"
+  local value="$2"
+
+  ensure_runtime_env_file
+
+  node -e '
+const fs = require("node:fs")
+const envPath = process.argv[1]
+const key = process.argv[2]
+const value = process.argv[3]
+
+const lines = fs.existsSync(envPath)
+  ? fs.readFileSync(envPath, "utf8").split(/\r?\n/)
+  : []
+
+const entries = new Map()
+
+for (const rawLine of lines) {
+  const line = rawLine.trim()
+  if (!line || line.startsWith("#")) continue
+  const idx = line.indexOf("=")
+  if (idx <= 0) continue
+  const entryKey = line.slice(0, idx).trim()
+  const entryValue = line.slice(idx + 1).trim()
+  if (!entryKey) continue
+  entries.set(entryKey, entryValue)
+}
+
+entries.set(key, JSON.stringify(value))
+
+const output = Array.from(entries.entries())
+  .sort((a, b) => a[0].localeCompare(b[0]))
+  .map(([k, v]) => `${k}=${v}`)
+  .join("\n")
+
+fs.writeFileSync(envPath, output.length > 0 ? `${output}\n` : "", "utf8")
+' "${RUNTIME_ENV_FILE}" "${key}" "${value}"
+}
+
+unset_runtime_env_value() {
+  local key="$1"
+
+  ensure_runtime_env_file
+
+  node -e '
+const fs = require("node:fs")
+const envPath = process.argv[1]
+const key = process.argv[2]
+
+const lines = fs.existsSync(envPath)
+  ? fs.readFileSync(envPath, "utf8").split(/\r?\n/)
+  : []
+
+const entries = new Map()
+
+for (const rawLine of lines) {
+  const line = rawLine.trim()
+  if (!line || line.startsWith("#")) continue
+  const idx = line.indexOf("=")
+  if (idx <= 0) continue
+  const entryKey = line.slice(0, idx).trim()
+  const entryValue = line.slice(idx + 1).trim()
+  if (!entryKey) continue
+  entries.set(entryKey, entryValue)
+}
+
+entries.delete(key)
+
+const output = Array.from(entries.entries())
+  .sort((a, b) => a[0].localeCompare(b[0]))
+  .map(([k, v]) => `${k}=${v}`)
+  .join("\n")
+
+fs.writeFileSync(envPath, output.length > 0 ? `${output}\n` : "", "utf8")
+' "${RUNTIME_ENV_FILE}" "${key}"
+}
+
+runtime_env_plist_entries() {
+  if [[ ! -f "${RUNTIME_ENV_FILE}" ]]; then
+    return
+  fi
+
+  local keys=()
+  while IFS= read -r raw_line; do
+    local line="${raw_line%%$'\r'}"
+    line="${line#${line%%[![:space:]]*}}"
+    [[ -z "${line}" || "${line}" == \#* ]] && continue
+    local key="${line%%=*}"
+    key="${key%%[[:space:]]*}"
+    if [[ -n "${key}" ]] && is_valid_env_key "${key}"; then
+      keys+=("${key}")
+    fi
+  done < "${RUNTIME_ENV_FILE}"
+
+  if [[ ${#keys[@]} -eq 0 ]]; then
+    return
+  fi
+
+  (
+    set -a
+    # shellcheck disable=SC1090
+    source "${RUNTIME_ENV_FILE}"
+    set +a
+
+    local key
+    for key in "${keys[@]}"; do
+      local value="${!key-}"
+      if [[ -n "${value}" ]]; then
+        printf '    <key>%s</key>\n    <string>%s</string>\n' "$(xml_escape "${key}")" "$(xml_escape "${value}")"
+      fi
+    done
+  )
 }
 
 persist_telegram_credentials() {
@@ -713,6 +859,82 @@ cmd_extension() {
   esac
 }
 
+cmd_env_path() {
+  echo "${RUNTIME_ENV_FILE}"
+}
+
+cmd_env_list() {
+  ensure_runtime_env_file
+  info "Runtime environment file: ${RUNTIME_ENV_FILE}"
+  if [[ ! -s "${RUNTIME_ENV_FILE}" ]]; then
+    echo "(empty)"
+    return
+  fi
+
+  cat "${RUNTIME_ENV_FILE}"
+}
+
+cmd_env_set() {
+  local key="${1:-}"
+  local value="${2:-}"
+
+  if [[ -z "${key}" || -z "${value}" ]]; then
+    error "Usage: ottoctl env set <KEY> <VALUE>"
+    exit 1
+  fi
+
+  if ! is_valid_env_key "${key}"; then
+    error "Invalid environment variable key: ${key}"
+    exit 1
+  fi
+
+  set_runtime_env_value "${key}" "${value}"
+  success "Saved ${key} to ${RUNTIME_ENV_FILE}"
+  info "Run: ottoctl restart (or ottoctl stop && ottoctl start) to apply"
+}
+
+cmd_env_unset() {
+  local key="${1:-}"
+
+  if [[ -z "${key}" ]]; then
+    error "Usage: ottoctl env unset <KEY>"
+    exit 1
+  fi
+
+  if ! is_valid_env_key "${key}"; then
+    error "Invalid environment variable key: ${key}"
+    exit 1
+  fi
+
+  unset_runtime_env_value "${key}"
+  success "Removed ${key} from ${RUNTIME_ENV_FILE}"
+  info "Run: ottoctl restart (or ottoctl stop && ottoctl start) to apply"
+}
+
+cmd_env() {
+  local subcommand="${1:-list}"
+  shift || true
+
+  case "${subcommand}" in
+    list)
+      cmd_env_list "$@"
+      ;;
+    path)
+      cmd_env_path "$@"
+      ;;
+    set)
+      cmd_env_set "$@"
+      ;;
+    unset)
+      cmd_env_unset "$@"
+      ;;
+    *)
+      error "Unknown env command: ${subcommand}"
+      exit 1
+      ;;
+  esac
+}
+
 resolve_repo() {
   local explicit_repo="${1:-}"
   if [[ -n "${explicit_repo}" ]]; then
@@ -792,6 +1014,7 @@ ExecStart=${node_path} ${CURRENT_LINK}/dist/index.mjs serve
 WorkingDirectory=${HOME}
 Restart=on-failure
 RestartSec=5
+EnvironmentFile=-${RUNTIME_ENV_FILE}
 Environment=HOME=${HOME}
 Environment=PATH=${PATH}
 Environment=NODE_ENV=production
@@ -814,6 +1037,8 @@ EOF
 install_service_macos() {
   local node_path
   node_path="$(command -v node)"
+  local runtime_env_keys=""
+  runtime_env_keys="$(runtime_env_plist_entries)"
 
   mkdir -p "${HOME}/Library/LaunchAgents"
 
@@ -844,6 +1069,7 @@ install_service_macos() {
     <string>${PATH}</string>
     <key>NODE_ENV</key>
     <string>production</string>
+${runtime_env_keys}
   </dict>
   <key>StandardOutPath</key>
   <string>${HOME}/.local/share/otto/logs/service.log</string>
@@ -956,6 +1182,12 @@ cmd_start() {
   success "Otto service started"
 }
 
+cmd_restart() {
+  install_service
+  restart_service
+  success "Otto service restarted"
+}
+
 cmd_stop() {
   stop_service
   success "Otto service stopped"
@@ -975,9 +1207,14 @@ ottoctl - Otto server control
 
 Usage:
   ottoctl start
+  ottoctl restart
   ottoctl stop
   ottoctl configure-telegram
   ottoctl configure-voice-transcription
+  ottoctl env list
+  ottoctl env path
+  ottoctl env set <KEY> <VALUE>
+  ottoctl env unset <KEY>
   ottoctl task profiles list
   ottoctl task profiles validate [profile-id]
   ottoctl task profiles install <profile-file.jsonc>
@@ -1002,6 +1239,7 @@ main() {
 
   load_install_meta
   load_telegram_env
+  load_runtime_env
   OTTO_HOME="$(resolve_otto_home)"
   TASK_CONFIG_DIR="${OTTO_HOME}/task-config"
   TASK_PROFILE_DIR="${TASK_CONFIG_DIR}/profiles"
@@ -1015,6 +1253,10 @@ main() {
     stop)
       shift
       cmd_stop "$@"
+      ;;
+    restart)
+      shift
+      cmd_restart "$@"
       ;;
     configure-telegram)
       shift
@@ -1031,6 +1273,10 @@ main() {
     extension)
       shift
       cmd_extension "$@"
+      ;;
+    env)
+      shift
+      cmd_env "$@"
       ;;
     update)
       shift

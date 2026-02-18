@@ -28,6 +28,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Runtime behavior is file-first: edit this config to customize host/port/workspace
 - Pretty terminal logs are opt-in via `OTTO_PRETTY_LOGS=1` (default runtime logging is structured and deployment-safe)
 - Telegram worker credentials are stored in `~/.local/share/otto/secrets/telegram.env` and managed by `ottoctl configure-telegram`
+- Service runtime env vars are stored in `~/.local/share/otto/secrets/runtime.env` and loaded on boot (systemd `EnvironmentFile`, launchd plist environment)
+- Manage runtime env vars with `ottoctl env set <KEY> <VALUE>`, `ottoctl env unset <KEY>`, and `ottoctl env list`
 - Telegram worker runtime defaults (heartbeat, retries, prompt timeout, OpenCode bridge URL) are fixed by runtime code and no longer configured through env vars
 - Telegram voice/transcription settings live in `~/.config/otto/config.jsonc` under `telegram.voice` and `telegram.transcription` and are configured by `ottoctl configure-voice-transcription`
 - `ottoctl configure-voice-transcription` attempts one-shot local provisioning via `scripts/install-parakeet-v3.sh` (Python venv + NeMo + Parakeet model cache) and falls back safely when auto-provisioning is unavailable
@@ -67,9 +69,11 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
 
 - Installed control binary: `ottoctl`
   - `ottoctl start`
+  - `ottoctl restart`
   - `ottoctl stop`
   - `ottoctl configure-telegram` (interactive Telegram credential setup, skippable)
   - `ottoctl configure-voice-transcription` (interactive local Parakeet v3 setup, best-effort and skippable)
+  - `ottoctl env list|path|set|unset` (manage service boot-time environment variables)
   - `ottoctl task profiles list`
   - `ottoctl task profiles validate [profile-id]`
   - `ottoctl task profiles install <profile-file.jsonc>`
