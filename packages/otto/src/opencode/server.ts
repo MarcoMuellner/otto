@@ -7,6 +7,7 @@ type ServeServerInput = {
   hostname: string
   port: number
   configPath: string
+  startupTimeoutMs?: number
 }
 
 type OpencodeServerHandle = {
@@ -48,9 +49,14 @@ export const startOpencodeServer = async ({
   hostname,
   port,
   configPath,
+  startupTimeoutMs = 30_000,
 }: ServeServerInput): Promise<OpencodeServerHandle> => {
   await parseOpencodeConfig(configPath)
-  const server = await createOpencodeServer({ hostname, port })
+  const server = await createOpencodeServer({
+    hostname,
+    port,
+    timeout: startupTimeoutMs,
+  })
 
   return {
     url: server.url,
