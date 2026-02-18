@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "home-assistant",
+  "name": "Home Assistant MCP",
+  "version": "0.1.0",
+  "description": "Home Assistant MCP server integration for device control and home automations.",
+  "tags": ["mcp", "home-assistant", "automation", "smarthome"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "mcp": {
+      "file": "mcp.jsonc",
+    },
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": ["mcp-proxy", "bash"],
+    "env": ["HOME_ASSISTANT_MCP_URL", "HOME_ASSISTANT_API_ACCESS_TOKEN"],
+    "files": [],
+  },
+  "dependencies": [],
+}

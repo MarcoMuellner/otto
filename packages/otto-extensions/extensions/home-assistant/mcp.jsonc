@@ -1,0 +1,11 @@
+{
+  "home-assistant": {
+    "type": "local",
+    "command": [
+      "bash",
+      "-lc",
+      "API_ACCESS_TOKEN=\"$HOME_ASSISTANT_API_ACCESS_TOKEN\" mcp-proxy --transport=streamablehttp --stateless \"${HOME_ASSISTANT_MCP_URL:-http://localhost:8123/api/mcp}\"",
+    ],
+    "enabled": true,
+  },
+}
