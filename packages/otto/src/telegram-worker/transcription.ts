@@ -213,8 +213,10 @@ const createHttpTranscriptionGateway = (
 const resolveDefaultWorkerScriptPath = (): string => {
   const modulePath = decodeURIComponent(new URL(import.meta.url).pathname)
   const moduleDirectory = path.dirname(modulePath)
+  const ottoRoot = process.env.OTTO_ROOT ?? path.resolve(moduleDirectory, "..")
   const candidatePaths = [
-    path.resolve(moduleDirectory, "../../scripts/parakeet-worker.py"),
+    path.resolve(moduleDirectory, "../scripts/parakeet-worker.py"),
+    path.resolve(ottoRoot, "current", "scripts", "parakeet-worker.py"),
     path.resolve(process.cwd(), "scripts/parakeet-worker.py"),
   ]
 
