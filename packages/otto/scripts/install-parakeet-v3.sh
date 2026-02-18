@@ -7,6 +7,8 @@ MODEL_ROOT="${OTTO_ROOT}/models/parakeet-v3"
 VENV_DIR="${MODEL_ROOT}/.venv"
 MODEL_NAME="${OTTO_PARAKEET_MODEL:-nvidia/parakeet-tdt-0.6b-v3}"
 COMMAND_PATH="${BIN_DIR}/parakeet-v3-transcribe"
+TORCH_INDEX_URL_JETSON="${OTTO_TORCH_INDEX_URL_JETSON:-https://pypi.jetson-ai-lab.dev/jp6/cu126}"
+ENABLE_WARMUP="${OTTO_PARAKEET_WARMUP:-0}"
 
 BLUE=$'\033[0;34m'
 GREEN=$'\033[0;32m'
@@ -53,6 +55,53 @@ ensure_venv_pip() {
   return 1
 }
 
+is_jetson_platform() {
+  [[ -f /etc/nv_tegra_release ]]
+}
+
+ensure_torch_runtime() {
+  if "${VENV_DIR}/bin/python" - <<'PY' >/dev/null 2>&1
+import torch
+print(torch.__version__)
+PY
+  then
+    if "${VENV_DIR}/bin/python" - <<'PY' >/dev/null 2>&1
+import torch
+raise SystemExit(0 if torch.cuda.is_available() else 1)
+PY
+    then
+      info "PyTorch with CUDA is already available in venv"
+      return 0
+    fi
+  fi
+
+  if is_jetson_platform; then
+    info "Installing Jetson CUDA-enabled PyTorch from ${TORCH_INDEX_URL_JETSON}"
+    if ! "${VENV_DIR}/bin/python" -m pip install --upgrade --extra-index-url "${TORCH_INDEX_URL_JETSON}" torch; then
+      error "Failed to install CUDA-enabled torch for Jetson"
+      return 1
+    fi
+
+    if ! "${VENV_DIR}/bin/python" - <<'PY' >/dev/null 2>&1
+import torch
+raise SystemExit(0 if torch.cuda.is_available() else 1)
+PY
+    then
+      error "Installed torch does not expose CUDA. Check JetPack/PyTorch wheel compatibility."
+      return 1
+    fi
+
+    success "CUDA-enabled PyTorch detected"
+    return 0
+  fi
+
+  info "Installing default PyTorch runtime"
+  if ! "${VENV_DIR}/bin/python" -m pip install --upgrade torch; then
+    error "Failed to install PyTorch runtime"
+    return 1
+  fi
+}
+
 info "Preparing local Parakeet v3 runtime"
 require_cmd python3
 
@@ -65,6 +114,7 @@ fi
 
 ensure_venv_pip
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip >/dev/null
+ensure_torch_runtime
 
 if ! "${VENV_DIR}/bin/python" -c "import nemo.collections.asr" >/dev/null 2>&1; then
   info "Installing NeMo ASR dependencies (this can take a while)"
@@ -76,15 +126,19 @@ else
   info "NeMo ASR already installed in venv"
 fi
 
-info "Warming Parakeet model cache (${MODEL_NAME})"
-if ! "${VENV_DIR}/bin/python" - <<PY
+if [[ "${ENABLE_WARMUP}" == "1" ]]; then
+  info "Warming Parakeet model cache (${MODEL_NAME})"
+  if ! "${VENV_DIR}/bin/python" - <<PY
 from nemo.collections.asr.models import ASRModel
 ASRModel.from_pretrained("${MODEL_NAME}")
 print("ok")
 PY
-then
-  error "Failed to download/load model ${MODEL_NAME}"
-  exit 1
+  then
+    error "Failed to download/load model ${MODEL_NAME}"
+    exit 1
+  fi
+else
+  info "Skipping model warmup for faster setup (set OTTO_PARAKEET_WARMUP=1 to enable)"
 fi
 
 cat > "${COMMAND_PATH}" <<'EOF'
