@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "obsidian",
+  "name": "Obsidian Skills",
+  "version": "0.1.0",
+  "description": "Obsidian-focused writing and editing skill set for OpenCode.",
+  "tags": ["skills", "obsidian", "markdown", "notes"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "env": [],
+    "files": [],
+    "binaries": [],
+  },
+  "dependencies": [],
+}
