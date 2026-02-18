@@ -28,6 +28,13 @@ require_cmd() {
   fi
 }
 
+resolve_python_minor() {
+  python3 - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+}
+
 ensure_ffmpeg() {
   if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
     info "ffmpeg is already installed"
@@ -72,13 +79,58 @@ install_python_venv_prereqs() {
     fi
   fi
 
-  info "Attempting to install python3-venv and python3-pip"
-  if ${apt_prefix} apt-get update && ${apt_prefix} apt-get install -y python3-venv python3-pip; then
-    success "Installed python3-venv/python3-pip"
+  local python_minor
+  python_minor="$(resolve_python_minor)"
+
+  info "Attempting to install Python venv prerequisites"
+  if ${apt_prefix} apt-get update && ${apt_prefix} apt-get install -y python3-venv python3-pip python3-virtualenv ca-certificates curl; then
+    ${apt_prefix} apt-get install -y "python${python_minor}-venv" >/dev/null 2>&1 || true
+    success "Installed Python prerequisites"
     return 0
   fi
 
   return 1
+}
+
+create_virtual_environment() {
+  if python3 -m venv "${VENV_DIR}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v virtualenv >/dev/null 2>&1; then
+    virtualenv -p python3 "${VENV_DIR}" >/dev/null 2>&1
+    return $?
+  fi
+
+  return 1
+}
+
+bootstrap_pip_with_download() {
+  local downloader=""
+  local get_pip
+  get_pip="$(mktemp)"
+
+  if command -v curl >/dev/null 2>&1; then
+    downloader="curl -fsSL"
+  elif command -v wget >/dev/null 2>&1; then
+    downloader="wget -qO-"
+  else
+    rm -f "${get_pip}"
+    return 1
+  fi
+
+  if ! sh -c "${downloader} https://bootstrap.pypa.io/get-pip.py" >"${get_pip}"; then
+    rm -f "${get_pip}"
+    return 1
+  fi
+
+  if ! "${VENV_DIR}/bin/python" "${get_pip}" >/dev/null 2>&1; then
+    rm -f "${get_pip}"
+    return 1
+  fi
+
+  rm -f "${get_pip}"
+  return 0
 }
 
 ensure_venv_pip() {
@@ -92,19 +144,11 @@ ensure_venv_pip() {
     return 0
   fi
 
-  if command -v curl >/dev/null 2>&1; then
-    local get_pip
-    get_pip="$(mktemp)"
-    if curl -fsSL "https://bootstrap.pypa.io/get-pip.py" -o "${get_pip}"; then
-      if "${VENV_DIR}/bin/python" "${get_pip}" >/dev/null 2>&1; then
-        rm -f "${get_pip}"
-        return 0
-      fi
-    fi
-    rm -f "${get_pip}"
+  if bootstrap_pip_with_download; then
+    return 0
   fi
 
-  error "Unable to bootstrap pip in ${VENV_DIR}. Install python3-venv/python3-pip and retry."
+  error "Unable to bootstrap pip in ${VENV_DIR}."
   return 1
 }
 
@@ -116,7 +160,10 @@ mkdir -p "${MODEL_ROOT}" "${WHISPER_CACHE_DIR}"
 
 if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
   info "Creating Python virtual environment at ${VENV_DIR}"
-  python3 -m venv "${VENV_DIR}"
+  if ! create_virtual_environment; then
+    error "Failed to create Python virtual environment at ${VENV_DIR}"
+    exit 1
+  fi
 fi
 
 if ! ensure_venv_pip; then
@@ -125,10 +172,27 @@ if ! ensure_venv_pip; then
   if install_python_venv_prereqs; then
     warn "Recreating virtual environment after installing Python prerequisites"
     rm -rf "${VENV_DIR}"
-    python3 -m venv "${VENV_DIR}"
+    if ! create_virtual_environment; then
+      error "Failed to recreate Python virtual environment at ${VENV_DIR}"
+      exit 1
+    fi
   fi
 
-  ensure_venv_pip
+  if ! ensure_venv_pip; then
+    if command -v virtualenv >/dev/null 2>&1; then
+      warn "Retrying with virtualenv seeder"
+      rm -rf "${VENV_DIR}"
+      if ! virtualenv -p python3 "${VENV_DIR}" >/dev/null 2>&1; then
+        error "Failed to create Python virtual environment with virtualenv"
+        exit 1
+      fi
+    fi
+  fi
+
+  if ! ensure_venv_pip; then
+    error "Unable to provision pip in ${VENV_DIR}. Install python3-venv/python3-pip/python3-virtualenv and rerun."
+    exit 1
+  fi
 fi
 
 "${VENV_DIR}/bin/python" -m pip install --upgrade pip >/dev/null

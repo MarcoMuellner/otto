@@ -413,6 +413,10 @@ attempt_auto_provision_faster_whisper() {
 }
 
 cmd_configure_voice_transcription() {
+  if ! cd "${HOME}"; then
+    warn "Could not change working directory to ${HOME}; continuing setup anyway"
+  fi
+
   if [[ ! -t 0 || ! -t 1 ]]; then
     info "Voice transcription setup skipped in non-interactive mode"
     return 0
@@ -1127,6 +1131,16 @@ restart_service() {
   start_service
 }
 
+ensure_safe_working_directory() {
+  if pwd >/dev/null 2>&1; then
+    return
+  fi
+
+  if ! cd "${HOME}"; then
+    warn "Could not change working directory to ${HOME}; continuing anyway"
+  fi
+}
+
 write_install_meta() {
   local repo="$1"
   mkdir -p "${OTTO_ROOT}"
@@ -1245,6 +1259,8 @@ main() {
   require_cmd curl
   require_cmd tar
   require_cmd node
+
+  ensure_safe_working_directory
 
   load_install_meta
   load_telegram_env
