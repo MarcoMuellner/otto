@@ -10,6 +10,7 @@ describe("voice intake", () => {
   it("accepts payloads within configured limits", () => {
     // Arrange
     const payload = {
+      inputType: "voice" as const,
       fileId: "file-1",
       fileUniqueId: "unique-1",
       durationSec: 30,
@@ -32,6 +33,7 @@ describe("voice intake", () => {
   it("rejects payloads that exceed configured size", () => {
     // Arrange
     const payload = {
+      inputType: "voice" as const,
       fileId: "file-1",
       fileUniqueId: "unique-1",
       durationSec: 30,

@@ -44,6 +44,14 @@ export type TelegramInboundVoiceUpdate = {
   update: unknown
 }
 
+export type TelegramUnsupportedMediaUpdate = {
+  sourceMessageId: string
+  chatId: number
+  userId: number
+  mediaType: "video_note" | "video" | "document" | "photo" | "sticker" | "animation" | "unknown"
+  update: unknown
+}
+
 export type TelegramVoiceDownload = {
   url: string
   fileSizeBytes: number | null
@@ -53,6 +61,9 @@ export type TelegramVoiceDownload = {
 export type TelegramBotRuntime = {
   onTextMessage: (handler: (update: TelegramInboundUpdate) => Promise<void>) => void
   onVoiceMessage: (handler: (update: TelegramInboundVoiceUpdate) => Promise<void>) => void
+  onUnsupportedMediaMessage: (
+    handler: (update: TelegramUnsupportedMediaUpdate) => Promise<void>
+  ) => void
   sendMessage: (chatId: number, text: string) => Promise<void>
   sendChatAction?: (chatId: number, action: "typing") => Promise<void>
   resolveVoiceDownload: (fileId: string) => Promise<TelegramVoiceDownload>
@@ -103,6 +114,7 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
         if ("voice" in message) {
           const voice = message.voice
           voicePayload = {
+            inputType: "voice",
             fileId: voice.file_id,
             fileUniqueId: voice.file_unique_id,
             durationSec: voice.duration,
@@ -112,6 +124,7 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
         } else if ("audio" in message) {
           const audio = message.audio
           voicePayload = {
+            inputType: "audio",
             fileId: audio.file_id,
             fileUniqueId: audio.file_unique_id,
             durationSec: audio.duration,
@@ -129,6 +142,37 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
           chatId: context.chat.id,
           userId: context.from?.id ?? 0,
           voice: voicePayload,
+          update: context.update,
+        })
+      })
+    },
+    onUnsupportedMediaMessage: (handler) => {
+      bot.on("message", async (context) => {
+        const message = context.message
+        if (!message || "text" in message || "voice" in message || "audio" in message) {
+          return
+        }
+
+        const mediaType: TelegramUnsupportedMediaUpdate["mediaType"] =
+          "video_note" in message
+            ? "video_note"
+            : "video" in message
+              ? "video"
+              : "document" in message
+                ? "document"
+                : "photo" in message
+                  ? "photo"
+                  : "sticker" in message
+                    ? "sticker"
+                    : "animation" in message
+                      ? "animation"
+                      : "unknown"
+
+        await handler({
+          sourceMessageId: String(message.message_id),
+          chatId: context.chat.id,
+          userId: context.from?.id ?? 0,
+          mediaType,
           update: context.update,
         })
       })
@@ -254,6 +298,17 @@ export const startTelegramWorker = async (
   }
 
   bot.onTextMessage(async (update) => {
+    logger.info(
+      {
+        sourceMessageId: update.sourceMessageId,
+        chatId: update.chatId,
+        userId: update.userId,
+        messageType: "text",
+        textLength: update.text.length,
+      },
+      "Received inbound Telegram text message"
+    )
+
     const context = extractTelegramAccessContext(update.update)
     const decision = evaluateTelegramAccess(context, {
       allowedUserId: config.allowedUserId,
@@ -287,6 +342,19 @@ export const startTelegramWorker = async (
   })
 
   bot.onVoiceMessage(async (update) => {
+    logger.info(
+      {
+        sourceMessageId: update.sourceMessageId,
+        chatId: update.chatId,
+        userId: update.userId,
+        messageType: update.voice.inputType,
+        mimeType: update.voice.mimeType,
+        durationSec: update.voice.durationSec,
+        fileSizeBytes: update.voice.fileSizeBytes,
+      },
+      "Received inbound Telegram media message for transcription"
+    )
+
     const context = extractTelegramAccessContext(update.update)
     const decision = evaluateTelegramAccess(context, {
       allowedUserId: config.allowedUserId,
@@ -352,6 +420,14 @@ export const startTelegramWorker = async (
 
     const validation = validateVoicePayload(update.voice, config.voice)
     if (!validation.accepted) {
+      logger.info(
+        {
+          sourceMessageId: update.sourceMessageId,
+          chatId: update.chatId,
+          reason: validation.reason,
+        },
+        "Rejected inbound Telegram media before transcription"
+      )
       voiceInboundMessagesRepository.markRejected(update.sourceMessageId, validation.reason)
       await bot.sendMessage(update.chatId, validation.message)
       return
@@ -361,11 +437,41 @@ export const startTelegramWorker = async (
 
     let downloadedBytes: number | null = null
     try {
+      logger.info(
+        { sourceMessageId: update.sourceMessageId, chatId: update.chatId },
+        "Resolving Telegram media download URL"
+      )
       const descriptor = await bot.resolveVoiceDownload(update.voice.fileId)
+      logger.info(
+        {
+          sourceMessageId: update.sourceMessageId,
+          chatId: update.chatId,
+          mediaFileName: descriptor.fileName,
+          mediaFileSizeBytes: descriptor.fileSizeBytes,
+        },
+        "Downloading Telegram media file for transcription"
+      )
       const downloaded = await downloadVoiceFile(descriptor, config.voice)
       downloadedBytes = downloaded.bytes
+      logger.info(
+        {
+          sourceMessageId: update.sourceMessageId,
+          chatId: update.chatId,
+          downloadedBytes,
+        },
+        "Downloaded Telegram media file"
+      )
 
       try {
+        logger.info(
+          {
+            sourceMessageId: update.sourceMessageId,
+            chatId: update.chatId,
+            provider: config.transcription.provider,
+            timeoutMs: config.transcription.timeoutMs,
+          },
+          "Starting local transcription"
+        )
         const transcription = await transcriptionGateway.transcribe({
           audioFilePath: downloaded.filePath,
           mimeType: update.voice.mimeType,
@@ -380,6 +486,16 @@ export const startTelegramWorker = async (
           transcription.language,
           Date.now(),
           downloadedBytes
+        )
+
+        logger.info(
+          {
+            sourceMessageId: update.sourceMessageId,
+            chatId: update.chatId,
+            transcriptLength: transcription.text.length,
+            language: transcription.language,
+          },
+          "Completed local transcription"
         )
 
         await bridge.handleTextMessage({
@@ -428,6 +544,33 @@ export const startTelegramWorker = async (
     } finally {
       inFlightChats.delete(update.chatId)
     }
+  })
+
+  bot.onUnsupportedMediaMessage(async (update) => {
+    logger.info(
+      {
+        sourceMessageId: update.sourceMessageId,
+        chatId: update.chatId,
+        userId: update.userId,
+        messageType: update.mediaType,
+      },
+      "Received unsupported Telegram media message"
+    )
+
+    const context = extractTelegramAccessContext(update.update)
+    const decision = evaluateTelegramAccess(context, {
+      allowedUserId: config.allowedUserId,
+    })
+    logDeniedTelegramAccess(logger, decision, context)
+
+    if (!decision.allowed) {
+      return
+    }
+
+    await bot.sendMessage(
+      update.chatId,
+      "I cannot process this media type yet. Please send a voice note, an audio file, or plain text."
+    )
   })
 
   void bot.launch().catch((error) => {

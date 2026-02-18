@@ -56,12 +56,29 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
         chatId: number
         userId: number
         voice: {
+          inputType: "voice" | "audio"
           fileId: string
           fileUniqueId: string | null
           durationSec: number
           mimeType: string
           fileSizeBytes: number | null
         }
+        update: unknown
+      }) => Promise<void>)
+    | null = null
+  let unsupportedMediaHandler:
+    | ((update: {
+        sourceMessageId: string
+        chatId: number
+        userId: number
+        mediaType:
+          | "video_note"
+          | "video"
+          | "document"
+          | "photo"
+          | "sticker"
+          | "animation"
+          | "unknown"
         update: unknown
       }) => Promise<void>)
     | null = null
@@ -74,6 +91,9 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
     },
     onVoiceMessage: (nextHandler) => {
       voiceHandler = nextHandler
+    },
+    onUnsupportedMediaMessage: (nextHandler) => {
+      unsupportedMediaHandler = nextHandler
     },
     sendMessage: async (chatId, text) => {
       sentMessages.push({ chatId, text })
@@ -112,6 +132,7 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
       chatId: number
       userId: number
       voice: {
+        inputType: "voice" | "audio"
         fileId: string
         fileUniqueId: string | null
         durationSec: number
@@ -125,6 +146,19 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
       }
 
       await voiceHandler(update)
+    },
+    dispatchUnsupportedMedia: async (update: {
+      sourceMessageId: string
+      chatId: number
+      userId: number
+      mediaType: "video_note" | "video" | "document" | "photo" | "sticker" | "animation" | "unknown"
+      update: unknown
+    }) => {
+      if (!unsupportedMediaHandler) {
+        throw new Error("Unsupported media handler not registered")
+      }
+
+      await unsupportedMediaHandler(update)
     },
   }
 }
@@ -342,6 +376,7 @@ describe("startTelegramWorker", () => {
       chatId: 2002,
       userId: 1001,
       voice: {
+        inputType: "voice",
         fileId: "file-1",
         fileUniqueId: "unique-1",
         durationSec: 8,
@@ -414,6 +449,7 @@ describe("startTelegramWorker", () => {
       chatId: 2002,
       userId: 1001,
       voice: {
+        inputType: "voice",
         fileId: "file-1",
         fileUniqueId: "unique-1",
         durationSec: 8,

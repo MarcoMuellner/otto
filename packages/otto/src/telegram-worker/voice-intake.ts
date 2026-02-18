@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises"
 import type { TelegramVoiceConfig } from "./config.js"
 
 export type TelegramVoiceMessage = {
+  inputType: "voice" | "audio"
   fileId: string
   fileUniqueId: string | null
   durationSec: number
