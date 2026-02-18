@@ -185,11 +185,14 @@ const createWorkerConfig = (
     },
     transcription: {
       provider: "command",
-      timeoutMs: 90_000,
+      timeoutMs: 300_000,
+      workerStartupTimeoutMs: 600_000,
       language: "en-US",
       model: "parakeet-v3",
       command: "parakeet-cli",
       commandArgs: ["{input}"],
+      workerScriptPath: null,
+      workerPythonPath: null,
       baseUrl: "http://127.0.0.1:9000",
       httpPath: "/v1/audio/transcriptions",
     },
@@ -366,7 +369,7 @@ describe("startTelegramWorker", () => {
           ensureSession: async () => "session-1",
           promptSession: async () => "ok",
         }),
-        createTranscriptionGateway: () => ({ transcribe }),
+        createTranscriptionGateway: () => ({ transcribe, close: async () => {} }),
       }
     )
 
@@ -439,6 +442,7 @@ describe("startTelegramWorker", () => {
         }),
         createTranscriptionGateway: () => ({
           transcribe: async () => ({ text: "voice transcript", language: "en-US" }),
+          close: async () => {},
         }),
       }
     )

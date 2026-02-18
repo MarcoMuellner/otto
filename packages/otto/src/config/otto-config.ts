@@ -11,12 +11,15 @@ const DEFAULT_TELEGRAM_VOICE_SETTINGS = {
 }
 
 const DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS = {
-  provider: "command" as "command" | "http",
-  timeoutMs: 90_000,
+  provider: "command" as "command" | "http" | "worker",
+  timeoutMs: 300_000,
+  workerStartupTimeoutMs: 600_000,
   language: "en-US",
   model: "parakeet-v3",
   command: null,
   commandArgs: ["{input}"],
+  workerScriptPath: null,
+  workerPythonPath: null,
   baseUrl: "http://127.0.0.1:9000",
   httpPath: "/v1/audio/transcriptions",
 }
@@ -36,12 +39,15 @@ const telegramVoiceSettingsSchema = z
 
 const telegramTranscriptionSettingsSchema = z
   .object({
-    provider: z.enum(["command", "http"]).default("command"),
-    timeoutMs: z.number().int().min(5_000).default(90_000),
+    provider: z.enum(["command", "http", "worker"]).default("command"),
+    timeoutMs: z.number().int().min(5_000).default(300_000),
+    workerStartupTimeoutMs: z.number().int().min(5_000).default(600_000),
     language: z.string().min(1).default("en-US"),
     model: z.string().min(1).default("parakeet-v3"),
     command: z.string().min(1).nullable().default(null),
     commandArgs: z.array(z.string()).default(["{input}"]),
+    workerScriptPath: z.string().min(1).nullable().default(null),
+    workerPythonPath: z.string().min(1).nullable().default(null),
     baseUrl: z.string().url().default("http://127.0.0.1:9000"),
     httpPath: z.string().min(1).default("/v1/audio/transcriptions"),
   })

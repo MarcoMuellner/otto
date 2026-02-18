@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 
 import type { OttoTelegramSettings } from "../config/otto-config.js"
 
-export type TranscriptionProvider = "command" | "http"
+export type TranscriptionProvider = "command" | "http" | "worker"
 
 export type TelegramVoiceConfig = {
   enabled: boolean
@@ -16,10 +16,13 @@ export type TelegramVoiceConfig = {
 export type TelegramTranscriptionConfig = {
   provider: TranscriptionProvider
   timeoutMs: number
+  workerStartupTimeoutMs: number
   language: string
   model: string
   command: string | null
   commandArgs: string[]
+  workerScriptPath: string | null
+  workerPythonPath: string | null
   baseUrl: string
   httpPath: string
 }
@@ -126,8 +129,12 @@ const parseTranscriptionProvider = (
     return provider
   }
 
+  if (provider === "worker") {
+    return provider
+  }
+
   throw new Error(
-    "Invalid Telegram worker settings: transcription.provider must be 'command' or 'http'"
+    "Invalid Telegram worker settings: transcription.provider must be 'command', 'http', or 'worker'"
   )
 }
 
@@ -189,10 +196,13 @@ export const resolveTelegramWorkerConfig = (
     transcription: {
       provider,
       timeoutMs: settings.transcription.timeoutMs,
+      workerStartupTimeoutMs: settings.transcription.workerStartupTimeoutMs,
       language: settings.transcription.language,
       model: settings.transcription.model,
       command: settings.transcription.command,
       commandArgs: settings.transcription.commandArgs,
+      workerScriptPath: settings.transcription.workerScriptPath,
+      workerPythonPath: settings.transcription.workerPythonPath,
       baseUrl: settings.transcription.baseUrl,
       httpPath: settings.transcription.httpPath,
     },

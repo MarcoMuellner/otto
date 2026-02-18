@@ -90,11 +90,12 @@ jobs:
         run: |
           mkdir -p release
           mkdir -p release/stage/bin release/stage/scripts
-          chmod +x packages/otto/bin/ottoctl packages/otto/install.sh packages/otto/scripts/install-parakeet-v3.sh
+          chmod +x packages/otto/bin/ottoctl packages/otto/install.sh packages/otto/scripts/install-parakeet-v3.sh packages/otto/scripts/parakeet-worker.py
           cp -R packages/otto/dist release/stage/dist
           cp packages/otto/bin/ottoctl release/stage/bin/ottoctl
           cp packages/otto/scripts/resolve-release.mjs release/stage/scripts/resolve-release.mjs
           cp packages/otto/scripts/install-parakeet-v3.sh release/stage/scripts/install-parakeet-v3.sh
+          cp packages/otto/scripts/parakeet-worker.py release/stage/scripts/parakeet-worker.py
           cp packages/otto/install.sh release/stage/install.sh
           cp packages/otto/package.json release/stage/package.json
           cp packages/otto/README.md release/stage/README.md
@@ -111,6 +112,7 @@ jobs:
             "./bin/ottoctl"
             "./scripts/resolve-release.mjs"
             "./scripts/install-parakeet-v3.sh"
+            "./scripts/parakeet-worker.py"
             "./install.sh"
             "./package.json"
             "./README.md"

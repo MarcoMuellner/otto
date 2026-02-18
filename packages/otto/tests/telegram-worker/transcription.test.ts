@@ -24,13 +24,16 @@ describe("transcription gateway", () => {
     const inputPath = path.join(tempRoot, "voice.ogg")
     await writeFile(inputPath, "voice")
 
-    const gateway = createTranscriptionGateway({
+    const gateway = await createTranscriptionGateway({
       provider: "command",
       timeoutMs: 30_000,
+      workerStartupTimeoutMs: 60_000,
       language: "en-US",
       model: "parakeet-v3",
       command: "node",
       commandArgs: ["-e", 'process.stdout.write("hello from command")'],
+      workerScriptPath: null,
+      workerPythonPath: null,
       baseUrl: "http://127.0.0.1:9000",
       httpPath: "/v1/audio/transcriptions",
     })
@@ -46,6 +49,7 @@ describe("transcription gateway", () => {
 
     // Assert
     expect(result).toEqual({ text: "hello from command", language: null })
+    await gateway.close()
   })
 
   it("supports HTTP provider response parsing", async () => {
@@ -68,13 +72,16 @@ describe("transcription gateway", () => {
       })
     )
 
-    const gateway = createTranscriptionGateway({
+    const gateway = await createTranscriptionGateway({
       provider: "http",
       timeoutMs: 30_000,
+      workerStartupTimeoutMs: 60_000,
       language: "en-US",
       model: "parakeet-v3",
       command: null,
       commandArgs: ["{input}"],
+      workerScriptPath: null,
+      workerPythonPath: null,
       baseUrl: "http://127.0.0.1:9000",
       httpPath: "/v1/audio/transcriptions",
     })
@@ -90,5 +97,6 @@ describe("transcription gateway", () => {
 
     // Assert
     expect(result).toEqual({ text: "hello from http", language: "en-US" })
+    await gateway.close()
   })
 })

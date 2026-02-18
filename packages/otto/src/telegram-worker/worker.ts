@@ -675,6 +675,9 @@ export const startTelegramWorker = async (
     stop: async () => {
       clearInterval(heartbeatTimer)
       clearInterval(outboundQueueTimer)
+      if (transcriptionGateway) {
+        await transcriptionGateway.close()
+      }
       await bot.stop()
       database.close()
       logger.info("Telegram worker stopped")

@@ -320,6 +320,7 @@ resolve_otto_config_path() {
 update_telegram_voice_settings() {
   local enabled="$1"
   local command_value="$2"
+  local provider_value="${3:-worker}"
 
   local config_path
   config_path="$(resolve_otto_config_path)"
@@ -331,6 +332,7 @@ const path = require("node:path")
 const configPath = process.argv[1]
 const enabled = process.argv[2] === "1"
 const command = process.argv[3] === "" ? null : process.argv[3]
+const provider = process.argv[4] === "http" ? "http" : process.argv[4] === "command" ? "command" : "worker"
 
 let parsed = {
   version: 1,
@@ -355,14 +357,21 @@ parsed.telegram = {
     downloadTimeoutMs: Number.isInteger(voice.downloadTimeoutMs) ? voice.downloadTimeoutMs : 20000,
   },
   transcription: {
-    provider: transcription.provider === "http" ? "http" : "command",
-    timeoutMs: Number.isInteger(transcription.timeoutMs) ? transcription.timeoutMs : 90000,
+    provider,
+    timeoutMs: Number.isInteger(transcription.timeoutMs) && transcription.timeoutMs >= 300000 ? transcription.timeoutMs : 300000,
+    workerStartupTimeoutMs: Number.isInteger(transcription.workerStartupTimeoutMs) && transcription.workerStartupTimeoutMs >= 600000 ? transcription.workerStartupTimeoutMs : 600000,
     language: typeof transcription.language === "string" && transcription.language.length > 0 ? transcription.language : "en-US",
     model: typeof transcription.model === "string" && transcription.model.length > 0 ? transcription.model : "parakeet-v3",
     command,
     commandArgs: Array.isArray(transcription.commandArgs) && transcription.commandArgs.every((value) => typeof value === "string")
       ? transcription.commandArgs
       : ["{input}"],
+    workerScriptPath: typeof transcription.workerScriptPath === "string" && transcription.workerScriptPath.length > 0
+      ? transcription.workerScriptPath
+      : null,
+    workerPythonPath: typeof transcription.workerPythonPath === "string" && transcription.workerPythonPath.length > 0
+      ? transcription.workerPythonPath
+      : null,
     baseUrl: typeof transcription.baseUrl === "string" && transcription.baseUrl.length > 0
       ? transcription.baseUrl
       : "http://127.0.0.1:9000",
@@ -374,7 +383,7 @@ parsed.telegram = {
 
 fs.mkdirSync(path.dirname(configPath), { recursive: true })
 fs.writeFileSync(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8")
-' "${config_path}" "${enabled}" "${command_value}"
+' "${config_path}" "${enabled}" "${command_value}" "${provider_value}"
 }
 
 attempt_auto_provision_parakeet() {
@@ -421,7 +430,7 @@ cmd_configure_voice_transcription() {
         break
         ;;
       N|n|"")
-        update_telegram_voice_settings "0" ""
+        update_telegram_voice_settings "0" "" "worker"
         info "Voice transcription disabled in settings"
         return 0
         ;;
@@ -434,15 +443,15 @@ cmd_configure_voice_transcription() {
   info "Attempting automatic local Parakeet v3 provisioning..."
   local command_name=""
   if command_name="$(attempt_auto_provision_parakeet)"; then
-    update_telegram_voice_settings "1" "${command_name}"
-    success "Voice transcription enabled with command: ${command_name}"
+    update_telegram_voice_settings "1" "${command_name}" "worker"
+    success "Voice transcription enabled with persistent worker backend"
     return 0
   fi
 
   warn "Automatic Parakeet setup is not available in this installation"
-  update_telegram_voice_settings "1" ""
-  warn "Voice intake stays enabled, but transcription command is unset"
-  warn "Telegram voice messages will receive a 'cannot transcribe yet' notice until command is installed"
+  update_telegram_voice_settings "1" "" "worker"
+  warn "Voice intake stays enabled, but transcription worker could not be provisioned"
+  warn "Telegram voice messages will receive a 'cannot transcribe yet' notice until provisioning succeeds"
 }
 
 validate_task_profile_file() {
