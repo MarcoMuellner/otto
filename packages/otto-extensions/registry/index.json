@@ -1,13 +1,13 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-02-18T11:09:43.154Z",
+  "generatedAt": "2026-02-18T11:37:25.745Z",
   "extensions": {
     "google-calendar": {
       "latest": "0.1.0",
       "versions": {
         "0.1.0": {
           "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/google-calendar-0.1.0.tgz",
-          "sha256": "cd77347c20fa9c306db0f55f8bd464c3c6ccca60b18afd092c8d926b410114d0",
+          "sha256": "ec059bfe0b046f07ca194e000519b930a6c790b74bc712b60e252d3c9282459b",
           "sizeBytes": 1713,
           "compatibility": {
             "otto": ">=0.1.0",
@@ -26,7 +26,7 @@
       "versions": {
         "0.1.0": {
           "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/home-assistant-0.1.0.tgz",
-          "sha256": "3e8ba0403dc7b16dab7803a3ee38f96ecd17439a1669670793e685745210a95b",
+          "sha256": "9aa18f253667b7dba33091ef0b8c84c882ad7567d167994c65c9b1fcb3c77bce",
           "sizeBytes": 1797,
           "compatibility": {
             "otto": ">=0.1.0",
@@ -45,7 +45,7 @@
       "versions": {
         "0.1.0": {
           "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/obsidian-0.1.0.tgz",
-          "sha256": "47c9f4c4980d81fe1bbf166d5365215e3d613b76a2b382dae1b6073e236402a2",
+          "sha256": "308a67de2975a09b024ba66057d34b70dd340fa5b12b9c9d6fd5a386dcfbdf94",
           "sizeBytes": 5227,
           "compatibility": {
             "otto": ">=0.1.0",
@@ -58,12 +58,30 @@
         }
       }
     },
+    "onepassword": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/onepassword-0.1.0.tgz",
+          "sha256": "7fef581dd76bd8c8044d92678969ffe134544f2d46d0b125033c3a962ea1c913",
+          "sizeBytes": 1710,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "Use 1Password CLI safely for sign-in, secret reads, and env injection workflows.",
+          "payloadTypes": [
+            "skills"
+          ]
+        }
+      }
+    },
     "playwright-mcp": {
       "latest": "0.1.0",
       "versions": {
         "0.1.0": {
           "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/playwright-mcp-0.1.0.tgz",
-          "sha256": "72ec9a2f113fef25ff755bad40e1ea82253515fca9dd81286e405ca781bea3b2",
+          "sha256": "cb1d1ebf851a79249767bde2d75f5c7faa53ec45257ccf1d89544690544ebfb5",
           "sizeBytes": 1648,
           "compatibility": {
             "otto": ">=0.1.0",

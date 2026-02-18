@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "onepassword",
+  "name": "1Password Skill",
+  "version": "0.1.0",
+  "description": "Use 1Password CLI safely for sign-in, secret reads, and env injection workflows.",
+  "tags": ["skills", "secrets", "onepassword", "security"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": ["op", "tmux"],
+    "env": [],
+    "files": [],
+  },
+  "dependencies": [],
+}
