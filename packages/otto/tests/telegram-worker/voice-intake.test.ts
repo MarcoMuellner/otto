@@ -75,6 +75,7 @@ describe("voice intake", () => {
       {
         url: "https://example.test/voice.ogg",
         fileSizeBytes: 3,
+        fileName: "voice.ogg",
       },
       {
         enabled: true,

@@ -81,6 +81,7 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
     resolveVoiceDownload: async () => ({
       url: "http://127.0.0.1/voice.ogg",
       fileSizeBytes: 123,
+      fileName: "voice.ogg",
     }),
     launch: async () => {
       if (options.launchError) {

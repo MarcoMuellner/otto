@@ -18,6 +18,7 @@ export type TelegramVoiceMessage = {
 export type TelegramVoiceDownloadDescriptor = {
   url: string
   fileSizeBytes: number | null
+  fileName: string | null
 }
 
 export type VoiceDownloadResult = {
@@ -88,7 +89,8 @@ export const downloadVoiceFile = async (
   config: TelegramVoiceConfig
 ): Promise<VoiceDownloadResult> => {
   const tempDirectory = await mkdtemp(path.join(tmpdir(), "otto-voice-"))
-  const filePath = path.join(tempDirectory, "voice.ogg")
+  const safeFileName = descriptor.fileName?.replaceAll(/[^a-zA-Z0-9._-]/g, "_") || "voice.bin"
+  const filePath = path.join(tempDirectory, safeFileName)
 
   const cleanup = async (): Promise<void> => {
     await rm(tempDirectory, { recursive: true, force: true })

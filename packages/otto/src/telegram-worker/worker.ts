@@ -47,6 +47,7 @@ export type TelegramInboundVoiceUpdate = {
 export type TelegramVoiceDownload = {
   url: string
   fileSizeBytes: number | null
+  fileName: string | null
 }
 
 export type TelegramBotRuntime = {
@@ -93,22 +94,41 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
     onVoiceMessage: (handler) => {
       bot.on("message", async (context) => {
         const message = context.message
-        if (!message || !("voice" in message)) {
+        if (!message) {
           return
         }
 
-        const voice = message.voice
-        await handler({
-          sourceMessageId: String(message.message_id),
-          chatId: context.chat.id,
-          userId: context.from?.id ?? 0,
-          voice: {
+        let voicePayload: TelegramVoiceMessage | null = null
+
+        if ("voice" in message) {
+          const voice = message.voice
+          voicePayload = {
             fileId: voice.file_id,
             fileUniqueId: voice.file_unique_id,
             durationSec: voice.duration,
             mimeType: voice.mime_type ?? "audio/ogg",
             fileSizeBytes: voice.file_size ?? null,
-          },
+          }
+        } else if ("audio" in message) {
+          const audio = message.audio
+          voicePayload = {
+            fileId: audio.file_id,
+            fileUniqueId: audio.file_unique_id,
+            durationSec: audio.duration,
+            mimeType: audio.mime_type ?? "audio/mpeg",
+            fileSizeBytes: audio.file_size ?? null,
+          }
+        }
+
+        if (!voicePayload) {
+          return
+        }
+
+        await handler({
+          sourceMessageId: String(message.message_id),
+          chatId: context.chat.id,
+          userId: context.from?.id ?? 0,
+          voice: voicePayload,
           update: context.update,
         })
       })
@@ -125,9 +145,13 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
         throw new Error("Telegram file path is missing for voice message")
       }
 
+      const filePath = file.file_path
+      const fileName = filePath.split("/").at(-1) ?? null
+
       return {
-        url: `https://api.telegram.org/file/bot${botToken}/${file.file_path}`,
+        url: `https://api.telegram.org/file/bot${botToken}/${filePath}`,
         fileSizeBytes: file.file_size ?? null,
+        fileName,
       }
     },
     launch: async () => {
