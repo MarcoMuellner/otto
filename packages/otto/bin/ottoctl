@@ -412,9 +412,33 @@ attempt_auto_provision_faster_whisper() {
   return 1
 }
 
+is_faster_whisper_runtime_ready() {
+  local default_python_path="${OTTO_ROOT}/models/faster-whisper/.venv/bin/python"
+
+  if [[ ! -x "${default_python_path}" ]]; then
+    return 1
+  fi
+
+  if ! "${default_python_path}" - <<'PY' >/dev/null 2>&1
+from faster_whisper import WhisperModel  # noqa: F401
+print("ok")
+PY
+  then
+    return 1
+  fi
+
+  return 0
+}
+
 cmd_configure_voice_transcription() {
   if ! cd "${HOME}"; then
     warn "Could not change working directory to ${HOME}; continuing setup anyway"
+  fi
+
+  if is_faster_whisper_runtime_ready; then
+    update_telegram_voice_settings "1" "" "worker"
+    info "Faster-Whisper runtime already installed; skipping setup prompt"
+    return 0
   fi
 
   if [[ ! -t 0 || ! -t 1 ]]; then
@@ -447,7 +471,7 @@ cmd_configure_voice_transcription() {
     return 0
   fi
 
-  warn "Automatic Faster-Whisper setup is not available in this installation"
+  warn "Automatic Faster-Whisper setup failed"
   update_telegram_voice_settings "1" "" "worker"
   warn "Voice intake stays enabled, but transcription worker could not be provisioned"
   warn "Telegram voice messages will receive a 'cannot transcribe yet' notice until provisioning succeeds"

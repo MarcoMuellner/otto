@@ -82,7 +82,7 @@ install_python_venv_prereqs() {
   local python_minor
   python_minor="$(resolve_python_minor)"
 
-  info "Attempting to install Python venv prerequisites"
+  info "Attempting to install Python runtime prerequisites"
   if ${apt_prefix} apt-get update && ${apt_prefix} apt-get install -y python3-venv python3-pip python3-virtualenv ca-certificates curl; then
     ${apt_prefix} apt-get install -y "python${python_minor}-venv" >/dev/null 2>&1 || true
     success "Installed Python prerequisites"
@@ -106,20 +106,20 @@ create_virtual_environment() {
 }
 
 bootstrap_pip_with_download() {
-  local downloader=""
   local get_pip
   get_pip="$(mktemp)"
 
   if command -v curl >/dev/null 2>&1; then
-    downloader="curl -fsSL"
+    if ! curl -fsSL "https://bootstrap.pypa.io/get-pip.py" -o "${get_pip}"; then
+      rm -f "${get_pip}"
+      return 1
+    fi
   elif command -v wget >/dev/null 2>&1; then
-    downloader="wget -qO-"
+    if ! wget -q "https://bootstrap.pypa.io/get-pip.py" -O "${get_pip}"; then
+      rm -f "${get_pip}"
+      return 1
+    fi
   else
-    rm -f "${get_pip}"
-    return 1
-  fi
-
-  if ! sh -c "${downloader} https://bootstrap.pypa.io/get-pip.py" >"${get_pip}"; then
     rm -f "${get_pip}"
     return 1
   fi
@@ -129,7 +129,22 @@ bootstrap_pip_with_download() {
     return 1
   fi
 
+  if ! "${VENV_DIR}/bin/python" -m pip --version >/dev/null 2>&1; then
+    rm -f "${get_pip}"
+    return 1
+  fi
+
   rm -f "${get_pip}"
+  return 0
+}
+
+recreate_virtual_environment() {
+  rm -rf "${VENV_DIR}"
+  if ! create_virtual_environment; then
+    error "Failed to recreate Python virtual environment at ${VENV_DIR}"
+    return 1
+  fi
+
   return 0
 }
 
@@ -156,6 +171,12 @@ info "Preparing local Faster-Whisper runtime"
 require_cmd python3
 ensure_ffmpeg
 
+# Pre-install Python packaging prerequisites proactively when available. This mirrors
+# the manual workaround path that proved stable on Jetson hosts.
+if command -v apt-get >/dev/null 2>&1; then
+  install_python_venv_prereqs || warn "Could not preinstall Python prerequisites automatically"
+fi
+
 mkdir -p "${MODEL_ROOT}" "${WHISPER_CACHE_DIR}"
 
 if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
@@ -169,29 +190,39 @@ fi
 if ! ensure_venv_pip; then
   warn "pip bootstrap failed in existing virtual environment"
 
-  if install_python_venv_prereqs; then
-    warn "Recreating virtual environment after installing Python prerequisites"
-    rm -rf "${VENV_DIR}"
-    if ! create_virtual_environment; then
-      error "Failed to recreate Python virtual environment at ${VENV_DIR}"
-      exit 1
-    fi
+  if command -v apt-get >/dev/null 2>&1; then
+    install_python_venv_prereqs || warn "Could not install Python prerequisites automatically"
   fi
 
+  warn "Recreating virtual environment after failed pip bootstrap"
+  if ! recreate_virtual_environment; then
+    exit 1
+  fi
+
+  # First attempt standard bootstrap path.
   if ! ensure_venv_pip; then
-    if command -v virtualenv >/dev/null 2>&1; then
-      warn "Retrying with virtualenv seeder"
-      rm -rf "${VENV_DIR}"
-      if ! virtualenv -p python3 "${VENV_DIR}" >/dev/null 2>&1; then
-        error "Failed to create Python virtual environment with virtualenv"
+    warn "Standard pip bootstrap failed in recreated environment; forcing get-pip fallback"
+
+    # ensurepip can fail on some distros/python builds; tolerate failure and continue.
+    "${VENV_DIR}/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+
+    if ! bootstrap_pip_with_download; then
+      if command -v virtualenv >/dev/null 2>&1; then
+        warn "Retrying with virtualenv seeder"
+        rm -rf "${VENV_DIR}"
+        if ! virtualenv -p python3 "${VENV_DIR}" >/dev/null 2>&1; then
+          error "Failed to create Python virtual environment with virtualenv"
+          exit 1
+        fi
+        if ! ensure_venv_pip; then
+          error "Unable to provision pip in ${VENV_DIR}. Install python3-venv/python3-pip/python3-virtualenv and rerun."
+          exit 1
+        fi
+      else
+        error "Unable to provision pip in ${VENV_DIR}. Install python3-venv/python3-pip/python3-virtualenv and rerun."
         exit 1
       fi
     fi
-  fi
-
-  if ! ensure_venv_pip; then
-    error "Unable to provision pip in ${VENV_DIR}. Install python3-venv/python3-pip/python3-virtualenv and rerun."
-    exit 1
   fi
 fi
 
