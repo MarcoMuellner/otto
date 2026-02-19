@@ -41,7 +41,7 @@ export default tool({
       .optional()
       .describe("Optional idempotency key for duplicate-safe enqueue"),
     priority: tool.schema
-      .enum(["low", "normal", "high"])
+      .enum(["low", "normal", "high", "critical"])
       .optional()
       .describe("Queue priority for this outbound message"),
   },

@@ -119,6 +119,57 @@ const createCommandAuditRepositoryStub = () => {
   }
 }
 
+const createUserProfileRepositoryStub = () => {
+  let profile: {
+    timezone: string | null
+    quietHoursStart: string | null
+    quietHoursEnd: string | null
+    quietMode: "critical_only" | "off" | null
+    muteUntil: number | null
+    heartbeatMorning: string | null
+    heartbeatMidday: string | null
+    heartbeatEvening: string | null
+    heartbeatCadenceMinutes: number | null
+    heartbeatOnlyIfSignal: boolean
+    onboardingCompletedAt: number | null
+    lastDigestAt: number | null
+    updatedAt: number
+  } | null = null
+
+  return {
+    get: vi.fn(() => profile),
+    upsert: vi.fn((next) => {
+      profile = next
+    }),
+    setMuteUntil: vi.fn((muteUntil) => {
+      if (!profile) {
+        profile = {
+          timezone: null,
+          quietHoursStart: null,
+          quietHoursEnd: null,
+          quietMode: "critical_only",
+          muteUntil,
+          heartbeatMorning: null,
+          heartbeatMidday: null,
+          heartbeatEvening: null,
+          heartbeatCadenceMinutes: 180,
+          heartbeatOnlyIfSignal: true,
+          onboardingCompletedAt: null,
+          lastDigestAt: null,
+          updatedAt: Date.now(),
+        }
+        return
+      }
+
+      profile = {
+        ...profile,
+        muteUntil,
+        updatedAt: Date.now(),
+      }
+    }),
+  }
+}
+
 describe("resolveInternalApiConfig", () => {
   it("creates and reuses a persisted token file", async () => {
     // Arrange
@@ -160,6 +211,7 @@ describe("buildInternalApiServer", () => {
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
     })
 
     // Act
@@ -197,6 +249,7 @@ describe("buildInternalApiServer", () => {
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
     })
 
     // Act
@@ -249,6 +302,7 @@ describe("buildInternalApiServer", () => {
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
     })
 
     // Act
@@ -303,6 +357,7 @@ describe("buildInternalApiServer", () => {
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
     })
 
     try {
@@ -356,6 +411,7 @@ describe("buildInternalApiServer", () => {
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
     })
 
     // Act
@@ -418,6 +474,7 @@ describe("buildInternalApiServer", () => {
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository,
       commandAuditRepository,
+      userProfileRepository: createUserProfileRepositoryStub(),
     })
 
     // Act
@@ -488,6 +545,7 @@ describe("buildInternalApiServer", () => {
       jobsRepository,
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
     })
 
     // Act
@@ -514,6 +572,117 @@ describe("buildInternalApiServer", () => {
       notificationStatus: "enqueued",
     })
     expect(repository.enqueueOrIgnoreDedupe).toHaveBeenCalledOnce()
+
+    await app.close()
+  })
+
+  it("sets and returns notification policy profile", async () => {
+    // Arrange
+    const userProfileRepository = createUserProfileRepositoryStub()
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository,
+    })
+
+    // Act
+    const setResponse = await app.inject({
+      method: "POST",
+      url: "/internal/tools/notification-profile/set",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        timezone: "Europe/Vienna",
+        quietHoursStart: "21:00",
+        quietHoursEnd: "07:30",
+        muteForMinutes: 30,
+      },
+    })
+
+    const getResponse = await app.inject({
+      method: "POST",
+      url: "/internal/tools/notification-profile/get",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+      },
+    })
+
+    // Assert
+    expect(setResponse.statusCode).toBe(200)
+    expect(getResponse.statusCode).toBe(200)
+    expect(getResponse.json()).toMatchObject({
+      profile: {
+        timezone: "Europe/Vienna",
+        quietHoursStart: "21:00",
+        quietHoursEnd: "07:30",
+      },
+    })
+
+    await app.close()
+  })
+
+  it("rejects invalid timezone values in notification policy updates", async () => {
+    // Arrange
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/notification-profile/set",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        timezone: "Europe/NopeTown",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
 
     await app.close()
   })

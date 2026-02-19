@@ -4,14 +4,17 @@ import { randomUUID } from "node:crypto"
 
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createInboundMessagesRepository } from "../persistence/repositories.js"
+import { createJobsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
+import { createUserProfileRepository } from "../persistence/repositories.js"
 import { createVoiceInboundMessagesRepository } from "../persistence/repositories.js"
 import type { TelegramWorkerConfig } from "./config.js"
 import { createInboundBridge } from "./inbound.js"
 import type { OpencodeSessionGateway } from "./opencode.js"
 import { createOutboundQueueProcessor } from "./outbound-queue.js"
 import { createTranscriptionGateway, type TranscriptionGateway } from "./transcription.js"
+import { isProfileOnboardingComplete } from "../scheduler/notification-policy.js"
 import {
   downloadVoiceFile,
   validateVoicePayload,
@@ -258,8 +261,10 @@ export const startTelegramWorker = async (
   const database = dependencies.openDatabase?.() ?? openPersistenceDatabase()
   const sessionBindingsRepository = createSessionBindingsRepository(database)
   const inboundMessagesRepository = createInboundMessagesRepository(database)
+  const jobsRepository = createJobsRepository(database)
   const outboundMessagesRepository = createOutboundMessagesRepository(database)
   const voiceInboundMessagesRepository = createVoiceInboundMessagesRepository(database)
+  const userProfileRepository = createUserProfileRepository(database)
   const sessionGatewayFactory =
     dependencies.createSessionGateway ??
     (async (baseUrl: string): Promise<OpencodeSessionGateway> => {
@@ -287,6 +292,7 @@ export const startTelegramWorker = async (
   const bot =
     dependencies.createBotRuntime?.(config.botToken) ?? createTelegrafRuntime(config.botToken)
   const inFlightChats = new Set<number>()
+  const onboardingPromptedChats = new Set<number>()
 
   const bridge = createInboundBridge({
     logger,
@@ -312,6 +318,8 @@ export const startTelegramWorker = async (
       baseDelayMs: config.outboundRetryBaseMs,
       maxDelayMs: config.outboundRetryMaxMs,
     },
+    userProfileRepository,
+    jobsRepository,
   })
 
   const processOutboundQueue = async (): Promise<void> => {
@@ -344,6 +352,21 @@ export const startTelegramWorker = async (
 
       if (!decision.allowed) {
         return
+      }
+
+      if (!onboardingPromptedChats.has(update.chatId)) {
+        const profile = userProfileRepository.get()
+        if (!isProfileOnboardingComplete(profile)) {
+          onboardingPromptedChats.add(update.chatId)
+          await bot.sendMessage(
+            update.chatId,
+            [
+              "Before I start proactive heartbeats, I should configure your notification profile.",
+              "Suggested defaults: timezone Europe/Vienna, quiet hours 20:00-08:00, and heartbeat windows 08:30 / 12:30 / 19:00.",
+              "You can tell me naturally, for example: 'quiet hours 21:00-07:30 and mute until tomorrow 08:00'.",
+            ].join("\n")
+          )
+        }
       }
 
       if (inFlightChats.has(update.chatId)) {

@@ -15,7 +15,9 @@ import type {
   JobScheduleType,
   TaskAuditRecord,
   TaskListRecord,
+  UserProfileRecord,
 } from "../persistence/repositories.js"
+import { isValidIanaTimezone } from "../scheduler/notification-policy.js"
 import { checkTaskFailures, resolveDefaultWatchdogChatId } from "../scheduler/watchdog.js"
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -66,6 +68,11 @@ type InternalApiServerDependencies = {
     insert: (record: CommandAuditRecord) => void
     listRecent: (limit?: number) => CommandAuditRecord[]
   }
+  userProfileRepository: {
+    get: () => UserProfileRecord | null
+    upsert: (record: UserProfileRecord) => void
+    setMuteUntil: (muteUntil: number | null, updatedAt?: number) => void
+  }
 }
 
 const queueTelegramMessageApiSchema = z.object({
@@ -73,7 +80,7 @@ const queueTelegramMessageApiSchema = z.object({
   chatId: z.number().int().optional(),
   content: z.string().trim().min(1),
   dedupeKey: z.string().trim().min(1).max(512).optional(),
-  priority: z.enum(["low", "normal", "high"]).optional(),
+  priority: z.enum(["low", "normal", "high", "critical"]).optional(),
 })
 
 const executionLaneSchema = z.enum(["interactive", "scheduled"])
@@ -162,6 +169,67 @@ const checkTaskFailuresApiSchema = z.object({
   chatId: z.number().int().positive().optional(),
 })
 
+const getNotificationProfileApiSchema = z.object({
+  lane: executionLaneSchema,
+})
+
+const setNotificationProfileApiSchema = z.object({
+  lane: executionLaneSchema,
+  timezone: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((value) => isValidIanaTimezone(value), "timezone must be a valid IANA timezone")
+    .optional(),
+  quietHoursStart: z
+    .string()
+    .trim()
+    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional(),
+  quietHoursEnd: z
+    .string()
+    .trim()
+    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional(),
+  heartbeatMorning: z
+    .string()
+    .trim()
+    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional(),
+  heartbeatMidday: z
+    .string()
+    .trim()
+    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional(),
+  heartbeatEvening: z
+    .string()
+    .trim()
+    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
+    .nullable()
+    .optional(),
+  heartbeatCadenceMinutes: z
+    .number()
+    .int()
+    .min(30)
+    .max(24 * 60)
+    .nullable()
+    .optional(),
+  heartbeatOnlyIfSignal: z.boolean().optional(),
+  quietMode: z.enum(["critical_only", "off"]).optional(),
+  muteUntil: z.number().int().nullable().optional(),
+  muteForMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(7 * 24 * 60)
+    .optional(),
+  markOnboardingComplete: z.boolean().optional(),
+})
+
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
 }
@@ -215,6 +283,24 @@ const writeCommandAudit = (
     metadataJson: record.metadataJson ?? null,
     createdAt: record.createdAt ?? Date.now(),
   })
+}
+
+const resolveDefaultNotificationProfile = (): UserProfileRecord => {
+  return {
+    timezone: "Europe/Vienna",
+    quietHoursStart: "20:00",
+    quietHoursEnd: "08:00",
+    quietMode: "critical_only",
+    muteUntil: null,
+    heartbeatMorning: "08:30",
+    heartbeatMidday: "12:30",
+    heartbeatEvening: "19:00",
+    heartbeatCadenceMinutes: 180,
+    heartbeatOnlyIfSignal: true,
+    onboardingCompletedAt: null,
+    lastDigestAt: null,
+    updatedAt: Date.now(),
+  }
 }
 
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
@@ -790,6 +876,143 @@ export const buildInternalApiServer = (
         errorMessage: err.message,
       })
       dependencies.logger.error({ error: err.message }, "Internal API task failures check failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/notification-profile/get", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = getNotificationProfileApiSchema.parse(request.body)
+      const profile =
+        dependencies.userProfileRepository.get() ?? resolveDefaultNotificationProfile()
+      writeCommandAudit(dependencies, {
+        command: "get_notification_policy",
+        lane: payload.lane,
+        status: "success",
+      })
+      return reply.code(200).send({ profile })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "get_notification_policy",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "get_notification_policy",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/notification-profile/set", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = setNotificationProfileApiSchema.parse(request.body)
+      const existing =
+        dependencies.userProfileRepository.get() ?? resolveDefaultNotificationProfile()
+      const now = Date.now()
+
+      const muteUntil =
+        payload.muteForMinutes !== undefined
+          ? now + payload.muteForMinutes * 60_000
+          : payload.muteUntil !== undefined
+            ? payload.muteUntil
+            : existing.muteUntil
+
+      const merged: UserProfileRecord = {
+        timezone: payload.timezone ?? existing.timezone,
+        quietHoursStart:
+          payload.quietHoursStart === undefined
+            ? existing.quietHoursStart
+            : payload.quietHoursStart,
+        quietHoursEnd:
+          payload.quietHoursEnd === undefined ? existing.quietHoursEnd : payload.quietHoursEnd,
+        quietMode: payload.quietMode ?? existing.quietMode,
+        muteUntil,
+        heartbeatMorning:
+          payload.heartbeatMorning === undefined
+            ? existing.heartbeatMorning
+            : payload.heartbeatMorning,
+        heartbeatMidday:
+          payload.heartbeatMidday === undefined
+            ? existing.heartbeatMidday
+            : payload.heartbeatMidday,
+        heartbeatEvening:
+          payload.heartbeatEvening === undefined
+            ? existing.heartbeatEvening
+            : payload.heartbeatEvening,
+        heartbeatCadenceMinutes:
+          payload.heartbeatCadenceMinutes === undefined
+            ? existing.heartbeatCadenceMinutes
+            : payload.heartbeatCadenceMinutes,
+        heartbeatOnlyIfSignal: payload.heartbeatOnlyIfSignal ?? existing.heartbeatOnlyIfSignal,
+        onboardingCompletedAt: payload.markOnboardingComplete
+          ? now
+          : existing.onboardingCompletedAt,
+        lastDigestAt: existing.lastDigestAt,
+        updatedAt: now,
+      }
+
+      dependencies.userProfileRepository.upsert(merged)
+      writeCommandAudit(dependencies, {
+        command: "set_notification_policy",
+        lane: payload.lane,
+        status: "success",
+      })
+
+      return reply.code(200).send({ profile: merged })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "set_notification_policy",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "set_notification_policy",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error(
+        { error: err.message },
+        "Internal API notification profile set failed"
+      )
       return reply.code(500).send({ error: "internal_error" })
     }
   })

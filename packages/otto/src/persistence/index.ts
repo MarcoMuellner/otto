@@ -23,6 +23,7 @@ export type {
   FailedJobRunRecord,
   JobRecord,
   JobRunRecord,
+  JobRunSummaryRecord,
   JobRunStatus,
   JobScheduleType,
   JobStatus,

@@ -529,9 +529,15 @@ describe("persistence repositories", () => {
       timezone: "Europe/Vienna",
       quietHoursStart: "20:00",
       quietHoursEnd: "08:00",
+      quietMode: "critical_only",
+      muteUntil: null,
       heartbeatMorning: "08:00",
       heartbeatMidday: "13:00",
       heartbeatEvening: "19:00",
+      heartbeatCadenceMinutes: 180,
+      heartbeatOnlyIfSignal: true,
+      onboardingCompletedAt: null,
+      lastDigestAt: null,
       updatedAt: 300,
     })
 
@@ -557,9 +563,15 @@ describe("persistence repositories", () => {
       timezone: "Europe/Vienna",
       quietHoursStart: "20:00",
       quietHoursEnd: "08:00",
+      quietMode: "critical_only",
+      muteUntil: null,
       heartbeatMorning: "08:00",
       heartbeatMidday: "13:00",
       heartbeatEvening: "19:00",
+      heartbeatCadenceMinutes: 180,
+      heartbeatOnlyIfSignal: true,
+      onboardingCompletedAt: null,
+      lastDigestAt: null,
       updatedAt: 300,
     })
 

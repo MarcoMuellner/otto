@@ -226,4 +226,22 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_messages_in_voice_status ON messages_in_voice (status, updated_at DESC)`,
     ],
   },
+  {
+    id: "013_user_profile_notification_policy",
+    statements: [
+      `ALTER TABLE user_profile ADD COLUMN quiet_mode TEXT`,
+      `ALTER TABLE user_profile ADD COLUMN mute_until INTEGER`,
+      `ALTER TABLE user_profile ADD COLUMN heartbeat_cadence_minutes INTEGER`,
+      `ALTER TABLE user_profile ADD COLUMN heartbeat_only_if_signal INTEGER`,
+      `ALTER TABLE user_profile ADD COLUMN onboarding_completed_at INTEGER`,
+      `ALTER TABLE user_profile ADD COLUMN last_digest_at INTEGER`,
+      `UPDATE user_profile
+       SET quiet_mode = COALESCE(quiet_mode, 'critical_only'),
+           heartbeat_only_if_signal = COALESCE(heartbeat_only_if_signal, 1),
+           heartbeat_cadence_minutes = CASE
+             WHEN heartbeat_cadence_minutes IS NULL THEN 180
+             ELSE heartbeat_cadence_minutes
+           END`,
+    ],
+  },
 ]

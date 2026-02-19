@@ -13,7 +13,9 @@ import { createOutboundMessagesRepository } from "../persistence/repositories.js
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
+import { createUserProfileRepository } from "../persistence/repositories.js"
 import { materializeEffectiveOpencodeConfig } from "../extensions/index.js"
+import { ensureHeartbeatTask, HEARTBEAT_DEFAULT_CADENCE_MINUTES } from "../scheduler/heartbeat.js"
 import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { createTaskExecutionEngine } from "../scheduler/executor.js"
 import { startSchedulerKernel } from "../scheduler/kernel.js"
@@ -89,6 +91,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   const commandAuditRepository = createCommandAuditRepository(persistenceDatabase)
   const outboundMessagesRepository = createOutboundMessagesRepository(persistenceDatabase)
   const sessionBindingsRepository = createSessionBindingsRepository(persistenceDatabase)
+  const userProfileRepository = createUserProfileRepository(persistenceDatabase)
   const internalApiConfig = await resolveInternalApiConfig(config.ottoHome)
   const schedulerConfig = resolveSchedulerConfig()
 
@@ -104,6 +107,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       outboundMessagesRepository,
       sessionBindingsRepository,
       jobsRepository,
+      userProfileRepository,
       taskAuditRepository,
       commandAuditRepository,
     })
@@ -167,6 +171,24 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     "Watchdog task ensured"
   )
 
+  const heartbeatEnsureResult = ensureHeartbeatTask(
+    jobsRepository,
+    {
+      cadenceMinutes: HEARTBEAT_DEFAULT_CADENCE_MINUTES,
+      chatId: watchdogChatId,
+    },
+    Date.now
+  )
+  logger.info(
+    {
+      taskId: heartbeatEnsureResult.taskId,
+      created: heartbeatEnsureResult.created,
+      cadenceMinutes: heartbeatEnsureResult.cadenceMinutes,
+      hasChatId: Boolean(watchdogChatId),
+    },
+    "Heartbeat task ensured"
+  )
+
   const schedulerSessionGateway = createOpencodeSessionGateway(server.url, logger)
   const taskExecutionEngine = createTaskExecutionEngine({
     logger,
@@ -174,6 +196,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     jobsRepository,
     sessionBindingsRepository,
     outboundMessagesRepository,
+    userProfileRepository,
     sessionGateway: schedulerSessionGateway,
     defaultWatchdogChatId: watchdogChatId,
   })

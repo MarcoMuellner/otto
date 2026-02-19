@@ -1,12 +1,20 @@
 import type { Logger } from "pino"
 
+import type { JobRunSummaryRecord, UserProfileRecord } from "../persistence/repositories.js"
+import {
+  resolveEffectiveNotificationProfile,
+  resolveNotificationGateDecision,
+} from "../scheduler/notification-policy.js"
 import { splitTelegramMessage } from "./telegram.js"
 
 export type OutboundDeliveryRecord = {
   id: string
   chatId: number
   content: string
+  priority: "low" | "normal" | "high" | "critical"
   attemptCount: number
+  createdAt: number
+  errorMessage: string | null
 }
 
 export type OutboundMessagesDeliveryRepository = {
@@ -37,6 +45,13 @@ export type OutboundQueueProcessorDependencies = {
   repository: OutboundMessagesDeliveryRepository
   sender: OutboundMessageSender
   retryPolicy: OutboundRetryPolicy
+  userProfileRepository: {
+    get: () => UserProfileRecord | null
+    setLastDigestAt: (lastDigestAt: number, updatedAt?: number) => void
+  }
+  jobsRepository?: {
+    listRecentRuns: (sinceTimestamp: number, limit?: number) => JobRunSummaryRecord[]
+  }
 }
 
 const MAX_ERROR_MESSAGE_LENGTH = 1_000
@@ -61,6 +76,32 @@ export const calculateRetryDelayMs = (
 const normalizeErrorMessage = (error: unknown): string => {
   const rawMessage = error instanceof Error ? error.message : String(error)
   return rawMessage.slice(0, MAX_ERROR_MESSAGE_LENGTH)
+}
+
+const SUPPRESSED_PREFIX = "suppressed_by_policy:"
+
+const summarizeSuppressedRuns = (runs: JobRunSummaryRecord[]): string => {
+  if (runs.length === 0) {
+    return "No task activity happened while notifications were paused."
+  }
+
+  const successCount = runs.filter((run) => run.status === "success").length
+  const failedCount = runs.filter((run) => run.status === "failed").length
+  const skippedCount = runs.filter((run) => run.status === "skipped").length
+  const topFailures = runs
+    .filter((run) => run.status === "failed")
+    .slice(0, 3)
+    .map((run) => run.errorMessage ?? run.errorCode ?? "unknown error")
+
+  const lines = [
+    "Summary from your muted/quiet period:",
+    `${runs.length} scheduled runs completed (${successCount} success, ${failedCount} failed, ${skippedCount} skipped).`,
+    topFailures.length > 0
+      ? `Main issues: ${topFailures.join(" | ")}.`
+      : "No major failures detected.",
+  ]
+
+  return lines.join("\n")
 }
 
 /**
@@ -145,6 +186,32 @@ export const createOutboundQueueProcessor = (
   const processMessage = async (message: OutboundDeliveryRecord): Promise<void> => {
     const nextAttemptCount = message.attemptCount + 1
 
+    const profile = resolveEffectiveNotificationProfile(dependencies.userProfileRepository.get())
+    const urgency =
+      message.priority === "high" || message.priority === "critical" ? "critical" : "normal"
+    const gateDecision = resolveNotificationGateDecision(profile, urgency, Date.now())
+
+    if (gateDecision.action === "hold") {
+      const retryAt = gateDecision.releaseAt ?? Date.now() + dependencies.retryPolicy.baseDelayMs
+      dependencies.repository.markRetry(
+        message.id,
+        nextAttemptCount,
+        retryAt,
+        `${SUPPRESSED_PREFIX}${gateDecision.reason}`,
+        Date.now()
+      )
+      dependencies.logger.info(
+        {
+          messageId: message.id,
+          chatId: message.chatId,
+          retryAt,
+          reason: gateDecision.reason,
+        },
+        "Outbound Telegram message suppressed by notification policy"
+      )
+      return
+    }
+
     try {
       await deliverMessageChunks(message)
       markDeliverySuccess(message, nextAttemptCount)
@@ -164,7 +231,47 @@ export const createOutboundQueueProcessor = (
       try {
         const dueMessages = dependencies.repository.listDue(now)
 
+        const profile = resolveEffectiveNotificationProfile(
+          dependencies.userProfileRepository.get()
+        )
+        const gateDecision = resolveNotificationGateDecision(profile, "normal", now)
+        const releasedSuppressedMessages = dueMessages.filter((message) =>
+          message.errorMessage?.startsWith(SUPPRESSED_PREFIX)
+        )
+        const digestHandledMessageIds = new Set<string>()
+
+        if (
+          releasedSuppressedMessages.length > 0 &&
+          dependencies.jobsRepository &&
+          gateDecision.action === "deliver_now"
+        ) {
+          const since = profile.lastDigestAt ?? now - 24 * 60 * 60 * 1000
+          const runs = dependencies.jobsRepository
+            .listRecentRuns(since, 200)
+            .filter((run) => run.jobType !== "heartbeat")
+
+          const groupedByChatId = new Map<number, OutboundDeliveryRecord[]>()
+          for (const message of releasedSuppressedMessages) {
+            const existing = groupedByChatId.get(message.chatId) ?? []
+            existing.push(message)
+            groupedByChatId.set(message.chatId, existing)
+          }
+
+          for (const [chatId, records] of groupedByChatId.entries()) {
+            await dependencies.sender.sendMessage(chatId, summarizeSuppressedRuns(runs))
+            for (const record of records) {
+              dependencies.repository.markSent(record.id, record.attemptCount + 1, now)
+              digestHandledMessageIds.add(record.id)
+            }
+          }
+
+          dependencies.userProfileRepository.setLastDigestAt(now, now)
+        }
+
         for (const message of dueMessages) {
+          if (digestHandledMessageIds.has(message.id)) {
+            continue
+          }
           await processMessage(message)
         }
       } finally {

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite"
 
-export type MessagePriority = "low" | "normal" | "high"
+export type MessagePriority = "low" | "normal" | "high" | "critical"
 export type OutboundMessageStatus = "queued" | "sent" | "failed" | "cancelled"
 export type JobStatus = "idle" | "running" | "paused"
 export type JobScheduleType = "recurring" | "oneshot"
@@ -104,6 +104,18 @@ export type FailedJobRunRecord = {
   errorMessage: string | null
 }
 
+export type JobRunSummaryRecord = {
+  runId: string
+  jobId: string
+  jobType: string
+  startedAt: number
+  finishedAt: number | null
+  status: JobRunStatus
+  errorCode: string | null
+  errorMessage: string | null
+  resultJson: string | null
+}
+
 export type TaskListRecord = {
   id: string
   type: string
@@ -168,9 +180,15 @@ export type UserProfileRecord = {
   timezone: string | null
   quietHoursStart: string | null
   quietHoursEnd: string | null
+  quietMode: "critical_only" | "off" | null
+  muteUntil: number | null
   heartbeatMorning: string | null
   heartbeatMidday: string | null
   heartbeatEvening: string | null
+  heartbeatCadenceMinutes: number | null
+  heartbeatOnlyIfSignal: boolean
+  onboardingCompletedAt: number | null
+  lastDigestAt: number | null
   updatedAt: number
 }
 
@@ -727,6 +745,24 @@ export const createJobsRepository = (database: DatabaseSync) => {
      LIMIT ?`
   )
 
+  const listRecentRunsStatement = database.prepare(
+    `SELECT
+      r.id as runId,
+      r.job_id as jobId,
+      j.type as jobType,
+      r.started_at as startedAt,
+      r.finished_at as finishedAt,
+      r.status,
+      r.error_code as errorCode,
+      r.error_message as errorMessage,
+      r.result_json as resultJson
+     FROM job_runs r
+     JOIN jobs j ON j.id = r.job_id
+     WHERE r.started_at >= ?
+     ORDER BY r.started_at DESC
+     LIMIT ?`
+  )
+
   const beginImmediate = (): void => {
     database.exec("BEGIN IMMEDIATE")
   }
@@ -841,6 +877,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     listRecentFailedRuns: (sinceTimestamp: number, limit = 50): FailedJobRunRecord[] => {
       return listRecentFailedRunsStatement.all(sinceTimestamp, limit) as FailedJobRunRecord[]
+    },
+    listRecentRuns: (sinceTimestamp: number, limit = 200): JobRunSummaryRecord[] => {
+      return listRecentRunsStatement.all(sinceTimestamp, limit) as JobRunSummaryRecord[]
     },
     getById: (jobId: string): JobRecord | null => {
       const row = getByIdStatement.get(jobId) as JobRecord | undefined
@@ -1048,9 +1087,15 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
       timezone,
       quiet_hours_start as quietHoursStart,
       quiet_hours_end as quietHoursEnd,
+      quiet_mode as quietMode,
+      mute_until as muteUntil,
       heartbeat_morning as heartbeatMorning,
       heartbeat_midday as heartbeatMidday,
       heartbeat_evening as heartbeatEvening,
+      heartbeat_cadence_minutes as heartbeatCadenceMinutes,
+      heartbeat_only_if_signal as heartbeatOnlyIfSignal,
+      onboarding_completed_at as onboardingCompletedAt,
+      last_digest_at as lastDigestAt,
       updated_at as updatedAt
      FROM user_profile
      WHERE id = 1`
@@ -1058,26 +1103,71 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
 
   const upsertStatement = database.prepare(
     `INSERT INTO user_profile
-      (id, timezone, quiet_hours_start, quiet_hours_end, heartbeat_morning, heartbeat_midday, heartbeat_evening, updated_at)
+      (id, timezone, quiet_hours_start, quiet_hours_end, quiet_mode, mute_until, heartbeat_morning, heartbeat_midday, heartbeat_evening, heartbeat_cadence_minutes, heartbeat_only_if_signal, onboarding_completed_at, last_digest_at, updated_at)
      VALUES
-      (1, @timezone, @quietHoursStart, @quietHoursEnd, @heartbeatMorning, @heartbeatMidday, @heartbeatEvening, @updatedAt)
+      (1, @timezone, @quietHoursStart, @quietHoursEnd, @quietMode, @muteUntil, @heartbeatMorning, @heartbeatMidday, @heartbeatEvening, @heartbeatCadenceMinutes, @heartbeatOnlyIfSignal, @onboardingCompletedAt, @lastDigestAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
       timezone = excluded.timezone,
       quiet_hours_start = excluded.quiet_hours_start,
       quiet_hours_end = excluded.quiet_hours_end,
+      quiet_mode = excluded.quiet_mode,
+      mute_until = excluded.mute_until,
       heartbeat_morning = excluded.heartbeat_morning,
       heartbeat_midday = excluded.heartbeat_midday,
       heartbeat_evening = excluded.heartbeat_evening,
+      heartbeat_cadence_minutes = excluded.heartbeat_cadence_minutes,
+      heartbeat_only_if_signal = excluded.heartbeat_only_if_signal,
+      onboarding_completed_at = excluded.onboarding_completed_at,
+      last_digest_at = excluded.last_digest_at,
       updated_at = excluded.updated_at`
+  )
+
+  const setMuteUntilStatement = database.prepare(
+    `UPDATE user_profile
+     SET mute_until = ?,
+         updated_at = ?
+     WHERE id = 1`
+  )
+
+  const setLastDigestAtStatement = database.prepare(
+    `UPDATE user_profile
+     SET last_digest_at = ?,
+         updated_at = ?
+     WHERE id = 1`
   )
 
   return {
     get: (): UserProfileRecord | null => {
-      const row = getStatement.get() as UserProfileRecord | undefined
-      return row ?? null
+      const row = getStatement.get() as
+        | (Omit<UserProfileRecord, "heartbeatOnlyIfSignal"> & {
+            heartbeatOnlyIfSignal: number | null
+          })
+        | undefined
+      if (!row) {
+        return null
+      }
+
+      return {
+        ...row,
+        quietMode:
+          row.quietMode === "off" || row.quietMode === "critical_only"
+            ? row.quietMode
+            : "critical_only",
+        heartbeatOnlyIfSignal: row.heartbeatOnlyIfSignal === 0 ? false : true,
+      }
     },
     upsert: (record: UserProfileRecord): void => {
-      upsertStatement.run(record)
+      upsertStatement.run({
+        ...record,
+        heartbeatOnlyIfSignal: record.heartbeatOnlyIfSignal ? 1 : 0,
+        quietMode: record.quietMode ?? "critical_only",
+      })
+    },
+    setMuteUntil: (muteUntil: number | null, updatedAt = Date.now()): void => {
+      setMuteUntilStatement.run(muteUntil, updatedAt)
+    },
+    setLastDigestAt: (lastDigestAt: number, updatedAt = Date.now()): void => {
+      setLastDigestAtStatement.run(lastDigestAt, updatedAt)
     },
   }
 }

@@ -77,7 +77,7 @@ type OutboundMessagesRepository = {
     dedupeKey: string | null
     chatId: number
     content: string
-    priority: "low" | "normal" | "high"
+    priority: "low" | "normal" | "high" | "critical"
     status: "queued"
     attemptCount: number
     nextAttemptAt: number

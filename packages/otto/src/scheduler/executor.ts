@@ -5,6 +5,7 @@ import { z } from "zod"
 
 import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
+import { executeHeartbeatTask, HEARTBEAT_TASK_TYPE } from "./heartbeat.js"
 import { resolveScheduleTransition } from "./schedule.js"
 import {
   buildEffectiveTaskExecutionConfig,
@@ -100,6 +101,20 @@ type TaskExecutionEngineDependencies = {
       errorCode: string | null
       errorMessage: string | null
     }>
+    listRecentRuns: (
+      sinceTimestamp: number,
+      limit?: number
+    ) => Array<{
+      runId: string
+      jobId: string
+      jobType: string
+      startedAt: number
+      finishedAt: number | null
+      status: JobRunStatus
+      errorCode: string | null
+      errorMessage: string | null
+      resultJson: string | null
+    }>
   }
   sessionBindingsRepository: {
     getByBindingKey: (bindingKey: string) => { sessionId: string } | null
@@ -111,7 +126,7 @@ type TaskExecutionEngineDependencies = {
       dedupeKey: string | null
       chatId: number
       content: string
-      priority: "low" | "normal" | "high"
+      priority: "low" | "normal" | "high" | "critical"
       status: "queued"
       attemptCount: number
       nextAttemptAt: number
@@ -124,6 +139,24 @@ type TaskExecutionEngineDependencies = {
   }
   sessionGateway: OpencodeSessionGateway
   defaultWatchdogChatId: number | null
+  userProfileRepository: {
+    get: () => {
+      timezone: string | null
+      quietHoursStart: string | null
+      quietHoursEnd: string | null
+      quietMode: "critical_only" | "off" | null
+      muteUntil: number | null
+      heartbeatMorning: string | null
+      heartbeatMidday: string | null
+      heartbeatEvening: string | null
+      heartbeatCadenceMinutes: number | null
+      heartbeatOnlyIfSignal: boolean
+      onboardingCompletedAt: number | null
+      lastDigestAt: number | null
+      updatedAt: number
+    } | null
+    setLastDigestAt: (lastDigestAt: number, updatedAt?: number) => void
+  }
   now?: () => number
 }
 
@@ -445,6 +478,23 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
       try {
         if (job.type === WATCHDOG_TASK_TYPE) {
           result = executeWatchdogTask(dependencies, job, startedAt)
+        } else if (job.type === HEARTBEAT_TASK_TYPE) {
+          const heartbeatResult = executeHeartbeatTask(
+            {
+              jobsRepository: dependencies.jobsRepository,
+              outboundMessagesRepository: dependencies.outboundMessagesRepository,
+              userProfileRepository: dependencies.userProfileRepository,
+              defaultChatId: dependencies.defaultWatchdogChatId,
+            },
+            job.payload,
+            startedAt
+          )
+
+          result = {
+            status: heartbeatResult.status,
+            summary: heartbeatResult.summary,
+            errors: [],
+          }
         } else {
           const payloadParsed = parseTaskPayload(job.payload)
           if (payloadParsed.error) {

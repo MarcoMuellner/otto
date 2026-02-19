@@ -9,7 +9,7 @@ export const queueTelegramMessageInputSchema = z.object({
   chatId: z.number().int().positive(),
   content: z.string().trim().min(1),
   dedupeKey: z.string().trim().min(1).max(512).optional(),
-  priority: z.enum(["low", "normal", "high"]).optional(),
+  priority: z.enum(["low", "normal", "high", "critical"]).optional(),
 })
 
 export type QueueTelegramMessageInput = z.infer<typeof queueTelegramMessageInputSchema>

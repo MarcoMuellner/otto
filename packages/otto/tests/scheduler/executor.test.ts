@@ -119,6 +119,10 @@ describe("task execution engine", () => {
           }),
       },
       defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
       now: () => 2_000,
     })
 
@@ -183,6 +187,10 @@ describe("task execution engine", () => {
         promptSession: async () => "this is not valid json",
       },
       defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
       now: () => 3_000,
     })
 
@@ -253,6 +261,10 @@ describe("task execution engine", () => {
           }),
       },
       defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
       now: () => 3_500,
     })
 
@@ -364,6 +376,10 @@ describe("task execution engine", () => {
           }),
       },
       defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
       now: () => 2_500,
     })
 
