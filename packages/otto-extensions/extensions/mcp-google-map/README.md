@@ -57,5 +57,6 @@ ottoctl restart
 ## Troubleshooting
 
 - If startup fails, confirm `GOOGLE_MAPS_API_KEY` is present and valid.
+- On first boot, `npx` may need extra time to download `@cablate/mcp-google-map`; check `~/.otto/logs/mcp-google-map.log` for progress/errors.
 - If place tools return 403, verify Places API (New) is enabled for the same GCP project/key.
 - If proxy connection fails, ensure `mcp-proxy` is installed and `MCP_GOOGLE_MAP_PORT` is not already occupied.

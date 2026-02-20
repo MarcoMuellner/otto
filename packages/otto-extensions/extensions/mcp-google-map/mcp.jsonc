@@ -4,7 +4,7 @@
     "command": [
       "bash",
       "-lc",
-      "PORT=\"${MCP_GOOGLE_MAP_PORT:-3000}\"; API_KEY=\"${GOOGLE_MAPS_API_KEY:?GOOGLE_MAPS_API_KEY is required}\"; LOG_PATH=\"${OTTO_HOME:-$HOME/.otto}/logs/mcp-google-map.log\"; mkdir -p \"$(dirname \"$LOG_PATH\")\"; npx -y @cablate/mcp-google-map --port \"$PORT\" --apikey \"$API_KEY\" >>\"$LOG_PATH\" 2>&1 & SERVER_PID=$!; trap 'kill \"$SERVER_PID\" 2>/dev/null || true' EXIT; for _ in $(seq 1 40); do curl -s \"http://127.0.0.1:$PORT/mcp\" >/dev/null 2>&1 && break; sleep 0.15; done; mcp-proxy --transport=streamablehttp --stateless \"http://127.0.0.1:${PORT}/mcp\""
+      "PORT=\"${MCP_GOOGLE_MAP_PORT:-3000}\"; API_KEY=\"${GOOGLE_MAPS_API_KEY:?GOOGLE_MAPS_API_KEY is required}\"; LOG_PATH=\"${OTTO_HOME:-$HOME/.otto}/logs/mcp-google-map.log\"; mkdir -p \"$(dirname \"$LOG_PATH\")\"; npx -y @cablate/mcp-google-map --port \"$PORT\" --apikey \"$API_KEY\" >>\"$LOG_PATH\" 2>&1 & SERVER_PID=$!; trap 'kill \"$SERVER_PID\" 2>/dev/null || true' EXIT; READY=0; for _ in $(seq 1 240); do if ! kill -0 \"$SERVER_PID\" 2>/dev/null; then break; fi; if curl -sf \"http://127.0.0.1:$PORT/mcp\" >/dev/null 2>&1; then READY=1; break; fi; sleep 0.25; done; if [ \"$READY\" -ne 1 ]; then tail -n 80 \"$LOG_PATH\" >&2 || true; exit 1; fi; mcp-proxy --transport=streamablehttp --stateless \"http://127.0.0.1:${PORT}/mcp\""
     ],
     "enabled": true,
   },
