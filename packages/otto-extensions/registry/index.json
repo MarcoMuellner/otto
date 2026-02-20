@@ -1,7 +1,26 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-02-20T11:24:48.691Z",
+  "generatedAt": "2026-02-20T15:04:47.632Z",
   "extensions": {
+    "anylist": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/anylist-0.1.0.tgz",
+          "sha256": "dd4f4ffcd54b8228b88d567396b558a1b2f6e5fbf9a3d369cf129822437cda4a",
+          "sizeBytes": 3770,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "AnyList integration tools for shopping lists and recipe management.",
+          "payloadTypes": [
+            "tools",
+            "skills"
+          ]
+        }
+      }
+    },
     "brave-search": {
       "latest": "0.1.0",
       "versions": {

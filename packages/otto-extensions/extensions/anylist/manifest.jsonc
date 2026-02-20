@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "anylist",
+  "name": "AnyList Tools",
+  "version": "0.1.0",
+  "description": "AnyList integration tools for shopping lists and recipe management.",
+  "tags": ["tools", "anylist", "shopping", "recipes", "productivity"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "tools": {
+      "path": "tools",
+      "packageJson": "tools/package.json",
+    },
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": [],
+    "env": ["ANYLIST_EMAIL", "ANYLIST_PASSWORD"],
+    "files": [],
+  },
+  "dependencies": [],
+}

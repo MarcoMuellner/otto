@@ -58,6 +58,15 @@ const sha256 = (buffer) => {
   return createHash("sha256").update(buffer).digest("hex");
 };
 
+const fileExists = async (filePath) => {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const readManifest = async (manifestPath) => {
   const source = await readFile(manifestPath, "utf8");
   const parsed = parseJsonc(source);
@@ -105,7 +114,10 @@ const generateRegistry = async () => {
     const artifactPath = path.join(artifactsRoot, artifactName);
     expectedArtifacts.add(artifactName);
 
-    createArchive(extensionsRoot, extensionDirectoryName, artifactPath);
+    const artifactAlreadyExists = await fileExists(artifactPath);
+    if (!artifactAlreadyExists) {
+      createArchive(extensionsRoot, extensionDirectoryName, artifactPath);
+    }
 
     const artifactBuffer = await readFile(artifactPath);
     const sizeBytes = (await stat(artifactPath)).size;

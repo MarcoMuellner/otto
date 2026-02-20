@@ -1,0 +1,20 @@
+{
+  "name": "experiments",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Small experimental scripts for validating third-party integrations.",
+  "scripts": {
+    "test:anylist": "tsx src/test-anylist.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "anylist": "^0.8.5",
+    "dotenv": "^17.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
