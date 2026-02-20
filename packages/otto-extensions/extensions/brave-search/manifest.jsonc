@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "brave-search",
+  "name": "Brave Search MCP",
+  "version": "0.1.0",
+  "description": "Brave Search MCP server for web, news, image, video, and local search with agent-friendly tooling.",
+  "tags": ["mcp", "search", "brave", "web", "research"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "mcp": {
+      "file": "mcp.jsonc",
+    },
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": ["npx"],
+    "env": ["BRAVE_API_KEY"],
+    "files": [],
+  },
+  "dependencies": [],
+}

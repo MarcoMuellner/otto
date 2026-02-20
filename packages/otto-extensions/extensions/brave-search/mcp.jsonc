@@ -1,0 +1,16 @@
+{
+  "brave-search": {
+    "type": "local",
+    "command": [
+      "npx",
+      "-y",
+      "@brave/brave-search-mcp-server",
+      "--transport",
+      "stdio",
+    ],
+    "environment": {
+      "BRAVE_API_KEY": "$BRAVE_API_KEY",
+    },
+    "enabled": true,
+  },
+}
