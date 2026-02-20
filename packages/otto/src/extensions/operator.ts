@@ -71,12 +71,74 @@ const resolveRuntimeExtensionPaths = (
   ottoHome: string,
   extensionId: string
 ): {
-  toolsPath: string
+  toolsExtensionPath: string
+  toolsRootPath: string
   skillsPath: string
 } => {
   return {
-    toolsPath: path.join(ottoHome, ".opencode", "tools", "extensions", extensionId),
+    toolsExtensionPath: path.join(ottoHome, ".opencode", "tools", "extensions", extensionId),
+    toolsRootPath: path.join(ottoHome, ".opencode", "tools"),
     skillsPath: path.join(ottoHome, ".opencode", "skills", "extensions", extensionId),
+  }
+}
+
+const syncToolsIntoRoot = async (
+  sourceToolsPath: string,
+  toolsRootPath: string,
+  extensionId: string
+): Promise<void> => {
+  const toolEntries = await readdir(sourceToolsPath, { withFileTypes: true })
+  await mkdir(toolsRootPath, { recursive: true })
+
+  for (const entry of toolEntries) {
+    if (!entry.isFile()) {
+      continue
+    }
+
+    const isToolScript =
+      entry.name.endsWith(".ts") ||
+      entry.name.endsWith(".js") ||
+      entry.name.endsWith(".mjs") ||
+      entry.name.endsWith(".cjs")
+    if (!isToolScript) {
+      continue
+    }
+
+    const sourcePath = path.join(sourceToolsPath, entry.name)
+    const targetPath = path.join(toolsRootPath, entry.name)
+    const sourceContent = await readFile(sourcePath, "utf8")
+    const existingContent = await readFile(targetPath, "utf8").catch(() => null)
+
+    if (existingContent != null && existingContent !== sourceContent) {
+      throw new Error(
+        `Extension '${extensionId}' cannot install tool '${entry.name}' because a different tool file already exists at ${targetPath}`
+      )
+    }
+
+    await writeFile(targetPath, sourceContent, "utf8")
+  }
+}
+
+const removeToolsFromRoot = async (
+  sourceToolsPath: string,
+  toolsRootPath: string
+): Promise<void> => {
+  const toolEntries = await readdir(sourceToolsPath, { withFileTypes: true }).catch(() => [])
+  for (const entry of toolEntries) {
+    if (!entry.isFile()) {
+      continue
+    }
+
+    const isToolScript =
+      entry.name.endsWith(".ts") ||
+      entry.name.endsWith(".js") ||
+      entry.name.endsWith(".mjs") ||
+      entry.name.endsWith(".cjs")
+    if (!isToolScript) {
+      continue
+    }
+
+    await rm(path.join(toolsRootPath, entry.name), { force: true })
   }
 }
 
@@ -307,13 +369,14 @@ const syncRuntimeFootprintForExtension = async (
   const manifest = await loadManifest(manifestPath)
 
   const runtimePaths = resolveRuntimeExtensionPaths(ottoHome, extensionId)
-  await rm(runtimePaths.toolsPath, { recursive: true, force: true })
+  await rm(runtimePaths.toolsExtensionPath, { recursive: true, force: true })
   await rm(runtimePaths.skillsPath, { recursive: true, force: true })
 
   if (manifest.payload.tools?.path) {
     const sourceToolsPath = path.join(storeVersionPath, manifest.payload.tools.path)
-    await mkdir(path.dirname(runtimePaths.toolsPath), { recursive: true })
-    await cp(sourceToolsPath, runtimePaths.toolsPath, { recursive: true })
+    await mkdir(path.dirname(runtimePaths.toolsExtensionPath), { recursive: true })
+    await cp(sourceToolsPath, runtimePaths.toolsExtensionPath, { recursive: true })
+    await syncToolsIntoRoot(sourceToolsPath, runtimePaths.toolsRootPath, extensionId)
   }
 
   if (manifest.payload.skills?.path) {
@@ -363,8 +426,13 @@ const removeRuntimeFootprintForExtension = async (
   const manifest = await loadManifest(path.join(storeVersionPath, "manifest.jsonc"))
 
   const runtimePaths = resolveRuntimeExtensionPaths(ottoHome, extensionId)
-  await rm(runtimePaths.toolsPath, { recursive: true, force: true })
+  await rm(runtimePaths.toolsExtensionPath, { recursive: true, force: true })
   await rm(runtimePaths.skillsPath, { recursive: true, force: true })
+
+  if (manifest.payload.tools?.path) {
+    const sourceToolsPath = path.join(storeVersionPath, manifest.payload.tools.path)
+    await removeToolsFromRoot(sourceToolsPath, runtimePaths.toolsRootPath)
+  }
 
   if (manifest.payload.skills?.path) {
     const sourceSkillsPath = path.join(storeVersionPath, manifest.payload.skills.path)

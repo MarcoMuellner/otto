@@ -70,6 +70,9 @@ describe("extension operator service", () => {
       )
     ).resolves.toContain("export default")
     await expect(
+      readFile(path.join(ottoHome, ".opencode", "tools", "calendar.ts"), "utf8")
+    ).resolves.toContain("export default")
+    await expect(
       readFile(path.join(ottoHome, ".opencode", "skills", "calendar-skill", "SKILL.md"), "utf8")
     ).resolves.toContain("skill")
   })
@@ -170,6 +173,11 @@ describe("extension operator service", () => {
         "utf8"
       )
     ).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(
+      readFile(path.join(ottoHome, ".opencode", "tools", "calendar.ts"), "utf8")
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    })
     await expect(
       readFile(
         path.join(ottoHome, "extensions", "store", "calendar", "1.0.0", "manifest.jsonc"),
