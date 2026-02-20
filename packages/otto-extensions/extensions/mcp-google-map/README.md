@@ -60,5 +60,6 @@ ottoctl restart
 - If startup fails, confirm `GOOGLE_MAPS_API_KEY` is present and valid.
 - On first boot, `npx` may need extra time to download `@cablate/mcp-google-map`; check `~/.otto/logs/mcp-google-map.log` for progress/errors.
 - If you see `ECOMPROMISED` / `Lock compromised`, concurrent `npx` startup likely raced on npm lock state; restart Otto and increase `MCP_GOOGLE_MAP_START_ATTEMPTS`.
+- A `400 Invalid or missing session ID` on `GET /mcp` is expected before MCP session initialization and does not indicate API-key failure.
 - If place tools return 403, verify Places API (New) is enabled for the same GCP project/key.
 - If proxy connection fails, ensure `mcp-proxy` is installed and `MCP_GOOGLE_MAP_PORT` is not already occupied.

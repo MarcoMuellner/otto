@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "mcp-google-map",
   "name": "MCP Google Map",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Community Google Maps MCP server for place lookup, geocoding, and multimodal routing.",
   "tags": ["mcp", "google-maps", "maps", "travel", "routing"],
   "compatibility": {
