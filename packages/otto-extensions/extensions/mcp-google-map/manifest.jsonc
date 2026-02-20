@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "mcp-google-map",
+  "name": "MCP Google Map",
+  "version": "0.1.0",
+  "description": "Community Google Maps MCP server for place lookup, geocoding, and multimodal routing.",
+  "tags": ["mcp", "google-maps", "maps", "travel", "routing"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "mcp": {
+      "file": "mcp.jsonc",
+    },
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": ["bash", "curl", "npx", "mcp-proxy"],
+    "env": ["GOOGLE_MAPS_API_KEY"],
+    "files": [],
+  },
+  "dependencies": [],
+}
