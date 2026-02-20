@@ -9,6 +9,7 @@ export {
   installExtension,
   listExtensions,
   removeExtension,
+  syncOpencodeToolsPackageJson,
   updateAllExtensions,
   updateExtension,
 } from "./operator.js"

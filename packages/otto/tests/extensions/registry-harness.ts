@@ -27,6 +27,7 @@ type RegistryIndex = {
 
 type PublishOptions = {
   description?: string
+  toolDependencies?: Record<string, string>
 }
 
 export type RegistryHarness = {
@@ -43,7 +44,8 @@ const ensureExtensionSource = async (
   sourcesRoot: string,
   extensionId: string,
   version: string,
-  description: string
+  description: string,
+  options?: PublishOptions
 ): Promise<string> => {
   const extensionRoot = path.join(sourcesRoot, extensionId, version, extensionId)
   await rm(path.join(sourcesRoot, extensionId, version), { recursive: true, force: true })
@@ -55,6 +57,21 @@ const ensureExtensionSource = async (
     "export default {}\n",
     "utf8"
   )
+  if (options?.toolDependencies && Object.keys(options.toolDependencies).length > 0) {
+    await writeFile(
+      path.join(extensionRoot, "tools", "package.json"),
+      `${JSON.stringify(
+        {
+          name: `${extensionId}-tools`,
+          private: true,
+          dependencies: options.toolDependencies,
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    )
+  }
   await writeFile(
     path.join(extensionRoot, "skills", `${extensionId}-skill`, "SKILL.md"),
     `---\nname: ${extensionId}-skill\ndescription: Example skill for ${extensionId}\n---\n\nUse this skill.\n`,
@@ -87,6 +104,9 @@ const ensureExtensionSource = async (
         payload: {
           tools: {
             path: "tools",
+            ...(options?.toolDependencies && Object.keys(options.toolDependencies).length > 0
+              ? { packageJson: "tools/package.json" }
+              : {}),
           },
           skills: {
             path: "skills",
@@ -173,7 +193,8 @@ export const createRegistryHarness = async (rootDirectory: string): Promise<Regi
       sourcesRoot,
       extensionId,
       version,
-      description
+      description,
+      options
     )
 
     const archiveName = `${extensionId}-${version}.tgz`

@@ -14,7 +14,10 @@ import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
 import { createUserProfileRepository } from "../persistence/repositories.js"
-import { materializeEffectiveOpencodeConfig } from "../extensions/index.js"
+import {
+  materializeEffectiveOpencodeConfig,
+  syncOpencodeToolsPackageJson,
+} from "../extensions/index.js"
 import { ensureHeartbeatTask, HEARTBEAT_DEFAULT_CADENCE_MINUTES } from "../scheduler/heartbeat.js"
 import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { createTaskExecutionEngine } from "../scheduler/executor.js"
@@ -75,6 +78,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   process.chdir(config.ottoHome)
 
   const effectiveConfig = await materializeEffectiveOpencodeConfig(config.ottoHome)
+  await syncOpencodeToolsPackageJson(config.ottoHome)
   logger.info(
     {
       command: "serve",

@@ -1,5 +1,5 @@
 import path from "node:path"
-import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises"
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 
 import semver from "semver"
 
@@ -107,6 +107,193 @@ const loadMcpFragment = async (
   }
 
   return parsed as Record<string, unknown>
+}
+
+type DependencySource = {
+  extensionId: string
+  extensionVersion: string
+  packageJsonPath: string
+}
+
+const resolveRelativeToolPackageJsonPath = (manifest: ExtensionManifest): string | null => {
+  const packageJsonRelativePath = manifest.payload.tools?.packageJson
+  if (!packageJsonRelativePath) {
+    return null
+  }
+
+  if (path.isAbsolute(packageJsonRelativePath)) {
+    throw new Error(
+      `Invalid tool packageJson path for '${manifest.id}@${manifest.version}': absolute paths are not allowed`
+    )
+  }
+
+  const toolsRootHint = `${manifest.payload.tools?.path ?? "tools"}${path.sep}`
+  return packageJsonRelativePath.startsWith(toolsRootHint)
+    ? packageJsonRelativePath.slice(toolsRootHint.length)
+    : packageJsonRelativePath
+}
+
+const mergeDependencies = (
+  merged: Map<string, { version: string; source: DependencySource }>,
+  nextDependencies: Record<string, unknown>,
+  source: DependencySource
+): void => {
+  for (const [name, value] of Object.entries(nextDependencies)) {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      continue
+    }
+
+    const version = value.trim()
+    const existing = merged.get(name)
+    if (!existing) {
+      merged.set(name, { version, source })
+      continue
+    }
+
+    if (existing.version !== version) {
+      throw new Error(
+        `Extension tool dependency conflict for '${name}': '${existing.version}' from '${existing.source.extensionId}@${existing.source.extensionVersion}' conflicts with '${version}' from '${source.extensionId}@${source.extensionVersion}'`
+      )
+    }
+  }
+}
+
+const buildOpencodeToolsPackageJson = async (
+  ottoHome: string,
+  repository: ReturnType<typeof createExtensionStateRepository>,
+  versionOverrides?: Map<string, string | null>
+): Promise<{ dependencies: Record<string, string>; hasDependencies: boolean }> => {
+  const paths = resolveExtensionPersistencePaths(ottoHome)
+  const installed = await repository.listInstalledExtensions()
+  const merged = new Map<string, { version: string; source: DependencySource }>()
+  const processedExtensionIds = new Set<string>()
+
+  for (const entry of installed) {
+    const overrideVersion = versionOverrides?.get(entry.id)
+    const version =
+      overrideVersion === undefined
+        ? (entry.activeVersion ?? resolveLatestVersion(entry.installedVersions))
+        : overrideVersion
+    processedExtensionIds.add(entry.id)
+    if (!version) {
+      continue
+    }
+
+    const storeVersionPath = path.join(paths.storeRoot, entry.id, version)
+    const manifest = await loadManifest(path.join(storeVersionPath, "manifest.jsonc"))
+    const relativePackageJsonPath = resolveRelativeToolPackageJsonPath(manifest)
+    if (!relativePackageJsonPath || !manifest.payload.tools?.path) {
+      continue
+    }
+
+    const toolsRoot = path.resolve(storeVersionPath, manifest.payload.tools.path)
+    const packageJsonPath = path.resolve(toolsRoot, relativePackageJsonPath)
+    const isUnderToolsRoot =
+      packageJsonPath === toolsRoot || packageJsonPath.startsWith(`${toolsRoot}${path.sep}`)
+    if (!isUnderToolsRoot) {
+      throw new Error(
+        `Invalid tool packageJson path for '${manifest.id}@${manifest.version}': path escapes tools directory`
+      )
+    }
+
+    const packageJsonSource = await readFile(packageJsonPath, "utf8")
+    const parsed = parseJsonc(packageJsonSource)
+    if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) {
+      throw new Error(`Invalid tool packageJson at ${packageJsonPath}`)
+    }
+
+    const dependencies = (parsed as { dependencies?: Record<string, unknown> }).dependencies ?? {}
+    mergeDependencies(merged, dependencies, {
+      extensionId: manifest.id,
+      extensionVersion: manifest.version,
+      packageJsonPath,
+    })
+  }
+
+  if (versionOverrides) {
+    for (const [extensionId, version] of versionOverrides.entries()) {
+      if (processedExtensionIds.has(extensionId) || !version) {
+        continue
+      }
+
+      const storeVersionPath = path.join(paths.storeRoot, extensionId, version)
+      const manifest = await loadManifest(path.join(storeVersionPath, "manifest.jsonc"))
+      const relativePackageJsonPath = resolveRelativeToolPackageJsonPath(manifest)
+      if (!relativePackageJsonPath || !manifest.payload.tools?.path) {
+        continue
+      }
+
+      const toolsRoot = path.resolve(storeVersionPath, manifest.payload.tools.path)
+      const packageJsonPath = path.resolve(toolsRoot, relativePackageJsonPath)
+      const isUnderToolsRoot =
+        packageJsonPath === toolsRoot || packageJsonPath.startsWith(`${toolsRoot}${path.sep}`)
+      if (!isUnderToolsRoot) {
+        throw new Error(
+          `Invalid tool packageJson path for '${manifest.id}@${manifest.version}': path escapes tools directory`
+        )
+      }
+
+      const packageJsonSource = await readFile(packageJsonPath, "utf8")
+      const parsed = parseJsonc(packageJsonSource)
+      if (typeof parsed !== "object" || parsed == null || Array.isArray(parsed)) {
+        throw new Error(`Invalid tool packageJson at ${packageJsonPath}`)
+      }
+
+      const dependencies = (parsed as { dependencies?: Record<string, unknown> }).dependencies ?? {}
+      mergeDependencies(merged, dependencies, {
+        extensionId: manifest.id,
+        extensionVersion: manifest.version,
+        packageJsonPath,
+      })
+    }
+  }
+
+  const dependencyRecord = Object.fromEntries(
+    [...merged.entries()]
+      .sort((left, right) => left[0].localeCompare(right[0]))
+      .map(([name, detail]) => [name, detail.version])
+  )
+
+  return {
+    dependencies: dependencyRecord,
+    hasDependencies: Object.keys(dependencyRecord).length > 0,
+  }
+}
+
+export const syncOpencodeToolsPackageJson = async (ottoHome: string): Promise<void> => {
+  const repository = createExtensionStateRepository(ottoHome)
+  const packageRootPath = path.join(ottoHome, ".opencode")
+  const packageJsonPath = path.join(packageRootPath, "package.json")
+  const result = await buildOpencodeToolsPackageJson(ottoHome, repository)
+
+  if (!result.hasDependencies) {
+    await rm(packageJsonPath, { force: true })
+    return
+  }
+
+  await mkdir(packageRootPath, { recursive: true })
+  await writeFile(
+    packageJsonPath,
+    `${JSON.stringify(
+      {
+        name: "otto-opencode-tools-runtime",
+        private: true,
+        type: "module",
+        dependencies: result.dependencies,
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  )
+}
+
+const assertOpencodeToolsPackageJsonResolvable = async (
+  ottoHome: string,
+  versionOverrides: Map<string, string | null>
+): Promise<void> => {
+  const repository = createExtensionStateRepository(ottoHome)
+  await buildOpencodeToolsPackageJson(ottoHome, repository, versionOverrides)
 }
 
 const syncRuntimeFootprintForExtension = async (
@@ -311,14 +498,34 @@ export const installExtension = async (
   await rm(targetPath, { recursive: true, force: true })
   await installRegistryArchiveToPath(selected, targetPath)
 
+  await assertOpencodeToolsPackageJsonResolvable(
+    context.ottoHome,
+    new Map([[selected.id, selected.version]])
+  )
+
+  try {
+    await syncRuntimeFootprintForExtension(context.ottoHome, selected.id, selected.version)
+  } catch (error) {
+    if (previousInstalledVersion && previousInstalledVersion !== selected.version) {
+      await syncRuntimeFootprintForExtension(
+        context.ottoHome,
+        selected.id,
+        previousInstalledVersion
+      ).catch(() => undefined)
+    }
+
+    throw error
+  }
+
   await repository.recordInstalledVersion(selected.id, selected.version)
   await repository.setActiveVersion(selected.id, selected.version)
-  await syncRuntimeFootprintForExtension(context.ottoHome, selected.id, selected.version)
 
   for (const candidate of pruneCandidates) {
     await removeStoreVersionIfPresent(context.ottoHome, selected.id, candidate)
     await repository.removeInstalledVersion(selected.id, candidate)
   }
+
+  await syncOpencodeToolsPackageJson(context.ottoHome)
 
   return {
     id: selected.id,
@@ -408,6 +615,7 @@ export const removeExtension = async (
   await removeRuntimeFootprintForExtension(context.ottoHome, parsed.id, installedVersion)
   await removeStoreVersionIfPresent(context.ottoHome, parsed.id, installedVersion)
   await repository.removeInstalledVersion(parsed.id, installedVersion)
+  await syncOpencodeToolsPackageJson(context.ottoHome)
 
   return {
     id: parsed.id,

@@ -219,4 +219,27 @@ describe("extension operator service", () => {
     expect(summary.installed[0]?.version).toBe("1.0.0")
     expect(summary.installed[0]?.upToDate).toBe(false)
   })
+
+  it("generates aggregated .opencode/package.json from extension tool package manifests", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
+    const ottoHome = path.join(tempRoot, ".otto")
+    await harness.publishExtensionVersion("calendar", "1.0.0", {
+      toolDependencies: {
+        anylist: "^0.8.5",
+      },
+    })
+
+    // Act
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+
+    // Assert
+    await expect(
+      readFile(path.join(ottoHome, ".opencode", "package.json"), "utf8")
+    ).resolves.toContain('"anylist": "^0.8.5"')
+  })
 })
