@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-02-20T21:21:47.523Z",
+  "generatedAt": "2026-02-20T21:33:40.289Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -79,12 +79,12 @@
       }
     },
     "mcp-google-map": {
-      "latest": "0.1.0",
+      "latest": "0.1.1",
       "versions": {
-        "0.1.0": {
-          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/mcp-google-map-0.1.0.tgz",
-          "sha256": "54eb75c18ff42723d2e3f37ec05850533eba54aa5c5a2ccbad11dd0cf16cf8d5",
-          "sizeBytes": 2412,
+        "0.1.1": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/mcp-google-map-0.1.1.tgz",
+          "sha256": "96f4c7838631211659f6728c5517b3183c9a6dfcd9c78a465e40d07cea6f98bd",
+          "sizeBytes": 2696,
           "compatibility": {
             "otto": ">=0.1.0",
             "node": ">=22"
