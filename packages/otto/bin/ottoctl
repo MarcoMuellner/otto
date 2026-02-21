@@ -815,6 +815,81 @@ cmd_task_audit() {
     "[${limit}]"
 }
 
+cmd_task_run_now() {
+  require_task_runtime_paths
+  require_state_db
+
+  local task_id="${1:-}"
+  if [[ -z "${task_id}" ]]; then
+    error "Usage: ottoctl task run-now <task-id>"
+    exit 1
+  fi
+
+  local run_at
+  run_at="$(node -e 'process.stdout.write(String(Date.now()))')"
+
+  if node -e '
+const { DatabaseSync } = require("node:sqlite")
+
+const dbPath = process.argv[1]
+const taskId = process.argv[2]
+const runAt = Number(process.argv[3])
+
+const db = new DatabaseSync(dbPath)
+try {
+  const columns = new Set(db.prepare("PRAGMA table_info(jobs)").all().map((row) => row.name))
+  if (!columns.has("next_run_at")) {
+    process.exit(3)
+  }
+
+  const task = db
+    .prepare("SELECT id, status FROM jobs WHERE id = ?")
+    .get(taskId)
+
+  if (!task) {
+    process.exit(2)
+  }
+
+  if (task.status === "paused") {
+    process.exit(4)
+  }
+
+  db.prepare(
+    `UPDATE jobs
+     SET status = 'idle',
+         next_run_at = ?,
+         lock_token = NULL,
+         lock_expires_at = NULL,
+         updated_at = ?
+     WHERE id = ?`
+  ).run(runAt, runAt, taskId)
+} finally {
+  db.close()
+}
+' "${STATE_DB_PATH}" "${task_id}" "${run_at}"
+  then
+    :
+  else
+    local run_status=$?
+    if [[ ${run_status} -eq 2 ]]; then
+      error "Task not found: ${task_id}"
+      exit 1
+    fi
+    if [[ ${run_status} -eq 3 ]]; then
+      error "Current state database does not support scheduler next_run_at yet. Run ottoctl update/setup first."
+      exit 1
+    fi
+    if [[ ${run_status} -eq 4 ]]; then
+      error "Task is paused: ${task_id}. Resume it first before run-now."
+      exit 1
+    fi
+    exit ${run_status}
+  fi
+
+  success "Scheduled immediate run for task ${task_id}"
+  info "Scheduler executes on next tick (usually within 60s)."
+}
+
 cmd_task() {
   local subcommand="${1:-}"
   shift || true
@@ -850,6 +925,9 @@ cmd_task() {
       ;;
     audit)
       cmd_task_audit "$@"
+      ;;
+    run-now)
+      cmd_task_run_now "$@"
       ;;
     *)
       error "Unknown task command: ${subcommand}"
@@ -1269,6 +1347,7 @@ Usage:
   ottoctl task bind-profile <task-id> <profile-id>
   ottoctl task show <task-id>
   ottoctl task audit [limit]
+  ottoctl task run-now <task-id>
   ottoctl extension list
   ottoctl extension install <id>[@version]
   ottoctl extension update <id>

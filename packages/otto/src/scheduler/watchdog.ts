@@ -3,6 +3,10 @@ import { createHash } from "node:crypto"
 import { z } from "zod"
 
 import type { FailedJobRunRecord, JobRecord } from "../persistence/repositories.js"
+import {
+  loadTelegramCredentials,
+  type TelegramCredentialSource,
+} from "../telegram-worker/config.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 
 export const WATCHDOG_TASK_ID = "system-watchdog-failures"
@@ -115,19 +119,24 @@ export type EnsureWatchdogTaskResult = {
  * @returns Telegram user/chat id if valid, otherwise null.
  */
 export const resolveDefaultWatchdogChatId = (
-  environment: NodeJS.ProcessEnv = process.env
+  environment: NodeJS.ProcessEnv = process.env,
+  credentials: TelegramCredentialSource | null = null
 ): number | null => {
   const raw = environment.TELEGRAM_ALLOWED_USER_ID?.trim()
-  if (!raw) {
+  if (raw) {
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed >= 1) {
+      return parsed
+    }
+  }
+
+  const resolvedCredentials = credentials ?? loadTelegramCredentials()
+  const fallbackChatId = resolvedCredentials.allowedUserId
+  if (fallbackChatId == null || !Number.isInteger(fallbackChatId) || fallbackChatId < 1) {
     return null
   }
 
-  const parsed = Number(raw)
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    return null
-  }
-
-  return parsed
+  return fallbackChatId
 }
 
 const buildWatchdogMessage = (

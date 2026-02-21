@@ -12,6 +12,7 @@ import {
 import {
   checkTaskFailures,
   ensureWatchdogTask,
+  resolveDefaultWatchdogChatId,
   WATCHDOG_TASK_ID,
 } from "../../src/scheduler/watchdog.js"
 
@@ -25,6 +26,27 @@ afterEach(async () => {
 })
 
 describe("watchdog", () => {
+  it("resolves default chat id from env first, then telegram credentials", () => {
+    // Arrange
+    const envPreferred = {
+      TELEGRAM_ALLOWED_USER_ID: "123",
+    } as NodeJS.ProcessEnv
+    const fallbackCredentials = {
+      botToken: "token",
+      allowedUserId: 456,
+    }
+
+    // Act
+    const fromEnv = resolveDefaultWatchdogChatId(envPreferred, fallbackCredentials)
+    const fromCredentials = resolveDefaultWatchdogChatId({}, fallbackCredentials)
+    const missing = resolveDefaultWatchdogChatId({}, { botToken: "token", allowedUserId: null })
+
+    // Assert
+    expect(fromEnv).toBe(123)
+    expect(fromCredentials).toBe(456)
+    expect(missing).toBeNull()
+  })
+
   it("creates watchdog task once and keeps it idempotent", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
