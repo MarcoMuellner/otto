@@ -2,6 +2,8 @@
 node_modules/
 dist/
 packages/otto/dist/
+packages/otto-control-plane/build/
+packages/otto-control-plane/.react-router/
 coverage/
 packages/otto/coverage/
 .env

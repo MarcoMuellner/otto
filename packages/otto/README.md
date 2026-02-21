@@ -100,6 +100,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
 
 - `pnpm run setup`: create config/workspace and deploy OpenCode assets into `ottoHome`
 - `pnpm run serve`: run OpenCode + internal API and auto-start Telegram worker when credentials are configured
+- Control-plane web UI runs as a separate process from `packages/otto-control-plane` (for example `pnpm -C packages/otto-control-plane run dev`)
 - `pnpm run telegram-worker`: run the dedicated Telegram worker runtime
 - `pnpm run dev`: run the server from TypeScript sources
 - `pnpm run version:sync`: write `src/version.ts` from explicit value/env/package defaults

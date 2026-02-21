@@ -5,6 +5,7 @@ This file is the operating guide for coding agents working in this repository.
 - Monorepo managed with `pnpm` workspaces.
 - Main packages:
   - `packages/otto` (core runtime, CLI, bundled release artifact)
+  - `packages/otto-control-plane` (React Router control-plane web process + BFF)
   - `packages/otto-extension-sdk` (shared extension validation library)
   - `packages/otto-extensions` (extension catalog scaffolding)
 - Root scripts proxy to package scripts and are the preferred entrypoint.

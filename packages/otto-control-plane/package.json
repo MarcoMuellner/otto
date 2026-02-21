@@ -1,0 +1,39 @@
+{
+  "name": "otto-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "react-router dev",
+    "build": "react-router build && node scripts/assert-no-client-secrets.mjs",
+    "start": "react-router-serve build/server/index.js",
+    "typecheck": "react-router typegen && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint app tests",
+    "format": "prettier --write \"app/**/*.ts\" \"app/**/*.tsx\" \"app/**/*.css\" \"tests/**/*.ts\" package.json tsconfig.json vite.config.ts vitest.config.ts react-router.config.ts README.md",
+    "format:check": "prettier --check \"app/**/*.ts\" \"app/**/*.tsx\" \"app/**/*.css\" \"tests/**/*.ts\" package.json tsconfig.json vite.config.ts vitest.config.ts react-router.config.ts README.md",
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test"
+  },
+  "dependencies": {
+    "@react-router/node": "^7.13.0",
+    "isbot": "^5",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router": "^7.13.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^7.13.0",
+    "@react-router/serve": "^7.13.0",
+    "@tailwindcss/vite": "^4.2.0",
+    "@types/node": "^25.2.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "oxlint": "^1.47.0",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^4.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.0"
+  }
+}
