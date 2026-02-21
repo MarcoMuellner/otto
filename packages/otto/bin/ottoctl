@@ -1046,6 +1046,139 @@ cmd_env() {
   esac
 }
 
+cmd_heartbeat_mode() {
+  require_state_db
+
+  local mode="${1:-}"
+  if [[ -z "${mode}" ]]; then
+    error "Usage: ottoctl heartbeat mode <observe|mute>"
+    exit 1
+  fi
+
+  if [[ "${mode}" != "observe" && "${mode}" != "mute" ]]; then
+    error "Unknown heartbeat mode: ${mode}. Valid modes: observe, mute"
+    exit 1
+  fi
+
+  node -e '
+const { DatabaseSync } = require("node:sqlite")
+
+const dbPath = process.argv[1]
+const mode = process.argv[2]
+const now = Date.now()
+const muteFarFuture = now + 10 * 365 * 24 * 60 * 60 * 1000
+
+const db = new DatabaseSync(dbPath)
+try {
+  db.exec("BEGIN")
+
+  const existing = db.prepare("SELECT 1 FROM user_profile WHERE id = 1").get()
+  if (!existing) {
+    db.prepare(
+      `INSERT INTO user_profile
+        (id, timezone, quiet_hours_start, quiet_hours_end, quiet_mode, mute_until, heartbeat_morning, heartbeat_midday, heartbeat_evening, heartbeat_cadence_minutes, heartbeat_only_if_signal, onboarding_completed_at, last_digest_at, updated_at)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run("Europe/Vienna", "20:00", "08:00", "critical_only", null, "08:30", "12:30", "19:00", 180, 1, now, null, now)
+  }
+
+  if (mode === "observe") {
+    db.prepare(
+      `UPDATE user_profile
+       SET heartbeat_only_if_signal = 0,
+           quiet_mode = 'off',
+           mute_until = NULL,
+           updated_at = ?
+       WHERE id = 1`
+    ).run(now)
+  } else {
+    db.prepare(
+      `UPDATE user_profile
+       SET heartbeat_only_if_signal = 1,
+           quiet_mode = 'critical_only',
+           mute_until = ?,
+           updated_at = ?
+       WHERE id = 1`
+    ).run(muteFarFuture, now)
+  }
+
+  db.exec("COMMIT")
+} catch (error) {
+  db.exec("ROLLBACK")
+  throw error
+} finally {
+  db.close()
+}
+' "${STATE_DB_PATH}" "${mode}"
+
+  if [[ "${mode}" == "observe" ]]; then
+    success "Heartbeat mode set to observe (always send compact updates)."
+  else
+    success "Heartbeat mode set to mute (normal heartbeats suppressed)."
+  fi
+}
+
+cmd_heartbeat_status() {
+  require_state_db
+
+  node -e '
+const { DatabaseSync } = require("node:sqlite")
+
+const dbPath = process.argv[1]
+const now = Date.now()
+const db = new DatabaseSync(dbPath)
+try {
+  const row = db.prepare(
+    `SELECT
+      quiet_mode as quietMode,
+      mute_until as muteUntil,
+      heartbeat_only_if_signal as heartbeatOnlyIfSignal,
+      heartbeat_morning as heartbeatMorning,
+      heartbeat_midday as heartbeatMidday,
+      heartbeat_evening as heartbeatEvening,
+      heartbeat_cadence_minutes as heartbeatCadenceMinutes
+     FROM user_profile
+     WHERE id = 1`
+  ).get()
+
+  if (!row) {
+    console.log("Heartbeat profile: not initialized")
+    process.exit(0)
+  }
+
+  const muted = typeof row.muteUntil === "number" && row.muteUntil > now
+  const mode = muted ? "mute" : "observe"
+  const onlyIfSignal = row.heartbeatOnlyIfSignal === 0 ? "off" : "on"
+
+  console.log(`mode\t${mode}`)
+  console.log(`heartbeat_only_if_signal\t${onlyIfSignal}`)
+  console.log(`quiet_mode\t${row.quietMode ?? "critical_only"}`)
+  console.log(`mute_until\t${row.muteUntil ?? ""}`)
+  console.log(`windows\t${row.heartbeatMorning ?? "-"} / ${row.heartbeatMidday ?? "-"} / ${row.heartbeatEvening ?? "-"}`)
+  console.log(`cadence_minutes\t${row.heartbeatCadenceMinutes ?? ""}`)
+} finally {
+  db.close()
+}
+' "${STATE_DB_PATH}"
+}
+
+cmd_heartbeat() {
+  local subcommand="${1:-status}"
+  shift || true
+
+  case "${subcommand}" in
+    mode)
+      cmd_heartbeat_mode "$@"
+      ;;
+    status)
+      cmd_heartbeat_status "$@"
+      ;;
+    *)
+      error "Unknown heartbeat command: ${subcommand}"
+      exit 1
+      ;;
+  esac
+}
+
 resolve_repo() {
   local explicit_repo="${1:-}"
   if [[ -n "${explicit_repo}" ]]; then
@@ -1348,6 +1481,8 @@ Usage:
   ottoctl task show <task-id>
   ottoctl task audit [limit]
   ottoctl task run-now <task-id>
+  ottoctl heartbeat status
+  ottoctl heartbeat mode <observe|mute>
   ottoctl extension list
   ottoctl extension install <id>[@version]
   ottoctl extension update <id>
@@ -1397,6 +1532,10 @@ main() {
     task)
       shift
       cmd_task "$@"
+      ;;
+    heartbeat)
+      shift
+      cmd_heartbeat "$@"
       ;;
     extension)
       shift

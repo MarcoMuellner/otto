@@ -81,6 +81,8 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl task bind-profile <task-id> <profile-id>`
   - `ottoctl task show <task-id>`
   - `ottoctl task audit [limit]`
+  - `ottoctl heartbeat status` (show current heartbeat delivery mode)
+  - `ottoctl heartbeat mode <observe|mute>` (observe = always compact updates, mute = suppress normal heartbeats)
   - `ottoctl extension list`
   - `ottoctl extension install <id>[@version]` (default installs latest registry version)
   - `ottoctl extension update <id>`

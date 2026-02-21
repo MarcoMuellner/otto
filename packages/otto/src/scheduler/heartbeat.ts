@@ -19,6 +19,9 @@ import {
 export const HEARTBEAT_TASK_ID = "system-heartbeat"
 export const HEARTBEAT_TASK_TYPE = "heartbeat"
 export const HEARTBEAT_DEFAULT_CADENCE_MINUTES = 1
+const HEARTBEAT_MAX_ACTIVITY_ITEMS = 3
+const HEARTBEAT_MAX_LABEL_LENGTH = 32
+const HEARTBEAT_MAX_ISSUE_LENGTH = 120
 
 const ensureHeartbeatTaskInputSchema = z.object({
   cadenceMinutes: z.number().int().min(1).max(60).optional().default(1),
@@ -105,9 +108,45 @@ const buildDeduplicateKey = (
   return `${kind}:${hash}`
 }
 
+const normalizeWhitespace = (value: string): string => {
+  return value.replaceAll(/\s+/g, " ").trim()
+}
+
+const shorten = (value: string, maxLength: number): string => {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trim()}...`
+}
+
+const toDisplayTaskType = (jobType: string): string => {
+  const normalized = normalizeWhitespace(jobType)
+  const lower = normalized.toLowerCase()
+
+  if (lower === "watchdog_failures") {
+    return "Watchdog"
+  }
+
+  if (lower.includes("geizhals")) {
+    return "Geizhals"
+  }
+
+  if (lower.includes("lueften") || lower.includes("luften") || lower.includes("lüften")) {
+    return "Lueften-Check"
+  }
+
+  if (lower.startsWith("every run:")) {
+    const withoutPrefix = normalizeWhitespace(normalized.slice("every run:".length))
+    return shorten(withoutPrefix, HEARTBEAT_MAX_LABEL_LENGTH)
+  }
+
+  return shorten(normalized, HEARTBEAT_MAX_LABEL_LENGTH)
+}
+
 const summarizeRuns = (runs: JobRunSummaryRecord[]): string => {
   if (runs.length === 0) {
-    return "No task activity in the recent window."
+    return ["Status: keine neuen Laeufe.", "Aktion: keine.", "Aktiv: keine."].join("\n")
   }
 
   const successCount = runs.filter((run) => run.status === "success").length
@@ -116,24 +155,32 @@ const summarizeRuns = (runs: JobRunSummaryRecord[]): string => {
   const byType = new Map<string, number>()
 
   for (const run of runs) {
-    byType.set(run.jobType, (byType.get(run.jobType) ?? 0) + 1)
+    const displayType = toDisplayTaskType(run.jobType)
+    byType.set(displayType, (byType.get(displayType) ?? 0) + 1)
   }
 
   const topTypes = [...byType.entries()]
     .sort((left, right) => right[1] - left[1])
-    .slice(0, 3)
+    .slice(0, HEARTBEAT_MAX_ACTIVITY_ITEMS)
     .map(([type, count]) => `${type} (${count})`)
-    .join(", ")
+    .join(" | ")
 
   const errorHighlights = runs
     .filter((run) => run.status === "failed")
     .slice(0, 2)
-    .map((run) => run.errorMessage ?? run.errorCode ?? "Unknown failure")
+    .map((run) => run.errorMessage ?? run.errorCode ?? "Unbekannter Fehler")
+    .map((message) => shorten(normalizeWhitespace(message), HEARTBEAT_MAX_ISSUE_LENGTH))
+
+  const actionLine =
+    failedCount > 0
+      ? `Aktion: ${failedCount} Fehler pruefen (ottoctl task audit).`
+      : "Aktion: keine."
 
   const lines = [
-    `Recent task activity: ${runs.length} runs (${successCount} success, ${failedCount} failed, ${skippedCount} skipped).`,
-    topTypes.length > 0 ? `Most active: ${topTypes}.` : null,
-    errorHighlights.length > 0 ? `Top issues: ${errorHighlights.join(" | ")}.` : null,
+    `Status: ${runs.length} Laeufe (${successCount} ok, ${failedCount} Fehler, ${skippedCount} uebersprungen).`,
+    actionLine,
+    topTypes.length > 0 ? `Aktiv: ${topTypes}.` : "Aktiv: keine.",
+    errorHighlights.length > 0 ? `Top-Fehler: ${errorHighlights.join(" | ")}.` : null,
   ].filter((line): line is string => Boolean(line))
 
   return lines.join("\n")
@@ -345,9 +392,10 @@ export const executeHeartbeatTask = (
   const fingerprint = window
     ? buildWindowFingerprint(timezoneDate, window)
     : `${timezoneDate}:${cadenceBucket.key}`
+  const heartbeatLabel = window === "morning" ? "Morgen" : window === "midday" ? "Mittag" : "Abend"
   const heartbeatHeader = window
-    ? `Friendly ${window} heartbeat:`
-    : `Friendly heartbeat (${profile.heartbeatCadenceMinutes} minute cadence):`
+    ? `${heartbeatLabel}-Update:`
+    : `Heartbeat-Update (${profile.heartbeatCadenceMinutes} Min.-Takt):`
   const heartbeatContent = [heartbeatHeader, summarizeRuns(recentRuns)].join("\n")
 
   const enqueueResult = enqueueTelegramMessage(
