@@ -148,61 +148,8 @@
             </div>
         </div>
 
-        <!-- VIEW: Jobs Monitor -->
-        <div id="view-jobs" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10">
-             <div class="w-full max-w-4xl mx-auto h-full flex flex-col">
-                <header class="flex items-end justify-between mb-10 border-b border-paper-ink/10 pb-4">
-                    <div>
-                        <h2 class="text-4xl font-light text-paper-ink mb-2">Job Queue</h2>
-                        <p class="text-sm text-paper-sub font-mono">3 Active &bull; 12 Scheduled</p>
-                    </div>
-                    <button onclick="app.navigate('home')" class="text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink transition-colors">
-                        ESC / Back
-                    </button>
-                </header>
-
-                <div class="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2">
-                    <!-- Active Job Card -->
-                    <div class="bg-white border border-paper-ink/5 p-6 rounded-xl flex items-center justify-between shadow-sm group hover:border-paper-ink/20 transition-all">
-                        <div class="flex items-center gap-4">
-                            <div class="w-10 h-10 rounded-full bg-paper-accent/10 flex items-center justify-center text-paper-accent">
-                                <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                            </div>
-                            <div>
-                                <h3 class="text-lg font-light text-paper-ink">Backup Assets</h3>
-                                <p class="text-xs text-paper-sub font-mono uppercase tracking-wide">Running - 45s</p>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                             <button class="px-4 py-2 text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-accent border border-transparent hover:border-paper-ink/10 rounded transition-all">
-                                Cancel
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Scheduled Job Card -->
-                    <div class="bg-white border border-paper-ink/5 p-6 rounded-xl flex items-center justify-between shadow-sm group hover:border-paper-ink/20 transition-all opacity-70">
-                        <div class="flex items-center gap-4">
-                            <div class="w-10 h-10 rounded-full bg-paper-ink/5 flex items-center justify-center text-paper-ink/40">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            </div>
-                            <div>
-                                <h3 class="text-lg font-light text-paper-ink">Daily Digest</h3>
-                                <p class="text-xs text-paper-sub font-mono uppercase tracking-wide">Scheduled - 18:00</p>
-                            </div>
-                        </div>
-                        <div class="text-right">
-                             <button class="px-4 py-2 text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink border border-transparent hover:border-paper-ink/10 rounded transition-all">
-                                Edit
-                            </button>
-                        </div>
-                    </div>
-                </div>
-             </div>
-        </div>
-
         <!-- VIEW: Chat -->
-        <div id="view-chat" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10">
+        <div id="view-chat" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10 bg-paper-bg/95 backdrop-blur-sm">
              <div class="w-full max-w-3xl mx-auto h-full flex flex-col relative">
                 <header class="flex items-end justify-between mb-6 border-b border-paper-ink/10 pb-4">
                     <div>
@@ -269,6 +216,411 @@
              </div>
         </div>
 
+        <!-- VIEW: Jobs Monitor -->
+        <div id="view-jobs" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10 bg-paper-bg/95 backdrop-blur-sm">
+             <div class="w-full max-w-4xl mx-auto h-full flex flex-col">
+                <header class="flex items-end justify-between mb-10 border-b border-paper-ink/10 pb-4">
+                    <div>
+                        <h2 class="text-4xl font-light text-paper-ink mb-2">Job Queue</h2>
+                        <p class="text-sm text-paper-sub font-mono">3 Active &bull; 12 Scheduled</p>
+                    </div>
+                    <button onclick="app.navigate('home')" class="text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink transition-colors">
+                        ESC / Back
+                    </button>
+                </header>
+
+                <div class="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2">
+                    <!-- Active Job Card -->
+                    <div class="bg-white border border-paper-ink/5 p-6 rounded-xl flex items-center justify-between shadow-sm group hover:border-paper-ink/20 transition-all cursor-pointer" onclick="app.openJobDetail('job-123')">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-paper-accent/10 flex items-center justify-center text-paper-accent">
+                                <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-light text-paper-ink">Backup Assets</h3>
+                                <p class="text-xs text-paper-sub font-mono uppercase tracking-wide">Running - 45s</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                             <button class="px-4 py-2 text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-accent border border-transparent hover:border-paper-ink/10 rounded transition-all" onclick="event.stopPropagation()">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Scheduled Job Card -->
+                    <div class="bg-white border border-paper-ink/5 p-6 rounded-xl flex items-center justify-between shadow-sm group hover:border-paper-ink/20 transition-all opacity-70 cursor-pointer" onclick="app.openJobDetail('job-456')">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-paper-ink/5 flex items-center justify-center text-paper-ink/40">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-light text-paper-ink">Daily Digest</h3>
+                                <p class="text-xs text-paper-sub font-mono uppercase tracking-wide">Scheduled - 18:00</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                             <button class="px-4 py-2 text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink border border-transparent hover:border-paper-ink/10 rounded transition-all" onclick="event.stopPropagation()">
+                                Edit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+             </div>
+        </div>
+
+        <!-- OVERLAY: Job Detail Slide-Over -->
+        <div id="job-detail" class="fixed inset-y-0 right-0 z-40 w-full md:w-[600px] bg-white shadow-2xl transform translate-x-full transition-transform duration-300 flex flex-col border-l border-paper-ink/5">
+            <div class="p-6 border-b border-paper-ink/5 flex items-center justify-between bg-paper-bg/50">
+                <div>
+                    <div class="text-xs font-mono text-paper-sub uppercase tracking-widest mb-1">Job ID: job-123</div>
+                    <h2 class="text-2xl font-light text-paper-ink">Backup Assets</h2>
+                </div>
+                <button onclick="app.closeJobDetail()" class="p-2 hover:bg-paper-ink/5 rounded-full transition-colors">
+                    <svg class="w-6 h-6 text-paper-sub" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-6 space-y-8">
+                <!-- Status Block -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-paper-bg rounded-lg border border-paper-ink/5">
+                        <div class="text-xs font-mono text-paper-sub uppercase mb-1">Status</div>
+                        <div class="text-paper-accent font-mono flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-paper-accent animate-pulse"></span>
+                            RUNNING
+                        </div>
+                    </div>
+                    <div class="p-4 bg-paper-bg rounded-lg border border-paper-ink/5">
+                        <div class="text-xs font-mono text-paper-sub uppercase mb-1">Duration</div>
+                        <div class="text-paper-ink font-mono">00:00:45</div>
+                    </div>
+                </div>
+
+                <!-- Logs Console -->
+                <div>
+                    <h3 class="text-sm font-medium text-paper-ink mb-3">Live Logs</h3>
+                    <div class="bg-paper-bg text-paper-ink p-4 rounded-lg font-mono text-xs h-64 overflow-y-auto space-y-1 border border-paper-ink/10 shadow-inner">
+                        <div class="text-paper-sub">[10:42:01] Initializing backup routine...</div>
+                        <div class="text-paper-sub">[10:42:02] Connected to S3 bucket 'otto-backups'</div>
+                        <div class="text-paper-sub">[10:42:05] Compressing /data/db...</div>
+                        <div class="text-paper-success">[10:42:15] Uploading chunk 1/4 (25MB)...</div>
+                        <div class="text-paper-accent animate-pulse">_</div>
+                    </div>
+                </div>
+
+                <!-- Payload Config -->
+                <div>
+                    <h3 class="text-sm font-medium text-paper-ink mb-3">Configuration Payload</h3>
+                    <div class="bg-white p-4 rounded-lg border border-paper-ink/10 font-mono text-xs text-paper-sub overflow-x-auto shadow-sm">
+                        <pre>{
+  "target": "s3",
+  "compression": "gzip",
+  "paths": [
+    "/data/db",
+    "/data/uploads"
+  ],
+  "retention": "30d"
+}</pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-6 border-t border-paper-ink/5 bg-paper-bg/50 flex justify-end gap-4">
+                <button class="px-4 py-2 text-sm text-paper-ink hover:bg-paper-ink/5 rounded-lg transition-colors" onclick="app.navigate('audit'); app.closeJobDetail()">View Audit Trail</button>
+                <button class="px-6 py-2 bg-paper-ink text-white text-sm rounded-lg hover:bg-paper-ink/90 transition-colors shadow-lg shadow-paper-ink/20">Restart Job</button>
+            </div>
+        </div>
+
+        <!-- VIEW: Audit Trail -->
+        <div id="view-audit" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10 bg-paper-bg/95 backdrop-blur-sm">
+             <div class="w-full max-w-5xl mx-auto h-full flex flex-col">
+                <header class="flex items-end justify-between mb-10 border-b border-paper-ink/10 pb-4">
+                    <div>
+                        <h2 class="text-4xl font-light text-paper-ink mb-2">Execution Log</h2>
+                        <p class="text-sm text-paper-sub font-mono">History of all executed tasks</p>
+                    </div>
+                    <button onclick="app.navigate('home')" class="text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink transition-colors">
+                        ESC / Back
+                    </button>
+                </header>
+
+                <div class="bg-white rounded-xl border border-paper-ink/5 overflow-hidden shadow-sm flex-1 flex flex-col">
+                    <!-- Table Header -->
+                    <div class="grid grid-cols-12 gap-4 p-4 border-b border-paper-ink/5 bg-paper-bg/30 text-xs font-mono text-paper-sub uppercase tracking-widest">
+                        <div class="col-span-2">Time</div>
+                        <div class="col-span-4">Job Name</div>
+                        <div class="col-span-2">Status</div>
+                        <div class="col-span-2">Duration</div>
+                        <div class="col-span-2 text-right">Action</div>
+                    </div>
+
+                    <!-- List -->
+                    <div class="flex-1 overflow-y-auto hide-scrollbar">
+                        <!-- Item 1 -->
+                        <div class="grid grid-cols-12 gap-4 p-4 border-b border-paper-ink/5 hover:bg-paper-bg/50 transition-colors items-center group cursor-pointer" onclick="app.openRunDetail('run-1')">
+                            <div class="col-span-2 text-paper-sub font-mono text-xs">10:41 AM</div>
+                            <div class="col-span-4 font-medium text-paper-ink">Backup Assets</div>
+                            <div class="col-span-2">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    SUCCESS
+                                </span>
+                            </div>
+                            <div class="col-span-2 text-paper-sub text-sm">4.2s</div>
+                            <div class="col-span-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                                <svg class="w-5 h-5 text-paper-sub inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </div>
+                        </div>
+
+                        <!-- Item 2 -->
+                        <div class="grid grid-cols-12 gap-4 p-4 border-b border-paper-ink/5 hover:bg-paper-bg/50 transition-colors items-center group cursor-pointer" onclick="app.openRunDetail('run-2')">
+                            <div class="col-span-2 text-paper-sub font-mono text-xs">09:30 AM</div>
+                            <div class="col-span-4 font-medium text-paper-ink">Daily Digest</div>
+                            <div class="col-span-2">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    SUCCESS
+                                </span>
+                            </div>
+                            <div class="col-span-2 text-paper-sub text-sm">1.8s</div>
+                            <div class="col-span-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                                <svg class="w-5 h-5 text-paper-sub inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </div>
+                        </div>
+
+                        <!-- Item 3 (Failed) -->
+                        <div class="grid grid-cols-12 gap-4 p-4 border-b border-paper-ink/5 hover:bg-paper-bg/50 transition-colors items-center group cursor-pointer" onclick="app.openRunDetail('run-3')">
+                            <div class="col-span-2 text-paper-sub font-mono text-xs">Yesterday</div>
+                            <div class="col-span-4 font-medium text-paper-ink">Sync Calendar</div>
+                            <div class="col-span-2">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                    FAILED
+                                </span>
+                            </div>
+                            <div class="col-span-2 text-paper-sub text-sm">30s</div>
+                            <div class="col-span-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                                <svg class="w-5 h-5 text-paper-sub inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <div class="p-4 border-t border-paper-ink/5 bg-paper-bg/30 flex justify-between items-center text-xs text-paper-sub">
+                        <span>Showing 1-10 of 42</span>
+                        <div class="flex gap-2">
+                            <button class="px-3 py-1 bg-white border border-paper-ink/10 rounded hover:bg-paper-ink/5 disabled:opacity-50" disabled>Prev</button>
+                            <button class="px-3 py-1 bg-white border border-paper-ink/10 rounded hover:bg-paper-ink/5">Next</button>
+                        </div>
+                    </div>
+                </div>
+             </div>
+        </div>
+
+        <!-- OVERLAY: Run Detail Slide-Over (Similar to Job Detail but read-only) -->
+        <div id="run-detail" class="fixed inset-y-0 right-0 z-50 w-full md:w-[600px] bg-white shadow-2xl transform translate-x-full transition-transform duration-300 flex flex-col border-l border-paper-ink/5">
+            <div class="p-6 border-b border-paper-ink/5 flex items-center justify-between bg-paper-bg/50">
+                <div>
+                    <div class="text-xs font-mono text-paper-sub uppercase tracking-widest mb-1">Run ID: 8821-AF</div>
+                    <h2 class="text-2xl font-light text-paper-ink">Sync Calendar</h2>
+                </div>
+                <button onclick="app.closeRunDetail()" class="p-2 hover:bg-paper-ink/5 rounded-full transition-colors">
+                    <svg class="w-6 h-6 text-paper-sub" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-6 space-y-8">
+                <!-- Result Summary Block -->
+                <div class="bg-red-50 border border-red-100 rounded-lg p-4">
+                    <h3 class="text-sm font-medium text-red-800 mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Execution Failed
+                    </h3>
+                    <p class="text-sm text-red-600">TimeoutError: Google API did not respond within 30000ms.</p>
+                </div>
+
+                <!-- AI Summary (Simulated) -->
+                <div>
+                    <h3 class="text-sm font-medium text-paper-ink mb-2">AI Summary</h3>
+                    <div class="text-sm text-paper-sub leading-relaxed">
+                        The job attempted to sync calendar events but encountered a network timeout when reaching the Google Calendar API. This is likely a transient issue. No data was corrupted.
+                    </div>
+                </div>
+
+                <!-- Full Output JSON -->
+                <div>
+                    <h3 class="text-sm font-medium text-paper-ink mb-3">Result Payload</h3>
+                    <div class="bg-paper-bg p-4 rounded-lg border border-paper-ink/5 font-mono text-xs text-paper-sub overflow-x-auto">
+                        <pre>{
+  "error": {
+    "code": "ETIMEDOUT",
+    "service": "googleapis",
+    "retries": 3
+  },
+  "timestamp": "2026-02-21T09:00:30Z"
+}</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: System Status -->
+        <div id="view-system" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10 bg-paper-bg/95 backdrop-blur-sm">
+             <div class="w-full max-w-5xl mx-auto h-full flex flex-col">
+                <header class="flex items-end justify-between mb-10 border-b border-paper-ink/10 pb-4">
+                    <div>
+                        <h2 class="text-4xl font-light text-paper-ink mb-2">System Status</h2>
+                        <p class="text-sm text-paper-sub font-mono">Uptime: 14d 03h 22m &bull; v0.9.4</p>
+                    </div>
+                    <button onclick="app.navigate('home')" class="text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink transition-colors">
+                        ESC / Back
+                    </button>
+                </header>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Service Health -->
+                    <div class="bg-white p-6 rounded-xl border border-paper-ink/5 shadow-sm">
+                        <h3 class="text-sm font-medium text-paper-ink mb-4">Services</h3>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-paper-sub">API Server</span>
+                                <span class="text-xs font-mono text-paper-success bg-paper-success/10 px-2 py-0.5 rounded">ONLINE</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-paper-sub">Telegram Worker</span>
+                                <span class="text-xs font-mono text-paper-success bg-paper-success/10 px-2 py-0.5 rounded">ONLINE</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-paper-sub">Scheduler</span>
+                                <span class="text-xs font-mono text-paper-success bg-paper-success/10 px-2 py-0.5 rounded">ONLINE</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm text-paper-sub">Voice Transcriber</span>
+                                <span class="text-xs font-mono text-paper-sub bg-paper-ink/5 px-2 py-0.5 rounded">IDLE</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resources -->
+                    <div class="bg-white p-6 rounded-xl border border-paper-ink/5 shadow-sm">
+                        <h3 class="text-sm font-medium text-paper-ink mb-4">Resources</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-paper-sub">CPU Load</span>
+                                    <span class="font-mono text-paper-ink">12%</span>
+                                </div>
+                                <div class="h-1.5 w-full bg-paper-ink/5 rounded-full overflow-hidden">
+                                    <div class="h-full bg-paper-ink w-[12%] rounded-full"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-paper-sub">Memory</span>
+                                    <span class="font-mono text-paper-ink">4.2GB / 16GB</span>
+                                </div>
+                                <div class="h-1.5 w-full bg-paper-ink/5 rounded-full overflow-hidden">
+                                    <div class="h-full bg-paper-accent w-[26%] rounded-full"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-paper-sub">Disk Space</span>
+                                    <span class="font-mono text-paper-ink">45% Used</span>
+                                </div>
+                                <div class="h-1.5 w-full bg-paper-ink/5 rounded-full overflow-hidden">
+                                    <div class="h-full bg-paper-ink w-[45%] rounded-full"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Environment Info -->
+                    <div class="bg-white p-6 rounded-xl border border-paper-ink/5 shadow-sm">
+                        <h3 class="text-sm font-medium text-paper-ink mb-4">Environment</h3>
+                        <div class="space-y-2 text-xs font-mono text-paper-sub">
+                            <div class="flex justify-between border-b border-paper-ink/5 pb-2">
+                                <span>NODE_ENV</span>
+                                <span class="text-paper-ink">production</span>
+                            </div>
+                            <div class="flex justify-between border-b border-paper-ink/5 pb-2">
+                                <span>PLATFORM</span>
+                                <span class="text-paper-ink">darwin</span>
+                            </div>
+                            <div class="flex justify-between border-b border-paper-ink/5 pb-2">
+                                <span>OTTO_HOME</span>
+                                <span class="text-paper-ink">~/.otto</span>
+                            </div>
+                            <div class="mt-4 pt-2">
+                                <button class="w-full py-2 bg-paper-ink/5 hover:bg-paper-ink/10 text-paper-ink rounded transition-colors text-center" onclick="app.navigate('settings')">
+                                    Manage Environment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+             </div>
+        </div>
+
+        <!-- VIEW: Settings -->
+        <div id="view-settings" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10 bg-paper-bg/95 backdrop-blur-sm">
+             <div class="w-full max-w-3xl mx-auto h-full flex flex-col">
+                <header class="flex items-end justify-between mb-10 border-b border-paper-ink/10 pb-4">
+                    <div>
+                        <h2 class="text-4xl font-light text-paper-ink mb-2">Configuration</h2>
+                        <p class="text-sm text-paper-sub font-mono">Manage runtime variables & feature flags</p>
+                    </div>
+                    <button onclick="app.navigate('home')" class="text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink transition-colors">
+                        ESC / Back
+                    </button>
+                </header>
+
+                <div class="bg-white rounded-xl border border-paper-ink/5 overflow-hidden">
+                    <div class="p-6 border-b border-paper-ink/5">
+                        <h3 class="text-lg font-light text-paper-ink mb-4">Feature Flags</h3>
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="text-sm font-medium text-paper-ink">Telegram Integration</div>
+                                    <div class="text-xs text-paper-sub">Enable bot communication bridge</div>
+                                </div>
+                                <button class="w-12 h-6 rounded-full bg-paper-success relative transition-colors duration-300">
+                                    <div class="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                                </button>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="text-sm font-medium text-paper-ink">Voice Transcription</div>
+                                    <div class="text-xs text-paper-sub">Use local Whisper model for audio</div>
+                                </div>
+                                <button class="w-12 h-6 rounded-full bg-paper-ink/10 relative transition-colors duration-300">
+                                    <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-6 bg-paper-bg/30">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-light text-paper-ink">Environment Variables</h3>
+                            <button class="text-xs bg-paper-ink text-white px-3 py-1.5 rounded hover:bg-paper-ink/90 transition-colors">+ Add New</button>
+                        </div>
+                        
+                        <div class="space-y-2 font-mono text-xs">
+                            <div class="flex items-center gap-2 group">
+                                <input type="text" value="TELEGRAM_BOT_TOKEN" class="bg-white border border-paper-ink/10 rounded px-2 py-1.5 w-1/3 text-paper-sub" readonly>
+                                <input type="password" value="************************" class="bg-white border border-paper-ink/10 rounded px-2 py-1.5 flex-1 text-paper-ink" readonly>
+                                <button class="text-paper-accent opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
+                            </div>
+                            <div class="flex items-center gap-2 group">
+                                <input type="text" value="OPENAI_API_KEY" class="bg-white border border-paper-ink/10 rounded px-2 py-1.5 w-1/3 text-paper-sub" readonly>
+                                <input type="password" value="sk-proj-****************" class="bg-white border border-paper-ink/10 rounded px-2 py-1.5 flex-1 text-paper-ink" readonly>
+                                <button class="text-paper-accent opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+             </div>
+        </div>
+
         <!-- OVERLAY: Command Palette (Global) -->
         <div id="command-palette" class="fixed inset-0 z-50 flex flex-col md:items-start md:justify-center md:pt-[20vh] px-0 md:px-4 opacity-0 pointer-events-none transition-opacity duration-200">
             <!-- Backdrop -->
@@ -330,23 +682,37 @@
 
                     <div class="px-4 py-2 mt-2 text-[10px] font-mono uppercase tracking-widest text-paper-sub/50">Quick Actions</div>
 
-                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item">
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item" onclick="app.navigate('audit'); app.closeCommandPalette()">
+                        <div class="flex items-center gap-3">
+                             <div class="w-8 h-8 rounded-lg bg-paper-ink/5 flex items-center justify-center text-paper-sub group-hover:text-paper-ink group-focus:text-paper-ink">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
+                            </div>
+                            <span class="text-paper-ink font-light">Audit Trail</span>
+                        </div>
+                        <span class="text-xs text-paper-sub font-mono">G A</span>
+                    </button>
+
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item" onclick="app.navigate('system'); app.closeCommandPalette()">
                         <div class="flex items-center gap-3">
                              <div class="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-600 group-hover:text-green-700">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             </div>
-                            <span class="text-paper-ink font-light">Restart Server</span>
+                            <span class="text-paper-ink font-light">System Status</span>
                         </div>
                     </button>
 
-                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item">
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item" onclick="app.navigate('settings'); app.closeCommandPalette()">
                         <div class="flex items-center gap-3">
                              <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 group-hover:text-blue-700">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                             </div>
-                            <span class="text-paper-ink font-light">Trigger Backup</span>
+                            <span class="text-paper-ink font-light">Settings</span>
                         </div>
                     </button>
+
+                    <div id="cmd-empty" class="hidden px-4 py-8 text-center text-sm text-paper-sub font-light">
+                        No matching actions.
+                    </div>
 
                 </div>
             </div>
@@ -384,6 +750,46 @@
                         this.handlePaletteNav(e);
                     }
                 });
+
+                const cmdInput = document.getElementById('cmd-input');
+                if (cmdInput) {
+                    cmdInput.addEventListener('input', (e) => {
+                        this.filterCommandItems(e.target.value);
+                    });
+                }
+            },
+
+            getVisibleCmdItems() {
+                return Array.from(document.querySelectorAll('.cmd-item')).filter((item) => {
+                    return !item.classList.contains('hidden');
+                });
+            },
+
+            filterCommandItems(rawQuery) {
+                const query = rawQuery.trim().toLowerCase();
+                const items = Array.from(document.querySelectorAll('.cmd-item'));
+                let visibleCount = 0;
+
+                items.forEach((item) => {
+                    const label = item.innerText.toLowerCase();
+                    const match = query.length === 0 || label.includes(query);
+                    item.classList.toggle('hidden', !match);
+                    if (match) visibleCount += 1;
+                });
+
+                const empty = document.getElementById('cmd-empty');
+                if (empty) {
+                    empty.classList.toggle('hidden', visibleCount > 0);
+                }
+
+                this.setActiveCmdItem(0);
+            },
+
+            setActiveCmdItem(index) {
+                const items = this.getVisibleCmdItems();
+                items.forEach((item, i) => {
+                    item.classList.toggle('bg-paper-ink/5', i === index);
+                });
             },
 
             navigate(viewId) {
@@ -406,6 +812,26 @@
                 }
                 
                 this.state.currentView = viewId;
+            },
+
+            openJobDetail(jobId) {
+                const drawer = document.getElementById('job-detail');
+                drawer.classList.remove('translate-x-full');
+            },
+
+            closeJobDetail() {
+                const drawer = document.getElementById('job-detail');
+                drawer.classList.add('translate-x-full');
+            },
+
+            openRunDetail(runId) {
+                const drawer = document.getElementById('run-detail');
+                drawer.classList.remove('translate-x-full');
+            },
+
+            closeRunDetail() {
+                const drawer = document.getElementById('run-detail');
+                drawer.classList.add('translate-x-full');
             },
 
             toggleTheme() {
@@ -437,7 +863,12 @@
                 panel.classList.remove('translate-y-full');
                 panel.classList.add('translate-y-0');
                 
-                setTimeout(() => input.focus(), 100);
+                if (input) {
+                    input.value = '';
+                    this.filterCommandItems('');
+                }
+
+                setTimeout(() => input && input.focus(), 100);
                 this.state.isCmdOpen = true;
             },
 
@@ -459,24 +890,30 @@
             },
 
             handlePaletteNav(e) {
-                const items = document.querySelectorAll('.cmd-item');
+                const items = this.getVisibleCmdItems();
                 const activeElement = document.activeElement;
                 let currentIndex = Array.from(items).indexOf(activeElement);
+
+                if (items.length === 0) {
+                    return;
+                }
 
                 if (e.key === 'ArrowDown') {
                     e.preventDefault();
                     const nextIndex = (currentIndex + 1) % items.length;
+                    this.setActiveCmdItem(nextIndex);
                     items[nextIndex].focus();
                 } else if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     const prevIndex = (currentIndex - 1 + items.length) % items.length;
+                    this.setActiveCmdItem(prevIndex);
                     items[prevIndex].focus();
                 } else if (e.key === 'Enter') {
-                     // If input is focused and enter is pressed, select first item
-                     if (activeElement.id === 'cmd-input' && items.length > 0) {
-                         e.preventDefault();
-                         items[0].click();
-                     }
+                    // If input is focused and enter is pressed, select first filtered item
+                    if (activeElement.id === 'cmd-input') {
+                        e.preventDefault();
+                        items[0].click();
+                    }
                 }
             }
         };
