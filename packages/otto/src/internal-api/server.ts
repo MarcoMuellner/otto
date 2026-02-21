@@ -7,7 +7,9 @@ import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
 import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbound-enqueue.js"
+import { enqueueTelegramFile } from "../telegram-worker/outbound-enqueue.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
+import { stageOutboundTelegramFile } from "../telegram-worker/outbound-file-staging.js"
 import type {
   CommandAuditRecord,
   FailedJobRunRecord,
@@ -24,6 +26,7 @@ const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
 const TOKEN_FILE_NAME = "internal-api.token"
 const AUTHORIZATION_PREFIX = "Bearer "
+const TELEGRAM_OUTBOUND_MAX_FILE_BYTES = 20 * 1024 * 1024
 
 export type InternalApiConfig = {
   host: string
@@ -36,6 +39,7 @@ export type InternalApiConfig = {
 type InternalApiServerDependencies = {
   logger: Logger
   config: InternalApiConfig
+  ottoHome?: string
   outboundMessagesRepository: OutboundMessageEnqueueRepository
   sessionBindingsRepository: {
     getTelegramChatIdBySessionId: (sessionId: string) => number | null
@@ -79,6 +83,18 @@ const queueTelegramMessageApiSchema = z.object({
   sessionId: z.string().trim().min(1).optional(),
   chatId: z.number().int().optional(),
   content: z.string().trim().min(1),
+  dedupeKey: z.string().trim().min(1).max(512).optional(),
+  priority: z.enum(["low", "normal", "high", "critical"]).optional(),
+})
+
+const queueTelegramFileApiSchema = z.object({
+  sessionId: z.string().trim().min(1).optional(),
+  chatId: z.number().int().optional(),
+  kind: z.enum(["document", "photo"]),
+  filePath: z.string().trim().min(1),
+  mimeType: z.string().trim().min(1),
+  fileName: z.string().trim().min(1).optional(),
+  caption: z.string().trim().max(4000).optional(),
   dedupeKey: z.string().trim().min(1).max(512).optional(),
   priority: z.enum(["low", "normal", "high", "critical"]).optional(),
 })
@@ -480,6 +496,135 @@ export const buildInternalApiServer = (
         errorMessage: err.message,
       })
       dependencies.logger.error({ error: err.message }, "Internal API request failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/queue-telegram-file", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = queueTelegramFileApiSchema.parse(request.body)
+      const resolvedChatId =
+        payload.chatId ??
+        (payload.sessionId
+          ? dependencies.sessionBindingsRepository.getTelegramChatIdBySessionId(payload.sessionId)
+          : null) ??
+        resolveDefaultWatchdogChatId()
+
+      if (!resolvedChatId) {
+        return reply.code(400).send({
+          error: "missing_chat",
+          message:
+            "chatId is required unless sessionId is mapped or TELEGRAM_ALLOWED_USER_ID is configured",
+        })
+      }
+
+      const staged = await stageOutboundTelegramFile({
+        requestedPath: payload.filePath,
+        ottoHome: dependencies.ottoHome ?? process.cwd(),
+        maxBytes: TELEGRAM_OUTBOUND_MAX_FILE_BYTES,
+      })
+
+      const result = enqueueTelegramFile(
+        {
+          chatId: resolvedChatId,
+          kind: payload.kind,
+          filePath: staged.stagedPath,
+          mimeType: payload.mimeType,
+          fileName: payload.fileName ?? staged.fileName,
+          caption: payload.caption,
+          dedupeKey: payload.dedupeKey,
+          priority: payload.priority,
+        },
+        dependencies.outboundMessagesRepository
+      )
+
+      dependencies.logger.info(
+        {
+          route: "queue-telegram-file",
+          sessionId: payload.sessionId,
+          chatId: resolvedChatId,
+          kind: payload.kind,
+          stagedPath: staged.stagedPath,
+          sourcePath: staged.sourcePath,
+          bytes: staged.bytes,
+          status: result.status,
+          queuedCount: result.queuedCount,
+          duplicateCount: result.duplicateCount,
+          dedupeKey: result.dedupeKey,
+        },
+        "Internal API queued Telegram media"
+      )
+
+      writeCommandAudit(dependencies, {
+        command: "queue_telegram_file",
+        lane: "interactive",
+        status: "success",
+        metadataJson: JSON.stringify({
+          kind: payload.kind,
+          chatId: resolvedChatId,
+          status: result.status,
+          queuedCount: result.queuedCount,
+          duplicateCount: result.duplicateCount,
+        }),
+      })
+
+      return reply.code(200).send(result)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "queue_telegram_file",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      const errnoError = error as NodeJS.ErrnoException
+      if (err.message === "file_path_outside_otto_home") {
+        return reply.code(400).send({
+          error: "invalid_file_path",
+          message: "filePath must point to a file under ottoHome",
+        })
+      }
+      if (err.message === "file_size_exceeded") {
+        return reply.code(400).send({
+          error: "file_too_large",
+          message: `filePath exceeds max size of ${Math.floor(TELEGRAM_OUTBOUND_MAX_FILE_BYTES / (1024 * 1024))} MB`,
+        })
+      }
+      if (err.message === "file_path_not_a_file") {
+        return reply.code(400).send({
+          error: "invalid_file_path",
+          message: "filePath must resolve to a regular file",
+        })
+      }
+      if (errnoError.code === "ENOENT" || errnoError.code === "EACCES") {
+        return reply.code(400).send({
+          error: "invalid_file_path",
+          message: "filePath could not be read",
+        })
+      }
+
+      writeCommandAudit(dependencies, {
+        command: "queue_telegram_file",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API media queue request failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

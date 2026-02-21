@@ -1,4 +1,5 @@
 import type { Logger } from "pino"
+import { rm } from "node:fs/promises"
 
 import type { JobRunSummaryRecord, UserProfileRecord } from "../persistence/repositories.js"
 import {
@@ -10,7 +11,11 @@ import { splitTelegramMessage } from "./telegram.js"
 export type OutboundDeliveryRecord = {
   id: string
   chatId: number
+  kind: "text" | "document" | "photo"
   content: string
+  mediaPath: string | null
+  mediaMimeType: string | null
+  mediaFilename: string | null
   priority: "low" | "normal" | "high" | "critical"
   attemptCount: number
   createdAt: number
@@ -32,6 +37,11 @@ export type OutboundMessagesDeliveryRepository = {
 
 export type OutboundMessageSender = {
   sendMessage: (chatId: number, text: string) => Promise<void>
+  sendDocument: (
+    chatId: number,
+    input: { filePath: string; filename?: string; caption?: string }
+  ) => Promise<void>
+  sendPhoto: (chatId: number, input: { filePath: string; caption?: string }) => Promise<void>
 }
 
 export type OutboundRetryPolicy = {
@@ -118,16 +128,65 @@ export const createOutboundQueueProcessor = (
 } => {
   let draining = false
 
+  const cleanupStagedMedia = async (message: OutboundDeliveryRecord): Promise<void> => {
+    if (!message.mediaPath) {
+      return
+    }
+
+    try {
+      await rm(message.mediaPath, { force: true })
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.warn(
+        {
+          messageId: message.id,
+          mediaPath: message.mediaPath,
+          error: err.message,
+        },
+        "Failed to clean up staged Telegram media file"
+      )
+    }
+  }
+
   const deliverMessageChunks = async (message: OutboundDeliveryRecord): Promise<void> => {
+    if (message.kind === "document") {
+      if (!message.mediaPath) {
+        throw new Error("Queued document is missing media path")
+      }
+
+      await dependencies.sender.sendDocument(message.chatId, {
+        filePath: message.mediaPath,
+        filename: message.mediaFilename ?? undefined,
+        caption: message.content.length > 0 ? message.content : undefined,
+      })
+      return
+    }
+
+    if (message.kind === "photo") {
+      if (!message.mediaPath) {
+        throw new Error("Queued photo is missing media path")
+      }
+
+      await dependencies.sender.sendPhoto(message.chatId, {
+        filePath: message.mediaPath,
+        caption: message.content.length > 0 ? message.content : undefined,
+      })
+      return
+    }
+
     const chunks = splitTelegramMessage(message.content)
     for (const chunk of chunks) {
       await dependencies.sender.sendMessage(message.chatId, chunk)
     }
   }
 
-  const markDeliverySuccess = (message: OutboundDeliveryRecord, attemptCount: number): void => {
+  const markDeliverySuccess = async (
+    message: OutboundDeliveryRecord,
+    attemptCount: number
+  ): Promise<void> => {
     const deliveredAt = Date.now()
     dependencies.repository.markSent(message.id, attemptCount, deliveredAt)
+    await cleanupStagedMedia(message)
     dependencies.logger.info(
       {
         messageId: message.id,
@@ -138,16 +197,17 @@ export const createOutboundQueueProcessor = (
     )
   }
 
-  const markDeliveryFailure = (
+  const markDeliveryFailure = async (
     message: OutboundDeliveryRecord,
     attemptCount: number,
     error: unknown
-  ): void => {
+  ): Promise<void> => {
     const failedAt = Date.now()
     const errorMessage = normalizeErrorMessage(error)
 
     if (attemptCount >= dependencies.retryPolicy.maxAttempts) {
       dependencies.repository.markFailed(message.id, attemptCount, errorMessage, failedAt)
+      await cleanupStagedMedia(message)
       dependencies.logger.error(
         {
           messageId: message.id,
@@ -218,9 +278,9 @@ export const createOutboundQueueProcessor = (
 
     try {
       await deliverMessageChunks(message)
-      markDeliverySuccess(message, nextAttemptCount)
+      await markDeliverySuccess(message, nextAttemptCount)
     } catch (error) {
-      markDeliveryFailure(message, nextAttemptCount, error)
+      await markDeliveryFailure(message, nextAttemptCount, error)
     }
   }
 
@@ -265,6 +325,7 @@ export const createOutboundQueueProcessor = (
             await dependencies.sender.sendMessage(chatId, summarizeSuppressedRuns(runs))
             for (const record of records) {
               dependencies.repository.markSent(record.id, record.attemptCount + 1, now)
+              await cleanupStagedMedia(record)
               digestHandledMessageIds.add(record.id)
             }
           }

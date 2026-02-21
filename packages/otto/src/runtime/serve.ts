@@ -108,6 +108,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     internalApiServer = await startInternalApiServer({
       logger,
       config: internalApiConfig,
+      ottoHome: config.ottoHome,
       outboundMessagesRepository,
       sessionBindingsRepository,
       jobsRepository,

@@ -82,6 +82,23 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
         update: unknown
       }) => Promise<void>)
     | null = null
+  let mediaHandler:
+    | ((update: {
+        sourceMessageId: string
+        chatId: number
+        userId: number
+        media: {
+          mediaType: "document" | "photo"
+          fileId: string
+          fileUniqueId: string | null
+          mimeType: string
+          fileSizeBytes: number | null
+          fileName: string | null
+          caption: string | null
+        }
+        update: unknown
+      }) => Promise<void>)
+    | null = null
 
   const sentMessages: Array<{ chatId: number; text: string }> = []
 
@@ -92,16 +109,26 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
     onVoiceMessage: (nextHandler) => {
       voiceHandler = nextHandler
     },
+    onMediaMessage: (nextHandler) => {
+      mediaHandler = nextHandler
+    },
     onUnsupportedMediaMessage: (nextHandler) => {
       unsupportedMediaHandler = nextHandler
     },
     sendMessage: async (chatId, text) => {
       sentMessages.push({ chatId, text })
     },
+    sendDocument: async () => {},
+    sendPhoto: async () => {},
     resolveVoiceDownload: async () => ({
       url: "http://127.0.0.1/voice.ogg",
       fileSizeBytes: 123,
       fileName: "voice.ogg",
+    }),
+    resolveFileDownload: async () => ({
+      url: "http://127.0.0.1/media.bin",
+      fileSizeBytes: 123,
+      fileName: "media.bin",
     }),
     launch: async () => {
       if (options.launchError) {
@@ -159,6 +186,27 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
       }
 
       await unsupportedMediaHandler(update)
+    },
+    dispatchMedia: async (update: {
+      sourceMessageId: string
+      chatId: number
+      userId: number
+      media: {
+        mediaType: "document" | "photo"
+        fileId: string
+        fileUniqueId: string | null
+        mimeType: string
+        fileSizeBytes: number | null
+        fileName: string | null
+        caption: string | null
+      }
+      update: unknown
+    }) => {
+      if (!mediaHandler) {
+        throw new Error("Media handler not registered")
+      }
+
+      await mediaHandler(update)
     },
   }
 }
@@ -220,6 +268,7 @@ describe("startTelegramWorker", () => {
         openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
         createSessionGateway: () => ({
           ensureSession: async () => "session-1",
+          promptSessionParts: async () => "ok",
           promptSession: async () => "ok",
         }),
       }
@@ -261,6 +310,7 @@ describe("startTelegramWorker", () => {
         openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
         createSessionGateway: () => ({
           ensureSession: async () => "session-1",
+          promptSessionParts: async () => "ok",
           promptSession: async () => "ok",
         }),
       }
@@ -325,6 +375,7 @@ describe("startTelegramWorker", () => {
         openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
         createSessionGateway: () => ({
           ensureSession: async () => "session-1",
+          promptSessionParts: async () => "ok",
           promptSession: async () => "ok",
         }),
       }
@@ -359,12 +410,20 @@ describe("startTelegramWorker", () => {
     const runtime: TelegramBotRuntime = {
       onTextMessage: () => {},
       onVoiceMessage: () => {},
+      onMediaMessage: () => {},
       onUnsupportedMediaMessage: () => {},
       sendMessage: async () => {},
+      sendDocument: async () => {},
+      sendPhoto: async () => {},
       resolveVoiceDownload: async () => ({
         url: "http://127.0.0.1/voice.ogg",
         fileSizeBytes: 123,
         fileName: "voice.ogg",
+      }),
+      resolveFileDownload: async () => ({
+        url: "http://127.0.0.1/media.bin",
+        fileSizeBytes: 123,
+        fileName: "media.bin",
       }),
       launch,
       stop: async () => {},
@@ -376,6 +435,7 @@ describe("startTelegramWorker", () => {
       openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
       createSessionGateway: () => ({
         ensureSession: async () => "session-1",
+        promptSessionParts: async () => "ok",
         promptSession: async () => "ok",
       }),
     })
@@ -471,6 +531,7 @@ describe("startTelegramWorker", () => {
     cleanupPaths.push(tempRoot)
     const fakeBot = createFakeBotRuntime()
     const ensureSession = vi.fn(async () => "session-1")
+    const promptSessionParts = vi.fn(async () => "assistant reply")
     const promptSession = vi.fn(async () => "assistant reply")
 
     const worker = await startTelegramWorker(
@@ -488,6 +549,7 @@ describe("startTelegramWorker", () => {
         openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
         createSessionGateway: () => ({
           ensureSession,
+          promptSessionParts,
           promptSession,
         }),
         createTranscriptionGateway: () => ({
@@ -520,7 +582,69 @@ describe("startTelegramWorker", () => {
 
     // Assert
     expect(ensureSession).toHaveBeenCalled()
-    expect(promptSession).toHaveBeenCalledWith("session-1", "voice transcript")
+    const parts = vi.mocked(promptSessionParts).mock.calls[0]?.[1]
+    expect(parts?.[0]).toEqual({ type: "text", text: "voice transcript" })
+    expect(promptSession).toHaveBeenCalledTimes(0)
+
+    await worker.stop()
+  })
+
+  it("processes document input through OpenCode file parts", async () => {
+    // Arrange
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(Buffer.from("%PDF-1.4 sample"), {
+          status: 200,
+          headers: {
+            "content-length": "15",
+          },
+        })
+      })
+    )
+
+    const { logger } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+    const promptSessionParts = vi.fn(async () => "assistant reply")
+
+    const worker = await startTelegramWorker(logger, createWorkerConfig(), {
+      createBotRuntime: () => fakeBot.runtime,
+      openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+      createSessionGateway: () => ({
+        ensureSession: async () => "session-1",
+        promptSessionParts,
+        promptSession: async () => "assistant reply",
+      }),
+    })
+
+    // Act
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "media-success-1",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "document",
+        fileId: "doc-1",
+        fileUniqueId: "doc-u1",
+        mimeType: "application/pdf",
+        fileSizeBytes: 15,
+        fileName: "report.pdf",
+        caption: "please summarize",
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    // Assert
+    expect(promptSessionParts).toHaveBeenCalled()
+    const parts = vi.mocked(promptSessionParts).mock.calls[0]?.[1]
+    expect(parts?.some((part) => part.type === "file")).toBe(true)
 
     await worker.stop()
   })

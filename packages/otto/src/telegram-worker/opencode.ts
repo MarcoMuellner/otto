@@ -17,6 +17,15 @@ type ModelSelection = {
 
 export type OpencodeSessionGateway = {
   ensureSession: (sessionId: string | null) => Promise<string>
+  promptSessionParts: (
+    sessionId: string,
+    parts: OpencodePromptPart[],
+    options?: {
+      systemPrompt?: string
+      tools?: Record<string, boolean>
+      agent?: string
+    }
+  ) => Promise<string>
   promptSession: (
     sessionId: string,
     text: string,
@@ -27,6 +36,18 @@ export type OpencodeSessionGateway = {
     }
   ) => Promise<string>
 }
+
+export type OpencodePromptPart =
+  | {
+      type: "text"
+      text: string
+    }
+  | {
+      type: "file"
+      mime: string
+      filename?: string
+      url: string
+    }
 
 const isNotFoundError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
@@ -82,6 +103,49 @@ export const createOpencodeSessionGateway = (
   const sessionApi = client.session
   let modelSelectionPromise: Promise<ModelSelection> | null = null
 
+  const promptSessionParts = async (
+    sessionId: string,
+    parts: OpencodePromptPart[],
+    options?: {
+      systemPrompt?: string
+      tools?: Record<string, boolean>
+      agent?: string
+    }
+  ): Promise<string> => {
+    modelSelectionPromise ??= resolveModelSelection(client.config)
+    const modelSelection = await modelSelectionPromise
+
+    logger?.info(
+      {
+        baseUrl,
+        sessionId,
+        providerId: modelSelection.providerId,
+        modelId: modelSelection.modelId,
+        partsCount: parts.length,
+      },
+      "Sending Telegram prompt to OpenCode session chat API"
+    )
+
+    const response = await sessionApi.chat({
+      path: { id: sessionId },
+      body: {
+        providerID: modelSelection.providerId,
+        modelID: modelSelection.modelId,
+        agent: options?.agent,
+        system: options?.systemPrompt,
+        tools: options?.tools,
+        parts,
+      },
+    })
+
+    const payload = response.data
+    if (!payload) {
+      throw new Error("OpenCode chat response missing data payload")
+    }
+
+    return extractAssistantText(payload)
+  }
+
   return {
     ensureSession: async (sessionId) => {
       if (sessionId) {
@@ -108,39 +172,9 @@ export const createOpencodeSessionGateway = (
 
       return createdId
     },
+    promptSessionParts,
     promptSession: async (sessionId, text, options) => {
-      modelSelectionPromise ??= resolveModelSelection(client.config)
-      const modelSelection = await modelSelectionPromise
-
-      logger?.info(
-        {
-          baseUrl,
-          sessionId,
-          providerId: modelSelection.providerId,
-          modelId: modelSelection.modelId,
-          textLength: text.length,
-        },
-        "Sending Telegram prompt to OpenCode session chat API"
-      )
-
-      const response = await sessionApi.chat({
-        path: { id: sessionId },
-        body: {
-          providerID: modelSelection.providerId,
-          modelID: modelSelection.modelId,
-          agent: options?.agent,
-          system: options?.systemPrompt,
-          tools: options?.tools,
-          parts: [{ type: "text", text }],
-        },
-      })
-
-      const payload = response.data
-      if (!payload) {
-        throw new Error("OpenCode chat response missing data payload")
-      }
-
-      return extractAssistantText(payload)
+      return await promptSessionParts(sessionId, [{ type: "text", text }], options)
     },
   }
 }

@@ -13,6 +13,7 @@ describe("createInboundBridge", () => {
     const sendMessage = vi.fn(async () => {})
     const sessionGateway = {
       ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => "Hello from Otto"),
       promptSession: vi.fn(async () => "Hello from Otto"),
     }
     const sessionBindingsRepository = {
@@ -46,7 +47,9 @@ describe("createInboundBridge", () => {
 
     // Assert
     expect(sessionGateway.ensureSession).toHaveBeenCalledWith("session-1")
-    expect(sessionGateway.promptSession).toHaveBeenCalledWith("session-1", "hi")
+    expect(sessionGateway.promptSessionParts).toHaveBeenCalledWith("session-1", [
+      { type: "text", text: "hi" },
+    ])
     expect(sendMessage).toHaveBeenCalledWith(7, "Hello from Otto")
     expect(inboundMessagesRepository.insert).toHaveBeenCalledOnce()
     expect(outboundMessagesRepository.enqueue).toHaveBeenCalledOnce()
@@ -61,6 +64,7 @@ describe("createInboundBridge", () => {
     const sendMessage = vi.fn(async () => {})
     const sessionGateway = {
       ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => "Hello"),
       promptSession: vi.fn(async () => "Hello"),
     }
     const sessionBindingsRepository = {
@@ -95,7 +99,7 @@ describe("createInboundBridge", () => {
     })
 
     // Assert
-    expect(sessionGateway.promptSession).not.toHaveBeenCalled()
+    expect(sessionGateway.promptSessionParts).not.toHaveBeenCalled()
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
@@ -117,6 +121,7 @@ describe("createInboundBridge", () => {
     const sendChatAction = vi.fn(async () => {})
     const sessionGateway = {
       ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => await pendingPrompt),
       promptSession: vi.fn(async () => await pendingPrompt),
     }
     const sessionBindingsRepository = {

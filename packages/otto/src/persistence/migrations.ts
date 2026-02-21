@@ -244,4 +244,36 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
            END`,
     ],
   },
+  {
+    id: "014_media_support",
+    statements: [
+      `ALTER TABLE messages_out ADD COLUMN kind TEXT`,
+      `ALTER TABLE messages_out ADD COLUMN media_path TEXT`,
+      `ALTER TABLE messages_out ADD COLUMN media_mime_type TEXT`,
+      `ALTER TABLE messages_out ADD COLUMN media_filename TEXT`,
+      `UPDATE messages_out
+       SET kind = COALESCE(kind, 'text')`,
+      `CREATE TABLE IF NOT EXISTS messages_in_media (
+        id TEXT PRIMARY KEY,
+        source_message_id TEXT NOT NULL UNIQUE,
+        chat_id INTEGER NOT NULL,
+        user_id INTEGER,
+        telegram_file_id TEXT NOT NULL,
+        telegram_file_unique_id TEXT,
+        media_type TEXT NOT NULL,
+        mime_type TEXT,
+        file_name TEXT,
+        file_size_bytes INTEGER,
+        downloaded_size_bytes INTEGER,
+        caption TEXT,
+        status TEXT NOT NULL,
+        reject_reason TEXT,
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_messages_in_media_status
+       ON messages_in_media (status, updated_at DESC)`,
+    ],
+  },
 ]

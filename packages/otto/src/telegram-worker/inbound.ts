@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto"
 import type { Logger } from "pino"
 
 import { normalizeAssistantText, splitTelegramMessage } from "./telegram.js"
-import type { OpencodeSessionGateway } from "./opencode.js"
+import type { OpencodePromptPart, OpencodeSessionGateway } from "./opencode.js"
 
 export type TelegramInboundMessage = {
   sourceMessageId: string
@@ -11,6 +11,19 @@ export type TelegramInboundMessage = {
   userId: number
   text: string
 }
+
+export type TelegramInboundMediaMessage = {
+  sourceMessageId: string
+  chatId: number
+  userId: number
+  storageText: string
+  parts: OpencodePromptPart[]
+}
+
+export type InboundHandleResult =
+  | { outcome: "processed" }
+  | { outcome: "duplicate" }
+  | { outcome: "failed"; errorMessage: string }
 
 export type TelegramSender = {
   sendMessage: (chatId: number, text: string) => Promise<void>
@@ -41,6 +54,10 @@ export type OutboundMessagesRepository = {
     dedupeKey: string | null
     chatId: number
     content: string
+    kind: "text" | "document" | "photo"
+    mediaPath: string | null
+    mediaMimeType: string | null
+    mediaFilename: string | null
     priority: "low" | "normal" | "high"
     status: "queued" | "sent" | "failed" | "cancelled"
     attemptCount: number
@@ -138,92 +155,136 @@ const startTypingHeartbeat = (
 export const createInboundBridge = (dependencies: InboundBridgeDependencies) => {
   const bindingPrefix = dependencies.bindingPrefix ?? "telegram:chat"
 
+  const resolveSessionId = async (chatId: number, now: number): Promise<string> => {
+    const bindingKey = `${bindingPrefix}:${chatId}:assistant`
+    const existingBinding = dependencies.sessionBindingsRepository.getByBindingKey(bindingKey)
+    const resolvedSessionId = await dependencies.sessionGateway.ensureSession(
+      existingBinding?.sessionId ?? null
+    )
+
+    if (existingBinding?.sessionId !== resolvedSessionId) {
+      dependencies.sessionBindingsRepository.upsert(bindingKey, resolvedSessionId, now)
+    }
+
+    return resolvedSessionId
+  }
+
+  const sendAssistantReply = async (
+    chatId: number,
+    assistantText: string,
+    now: number
+  ): Promise<void> => {
+    const reply = normalizeAssistantText(assistantText)
+    const chunks = splitTelegramMessage(reply)
+
+    for (const chunk of chunks) {
+      await dependencies.sender.sendMessage(chatId, chunk)
+
+      dependencies.outboundMessagesRepository.enqueue({
+        id: randomUUID(),
+        dedupeKey: null,
+        chatId,
+        kind: "text",
+        content: chunk,
+        mediaPath: null,
+        mediaMimeType: null,
+        mediaFilename: null,
+        priority: "normal",
+        status: "sent",
+        attemptCount: 1,
+        nextAttemptAt: null,
+        sentAt: now,
+        failedAt: null,
+        errorMessage: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+  }
+
+  const handlePrompt = async (input: {
+    sourceMessageId: string
+    chatId: number
+    userId: number
+    storageText: string
+    parts: OpencodePromptPart[]
+  }): Promise<InboundHandleResult> => {
+    const now = Date.now()
+    const resolvedSessionId = await resolveSessionId(input.chatId, now)
+
+    try {
+      dependencies.inboundMessagesRepository.insert({
+        id: randomUUID(),
+        sourceMessageId: input.sourceMessageId,
+        chatId: input.chatId,
+        userId: input.userId,
+        content: input.storageText,
+        receivedAt: now,
+        sessionId: resolvedSessionId,
+        createdAt: now,
+      })
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        dependencies.logger.info(
+          { sourceMessageId: input.sourceMessageId },
+          "Skipping duplicate inbound Telegram message"
+        )
+        return { outcome: "duplicate" }
+      }
+
+      throw error
+    }
+
+    let assistantText = ""
+    const stopTypingHeartbeat = startTypingHeartbeat(
+      dependencies.sender,
+      dependencies.logger,
+      input.chatId
+    )
+
+    try {
+      assistantText = await withTimeout(
+        dependencies.sessionGateway.promptSessionParts(resolvedSessionId, input.parts),
+        dependencies.promptTimeoutMs
+      )
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "Failed to process Telegram inbound prompt")
+
+      const fallbackMessage = "I could not complete that right now. Please try again in a moment."
+      await dependencies.sender.sendMessage(input.chatId, fallbackMessage)
+      return {
+        outcome: "failed",
+        errorMessage: err.message,
+      }
+    } finally {
+      stopTypingHeartbeat()
+    }
+
+    await sendAssistantReply(input.chatId, assistantText, Date.now())
+    return { outcome: "processed" }
+  }
+
   return {
-    handleTextMessage: async (message: TelegramInboundMessage): Promise<void> => {
-      const now = Date.now()
-      const bindingKey = `${bindingPrefix}:${message.chatId}:assistant`
-
-      const existingBinding = dependencies.sessionBindingsRepository.getByBindingKey(bindingKey)
-      const resolvedSessionId = await dependencies.sessionGateway.ensureSession(
-        existingBinding?.sessionId ?? null
-      )
-
-      if (existingBinding?.sessionId !== resolvedSessionId) {
-        dependencies.sessionBindingsRepository.upsert(bindingKey, resolvedSessionId, now)
-      }
-
-      try {
-        dependencies.inboundMessagesRepository.insert({
-          id: randomUUID(),
-          sourceMessageId: message.sourceMessageId,
-          chatId: message.chatId,
-          userId: message.userId,
-          content: message.text,
-          receivedAt: now,
-          sessionId: resolvedSessionId,
-          createdAt: now,
-        })
-      } catch (error) {
-        if (isUniqueConstraintViolation(error)) {
-          dependencies.logger.info(
-            { sourceMessageId: message.sourceMessageId },
-            "Skipping duplicate inbound Telegram message"
-          )
-          return
-        }
-
-        throw error
-      }
-
-      let assistantText = ""
-      const stopTypingHeartbeat = startTypingHeartbeat(
-        dependencies.sender,
-        dependencies.logger,
-        message.chatId
-      )
-
-      try {
-        assistantText = await withTimeout(
-          dependencies.sessionGateway.promptSession(resolvedSessionId, message.text),
-          dependencies.promptTimeoutMs
-        )
-      } catch (error) {
-        const err = error as Error
-        dependencies.logger.error(
-          { error: err.message },
-          "Failed to process Telegram inbound prompt"
-        )
-
-        const fallbackMessage = "I could not complete that right now. Please try again in a moment."
-        await dependencies.sender.sendMessage(message.chatId, fallbackMessage)
-        return
-      } finally {
-        stopTypingHeartbeat()
-      }
-
-      const reply = normalizeAssistantText(assistantText)
-      const chunks = splitTelegramMessage(reply)
-
-      for (const chunk of chunks) {
-        await dependencies.sender.sendMessage(message.chatId, chunk)
-
-        const sentAt = Date.now()
-        dependencies.outboundMessagesRepository.enqueue({
-          id: randomUUID(),
-          dedupeKey: null,
-          chatId: message.chatId,
-          content: chunk,
-          priority: "normal",
-          status: "sent",
-          attemptCount: 1,
-          nextAttemptAt: null,
-          sentAt,
-          failedAt: null,
-          errorMessage: null,
-          createdAt: sentAt,
-          updatedAt: sentAt,
-        })
-      }
+    handleTextMessage: async (message: TelegramInboundMessage): Promise<InboundHandleResult> => {
+      return await handlePrompt({
+        sourceMessageId: message.sourceMessageId,
+        chatId: message.chatId,
+        userId: message.userId,
+        storageText: message.text,
+        parts: [{ type: "text", text: message.text }],
+      })
+    },
+    handleMediaMessage: async (
+      message: TelegramInboundMediaMessage
+    ): Promise<InboundHandleResult> => {
+      return await handlePrompt({
+        sourceMessageId: message.sourceMessageId,
+        chatId: message.chatId,
+        userId: message.userId,
+        storageText: message.storageText,
+        parts: message.parts,
+      })
     },
   }
 }

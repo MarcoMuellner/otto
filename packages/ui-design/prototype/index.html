@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Otto - Zen Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        paper: {
+                            bg: '#f8f8f8', // Off-white
+                            ink: '#1a1a1a', // Near-black
+                            sub: '#888888', // Gray
+                            accent: '#eb3b3b', // Red highlight
+                            success: '#10b981', // Green
+                            highlight: '#ffffff', // Pure white
+                        },
+                        void: {
+                            bg: '#09090b', // Zinc 950
+                            ring: '#27272a', // Zinc 800
+                            text: '#e4e4e7', // Zinc 200
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['"Inter"', 'sans-serif'],
+                        mono: ['"IBM Plex Mono"', 'monospace'],
+                    },
+                    animation: {
+                        'breathe-left': 'breatheLeft 8s ease-in-out infinite',
+                        'breathe-right': 'breatheRight 8s ease-in-out infinite',
+                        'pulse-dot': 'pulseDot 3s ease-in-out infinite',
+                        'slide-up': 'slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'fade-in': 'fadeIn 0.3s ease-out forwards',
+                    },
+                    keyframes: {
+                        breatheLeft: {
+                            '0%, 100%': { transform: 'scale(1) translateX(0)', opacity: '0.1' },
+                            '50%': { transform: 'scale(1.05) translateX(-20px)', opacity: '0.15' },
+                        },
+                        breatheRight: {
+                            '0%, 100%': { transform: 'scale(1) translateX(0)', opacity: '0.1' },
+                            '50%': { transform: 'scale(1.05) translateX(20px)', opacity: '0.15' },
+                        },
+                        pulseDot: {
+                            '0%, 100%': { transform: 'scale(1)', opacity: '1' },
+                            '50%': { transform: 'scale(0.8)', opacity: '0.5' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(20px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        },
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f8f8;
+            color: #1a1a1a;
+            /* Subtle Grain Texture */
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.03'/%3E%3C/svg%3E");
+            overflow: hidden; /* App feel */
+        }
+        
+        .view-transition {
+            transition: opacity 0.3s ease-out, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Command Palette Backdrop Blur */
+        .backdrop-blur-md {
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen font-sans relative selection:bg-paper-ink/10 selection:text-paper-ink">
+
+    <!-- App State Root -->
+    <div id="app" class="relative w-full h-full flex flex-col">
+
+        <!-- GLOBAL: Ambient Rings (Always Present, Subtle) -->
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-0 overflow-hidden">
+            <!-- Left Ring -->
+            <div class="absolute left-[-20%] md:left-[5%] lg:left-[10%] w-[50vh] h-[50vh] md:w-[60vh] md:h-[60vh] border border-paper-ink rounded-full animate-breathe-left opacity-10"></div>
+            <!-- Right Ring -->
+            <div class="absolute right-[-20%] md:right-[5%] lg:right-[10%] w-[50vh] h-[50vh] md:w-[60vh] md:h-[60vh] border border-paper-ink rounded-full animate-breathe-right animation-delay-1000 opacity-10"></div>
+        </div>
+
+        <!-- VIEW: Zen Home (Default) -->
+        <div id="view-home" class="view-transition absolute inset-0 flex flex-col items-center justify-center z-10">
+            <!-- Status Dot -->
+            <div class="mb-12 cursor-pointer group" onclick="app.toggleTheme()">
+                <div class="w-3 h-3 rounded-full bg-paper-accent animate-pulse-dot shadow-[0_0_15px_rgba(235,59,59,0.4)] group-hover:bg-paper-ink transition-colors"></div>
+                <div class="absolute -top-8 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-mono uppercase tracking-widest text-paper-sub transform -translate-x-1/2 left-1/2 whitespace-nowrap">
+                    Toggle Theme
+                </div>
+            </div>
+
+            <!-- Clock -->
+            <h1 class="text-6xl md:text-8xl font-light tracking-tighter text-paper-ink mb-4 select-none transition-all duration-300">
+                10:42
+            </h1>
+            
+            <p class="text-xs md:text-sm font-mono text-paper-sub uppercase tracking-widest mb-12 md:mb-20 select-none">
+                System Active
+            </p>
+
+            <!-- Command Bar (Always Visible) -->
+            <div class="w-full max-w-[90%] md:max-w-lg relative group transition-all duration-500 transform translate-y-0 opacity-100" id="home-cmd-bar">
+                <div class="absolute inset-0 bg-white shadow-xl rounded-2xl transform scale-100 opacity-0 group-hover:opacity-100 transition-all duration-300"></div>
+                <div class="relative bg-white border border-paper-ink/10 rounded-2xl flex items-center p-2 shadow-sm group-hover:shadow-md transition-shadow active:scale-[0.98] duration-200">
+                    
+                    <div class="w-10 h-10 flex items-center justify-center text-paper-sub">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>
+                    
+                    <input 
+                        type="text" 
+                        placeholder="Ask Otto..." 
+                        class="flex-1 bg-transparent border-none outline-none text-base md:text-lg text-paper-ink placeholder-paper-sub/50 px-2 md:px-4 h-12 font-light cursor-pointer select-none"
+                        readonly
+                        onclick="app.openCommandPalette()"
+                    >
+
+                    <div class="pr-4 text-xs font-mono text-paper-sub/40 hidden sm:block whitespace-nowrap">
+                        CMD+K
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: Jobs Monitor -->
+        <div id="view-jobs" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10">
+             <div class="w-full max-w-4xl mx-auto h-full flex flex-col">
+                <header class="flex items-end justify-between mb-10 border-b border-paper-ink/10 pb-4">
+                    <div>
+                        <h2 class="text-4xl font-light text-paper-ink mb-2">Job Queue</h2>
+                        <p class="text-sm text-paper-sub font-mono">3 Active &bull; 12 Scheduled</p>
+                    </div>
+                    <button onclick="app.navigate('home')" class="text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink transition-colors">
+                        ESC / Back
+                    </button>
+                </header>
+
+                <div class="flex-1 overflow-y-auto hide-scrollbar space-y-4 pr-2">
+                    <!-- Active Job Card -->
+                    <div class="bg-white border border-paper-ink/5 p-6 rounded-xl flex items-center justify-between shadow-sm group hover:border-paper-ink/20 transition-all">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-paper-accent/10 flex items-center justify-center text-paper-accent">
+                                <svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-light text-paper-ink">Backup Assets</h3>
+                                <p class="text-xs text-paper-sub font-mono uppercase tracking-wide">Running - 45s</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                             <button class="px-4 py-2 text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-accent border border-transparent hover:border-paper-ink/10 rounded transition-all">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Scheduled Job Card -->
+                    <div class="bg-white border border-paper-ink/5 p-6 rounded-xl flex items-center justify-between shadow-sm group hover:border-paper-ink/20 transition-all opacity-70">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-paper-ink/5 flex items-center justify-center text-paper-ink/40">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-light text-paper-ink">Daily Digest</h3>
+                                <p class="text-xs text-paper-sub font-mono uppercase tracking-wide">Scheduled - 18:00</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                             <button class="px-4 py-2 text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink border border-transparent hover:border-paper-ink/10 rounded transition-all">
+                                Edit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+             </div>
+        </div>
+
+        <!-- VIEW: Chat -->
+        <div id="view-chat" class="view-transition absolute inset-0 flex flex-col z-10 opacity-0 pointer-events-none translate-y-4 pt-20 px-4 md:px-20 pb-10">
+             <div class="w-full max-w-3xl mx-auto h-full flex flex-col relative">
+                <header class="flex items-end justify-between mb-6 border-b border-paper-ink/10 pb-4">
+                    <div>
+                        <h2 class="text-4xl font-light text-paper-ink mb-2">Otto</h2>
+                        <p class="text-sm text-paper-sub font-mono">Chat Session #442</p>
+                    </div>
+                    <button onclick="app.navigate('home')" class="text-xs font-mono uppercase tracking-widest text-paper-sub hover:text-paper-ink transition-colors">
+                        ESC / Back
+                    </button>
+                </header>
+
+                <!-- Messages -->
+                <div class="flex-1 overflow-y-auto hide-scrollbar space-y-8 pr-4 pb-20">
+                    
+                    <!-- Bot Message -->
+                    <div class="flex gap-4">
+                        <div class="w-8 h-8 rounded-full bg-paper-ink text-paper-bg flex items-center justify-center text-xs font-mono shrink-0">O</div>
+                        <div class="space-y-2">
+                            <p class="text-paper-ink font-light leading-relaxed">
+                                I've completed the system health check. All services are running within normal parameters.
+                            </p>
+                            <div class="text-xs text-paper-sub font-mono bg-paper-ink/5 p-2 rounded inline-block">
+                                > CPU: 12% | MEM: 4.2GB
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User Message -->
+                    <div class="flex gap-4 flex-row-reverse">
+                         <div class="w-8 h-8 rounded-full bg-paper-accent text-paper-highlight flex items-center justify-center text-xs font-mono shrink-0">M</div>
+                        <div class="space-y-2 text-right">
+                            <p class="text-paper-ink font-light leading-relaxed bg-white border border-paper-ink/10 p-4 rounded-2xl rounded-tr-sm shadow-sm inline-block text-left">
+                                Great. Can you draft a summary of the pending tasks for today?
+                            </p>
+                        </div>
+                    </div>
+
+                     <!-- Bot Message (Typing) -->
+                     <div class="flex gap-4 opacity-50">
+                        <div class="w-8 h-8 rounded-full bg-paper-ink text-paper-bg flex items-center justify-center text-xs font-mono shrink-0">O</div>
+                        <div class="flex items-center gap-1 h-8">
+                            <div class="w-1.5 h-1.5 bg-paper-sub rounded-full animate-bounce"></div>
+                            <div class="w-1.5 h-1.5 bg-paper-sub rounded-full animate-bounce animation-delay-200"></div>
+                            <div class="w-1.5 h-1.5 bg-paper-sub rounded-full animate-bounce animation-delay-400"></div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Input (Floating) -->
+                <div class="absolute bottom-0 left-0 right-0 bg-paper-bg/80 backdrop-blur-md pt-4">
+                    <div class="relative group">
+                        <input 
+                            type="text" 
+                            placeholder="Message Otto..." 
+                            class="w-full bg-white border border-paper-ink/10 rounded-xl px-4 py-4 text-paper-ink placeholder-paper-sub/50 focus:outline-none focus:border-paper-ink/30 transition-all shadow-sm"
+                        >
+                         <button class="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-paper-sub hover:text-paper-ink transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                        </button>
+                    </div>
+                </div>
+
+             </div>
+        </div>
+
+        <!-- OVERLAY: Command Palette (Global) -->
+        <div id="command-palette" class="fixed inset-0 z-50 flex flex-col md:items-start md:justify-center md:pt-[20vh] px-0 md:px-4 opacity-0 pointer-events-none transition-opacity duration-200">
+            <!-- Backdrop -->
+            <div class="absolute inset-0 bg-paper-bg/80 backdrop-blur-sm transition-opacity duration-300" onclick="app.closeCommandPalette()"></div>
+            
+            <!-- Panel -->
+            <div class="relative w-full md:max-w-xl bg-white rounded-t-3xl md:rounded-2xl shadow-2xl border-t border-x md:border border-paper-ink/5 overflow-hidden transform translate-y-full md:translate-y-0 md:scale-95 transition-transform duration-300 md:mx-auto mt-auto md:mt-0 h-[80vh] md:h-auto pb-safe md:pb-0 flex flex-col" id="cmd-panel">
+                
+                <!-- Input -->
+                <div class="flex items-center border-b border-paper-ink/5 p-4 md:p-4 sticky top-0 bg-white z-10">
+                    <button class="md:hidden mr-3 p-2 text-paper-sub hover:text-paper-ink" onclick="app.closeCommandPalette()">
+                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <svg class="w-5 h-5 text-paper-sub mr-3 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <input 
+                        type="text" 
+                        id="cmd-input"
+                        placeholder="What would you like to do?" 
+                        class="flex-1 bg-transparent border-none outline-none text-lg md:text-xl font-light text-paper-ink placeholder-paper-sub/40 h-10 md:h-8"
+                        autocomplete="off"
+                    >
+                    <div class="text-[10px] font-mono text-paper-sub border border-paper-ink/10 rounded px-1.5 py-0.5 hidden md:block">ESC</div>
+                </div>
+
+                <!-- Results -->
+                <div class="max-h-[60vh] overflow-y-auto py-2" id="cmd-results">
+                    
+                    <div class="px-4 py-2 text-[10px] font-mono uppercase tracking-widest text-paper-sub/50">Jump to</div>
+                    
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item" onclick="app.navigate('jobs'); app.closeCommandPalette()">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-paper-ink/5 flex items-center justify-center text-paper-sub group-hover:text-paper-ink group-focus:text-paper-ink">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                            </div>
+                            <span class="text-paper-ink font-light">Job Queue</span>
+                        </div>
+                        <span class="text-xs text-paper-sub font-mono">G J</span>
+                    </button>
+
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item" onclick="app.navigate('chat'); app.closeCommandPalette()">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-paper-ink/5 flex items-center justify-center text-paper-sub group-hover:text-paper-ink group-focus:text-paper-ink">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                            </div>
+                            <span class="text-paper-ink font-light">Chat with Otto</span>
+                        </div>
+                        <span class="text-xs text-paper-sub font-mono">G C</span>
+                    </button>
+
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item">
+                        <div class="flex items-center gap-3">
+                             <div class="w-8 h-8 rounded-lg bg-paper-ink/5 flex items-center justify-center text-paper-sub group-hover:text-paper-ink group-focus:text-paper-ink">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                            </div>
+                            <span class="text-paper-ink font-light">Settings</span>
+                        </div>
+                        <span class="text-xs text-paper-sub font-mono">G S</span>
+                    </button>
+
+                    <div class="px-4 py-2 mt-2 text-[10px] font-mono uppercase tracking-widest text-paper-sub/50">Quick Actions</div>
+
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item">
+                        <div class="flex items-center gap-3">
+                             <div class="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center text-green-600 group-hover:text-green-700">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                            <span class="text-paper-ink font-light">Restart Server</span>
+                        </div>
+                    </button>
+
+                    <button class="w-full px-4 py-3 flex items-center justify-between hover:bg-paper-ink/5 group transition-colors focus:bg-paper-ink/5 focus:outline-none cmd-item">
+                        <div class="flex items-center gap-3">
+                             <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-600 group-hover:text-blue-700">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                            </div>
+                            <span class="text-paper-ink font-light">Trigger Backup</span>
+                        </div>
+                    </button>
+
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        const app = {
+            state: {
+                currentView: 'home',
+                isDark: false,
+                isCmdOpen: false
+            },
+
+            init() {
+                // Keyboard Listeners
+                document.addEventListener('keydown', (e) => {
+                    // CMD+K or CTRL+K
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                        e.preventDefault();
+                        this.openCommandPalette();
+                    }
+                    // ESC
+                    if (e.key === 'Escape') {
+                        if (this.state.isCmdOpen) {
+                            this.closeCommandPalette();
+                        } else if (this.state.currentView !== 'home') {
+                            this.navigate('home');
+                        }
+                    }
+                    // Keyboard Nav in Palette
+                    if (this.state.isCmdOpen) {
+                        this.handlePaletteNav(e);
+                    }
+                });
+            },
+
+            navigate(viewId) {
+                // Hide all views
+                document.querySelectorAll('.view-transition').forEach(el => {
+                    el.style.opacity = '0';
+                    el.style.pointerEvents = 'none';
+                    el.style.transform = 'translateY(10px)';
+                });
+
+                // Show target view
+                const target = document.getElementById(`view-${viewId}`);
+                if (target) {
+                    // Small delay for clean transition
+                    setTimeout(() => {
+                        target.style.opacity = '1';
+                        target.style.pointerEvents = 'auto';
+                        target.style.transform = 'translateY(0)';
+                    }, 50);
+                }
+                
+                this.state.currentView = viewId;
+            },
+
+            toggleTheme() {
+                this.state.isDark = !this.state.isDark;
+                const html = document.documentElement;
+                if (this.state.isDark) {
+                    html.classList.add('dark');
+                    // In a real app, we'd swap CSS variables or classes here
+                    // For prototype, we'll invert styles manually or use a simple filter for effect
+                    document.body.style.filter = 'invert(1) hue-rotate(180deg)';
+                } else {
+                    html.classList.remove('dark');
+                    document.body.style.filter = 'none';
+                }
+            },
+
+            openCommandPalette() {
+                const palette = document.getElementById('command-palette');
+                const panel = document.getElementById('cmd-panel');
+                const input = document.getElementById('cmd-input');
+                
+                palette.classList.remove('opacity-0', 'pointer-events-none');
+                
+                // Desktop
+                panel.classList.remove('scale-95');
+                panel.classList.add('scale-100');
+                
+                // Mobile Slide Up
+                panel.classList.remove('translate-y-full');
+                panel.classList.add('translate-y-0');
+                
+                setTimeout(() => input.focus(), 100);
+                this.state.isCmdOpen = true;
+            },
+
+            closeCommandPalette() {
+                const palette = document.getElementById('command-palette');
+                const panel = document.getElementById('cmd-panel');
+                
+                palette.classList.add('opacity-0', 'pointer-events-none');
+                
+                // Desktop
+                panel.classList.remove('scale-100');
+                panel.classList.add('scale-95');
+
+                // Mobile Slide Down
+                panel.classList.remove('translate-y-0');
+                panel.classList.add('translate-y-full');
+                
+                this.state.isCmdOpen = false;
+            },
+
+            handlePaletteNav(e) {
+                const items = document.querySelectorAll('.cmd-item');
+                const activeElement = document.activeElement;
+                let currentIndex = Array.from(items).indexOf(activeElement);
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    const nextIndex = (currentIndex + 1) % items.length;
+                    items[nextIndex].focus();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    const prevIndex = (currentIndex - 1 + items.length) % items.length;
+                    items[prevIndex].focus();
+                } else if (e.key === 'Enter') {
+                     // If input is focused and enter is pressed, select first item
+                     if (activeElement.id === 'cmd-input' && items.length > 0) {
+                         e.preventDefault();
+                         items[0].click();
+                     }
+                }
+            }
+        };
+
+        // Boot
+        app.init();
+    </script>
+</body>
+</html>

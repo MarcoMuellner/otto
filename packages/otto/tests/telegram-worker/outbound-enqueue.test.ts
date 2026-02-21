@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
+  enqueueTelegramFile,
   enqueueTelegramMessage,
   type OutboundMessageEnqueueRepository,
 } from "../../src/telegram-worker/outbound-enqueue.js"
@@ -87,5 +88,34 @@ describe("enqueueTelegramMessage", () => {
     const secondRecord = vi.mocked(repository.enqueueOrIgnoreDedupe).mock.calls[1]?.[0]
     expect(firstRecord?.dedupeKey).toBe("job-1:1/2")
     expect(secondRecord?.dedupeKey).toBe("job-1:2/2")
+  })
+
+  it("enqueues a document outbound record", () => {
+    // Arrange
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+
+    // Act
+    const result = enqueueTelegramFile(
+      {
+        chatId: 100,
+        kind: "document",
+        filePath: "/tmp/report.pdf",
+        mimeType: "application/pdf",
+        fileName: "report.pdf",
+        caption: "latest",
+      },
+      repository,
+      1_000
+    )
+
+    // Assert
+    expect(result.status).toBe("enqueued")
+    const firstCall = vi.mocked(repository.enqueueOrIgnoreDedupe).mock.calls[0]?.[0]
+    expect(firstCall?.kind).toBe("document")
+    expect(firstCall?.mediaPath).toBe("/tmp/report.pdf")
   })
 })

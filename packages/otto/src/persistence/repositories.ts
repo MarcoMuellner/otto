@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite"
 
 export type MessagePriority = "low" | "normal" | "high" | "critical"
 export type OutboundMessageStatus = "queued" | "sent" | "failed" | "cancelled"
+export type OutboundMessageKind = "text" | "document" | "photo"
 export type JobStatus = "idle" | "running" | "paused"
 export type JobScheduleType = "recurring" | "oneshot"
 export type JobTerminalState = "completed" | "expired" | "cancelled"
@@ -51,13 +52,39 @@ export type OutboundMessageRecord = {
   id: string
   dedupeKey: string | null
   chatId: number
+  kind: OutboundMessageKind
   content: string
+  mediaPath: string | null
+  mediaMimeType: string | null
+  mediaFilename: string | null
   priority: MessagePriority
   status: OutboundMessageStatus
   attemptCount: number
   nextAttemptAt: number | null
   sentAt: number | null
   failedAt: number | null
+  errorMessage: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type MediaInboundStatus = "accepted" | "rejected" | "processed" | "failed"
+
+export type MediaInboundMessageRecord = {
+  id: string
+  sourceMessageId: string
+  chatId: number
+  userId: number | null
+  telegramFileId: string
+  telegramFileUniqueId: string | null
+  mediaType: "document" | "photo"
+  mimeType: string | null
+  fileName: string | null
+  fileSizeBytes: number | null
+  downloadedSizeBytes: number | null
+  caption: string | null
+  status: MediaInboundStatus
+  rejectReason: string | null
   errorMessage: string | null
   createdAt: number
   updatedAt: number
@@ -386,6 +413,91 @@ export const createVoiceInboundMessagesRepository = (database: DatabaseSync) => 
 }
 
 /**
+ * Persists non-voice media intake records so document/photo lifecycle outcomes stay auditable
+ * without coupling this state to text prompt storage.
+ *
+ * @param database Open SQLite database instance.
+ * @returns Repository for inbound media lifecycle writes.
+ */
+export const createMediaInboundMessagesRepository = (database: DatabaseSync) => {
+  const insertStatement = database.prepare(
+    `INSERT INTO messages_in_media
+      (id, source_message_id, chat_id, user_id, telegram_file_id, telegram_file_unique_id, media_type, mime_type, file_name, file_size_bytes, downloaded_size_bytes, caption, status, reject_reason, error_message, created_at, updated_at)
+     VALUES
+      (@id, @sourceMessageId, @chatId, @userId, @telegramFileId, @telegramFileUniqueId, @mediaType, @mimeType, @fileName, @fileSizeBytes, @downloadedSizeBytes, @caption, @status, @rejectReason, @errorMessage, @createdAt, @updatedAt)`
+  )
+
+  const updateStatusStatement = database.prepare(
+    `UPDATE messages_in_media
+     SET downloaded_size_bytes = COALESCE(@downloadedSizeBytes, downloaded_size_bytes),
+         status = @status,
+         reject_reason = @rejectReason,
+         error_message = @errorMessage,
+         updated_at = @updatedAt
+     WHERE source_message_id = @sourceMessageId`
+  )
+
+  return {
+    insertOrIgnore: (record: MediaInboundMessageRecord): "inserted" | "duplicate" => {
+      try {
+        insertStatement.run(record)
+        return "inserted"
+      } catch (error) {
+        if (isUniqueConstraintForColumn(error, "source_message_id")) {
+          return "duplicate"
+        }
+
+        throw error
+      }
+    },
+    markRejected: (
+      sourceMessageId: string,
+      rejectReason: string,
+      updatedAt = Date.now(),
+      downloadedSizeBytes: number | null = null
+    ): void => {
+      updateStatusStatement.run({
+        sourceMessageId,
+        downloadedSizeBytes,
+        status: "rejected",
+        rejectReason,
+        errorMessage: null,
+        updatedAt,
+      })
+    },
+    markProcessed: (
+      sourceMessageId: string,
+      updatedAt = Date.now(),
+      downloadedSizeBytes: number | null = null
+    ): void => {
+      updateStatusStatement.run({
+        sourceMessageId,
+        downloadedSizeBytes,
+        status: "processed",
+        rejectReason: null,
+        errorMessage: null,
+        updatedAt,
+      })
+    },
+    markFailed: (
+      sourceMessageId: string,
+      errorMessage: string,
+      updatedAt = Date.now(),
+      downloadedSizeBytes: number | null = null
+    ): void => {
+      updateStatusStatement.run({
+        sourceMessageId,
+        downloadedSizeBytes,
+        status: "failed",
+        rejectReason: null,
+        errorMessage,
+        updatedAt,
+      })
+    },
+  }
+}
+
+/**
  * Stores outbound queue state in a dedicated repository so delivery retry policy can evolve
  * without coupling message persistence to transport code.
  *
@@ -395,9 +507,9 @@ export const createVoiceInboundMessagesRepository = (database: DatabaseSync) => 
 export const createOutboundMessagesRepository = (database: DatabaseSync) => {
   const insertStatement = database.prepare(
     `INSERT INTO messages_out
-      (id, dedupe_key, chat_id, content, priority, status, attempt_count, next_attempt_at, sent_at, failed_at, error_message, created_at, updated_at)
+      (id, dedupe_key, chat_id, kind, content, media_path, media_mime_type, media_filename, priority, status, attempt_count, next_attempt_at, sent_at, failed_at, error_message, created_at, updated_at)
      VALUES
-      (@id, @dedupeKey, @chatId, @content, @priority, @status, @attemptCount, @nextAttemptAt, @sentAt, @failedAt, @errorMessage, @createdAt, @updatedAt)`
+      (@id, @dedupeKey, @chatId, @kind, @content, @mediaPath, @mediaMimeType, @mediaFilename, @priority, @status, @attemptCount, @nextAttemptAt, @sentAt, @failedAt, @errorMessage, @createdAt, @updatedAt)`
   )
 
   const updateQueuedRetryStatement = database.prepare(
@@ -426,7 +538,11 @@ export const createOutboundMessagesRepository = (database: DatabaseSync) => {
       id,
       dedupe_key as dedupeKey,
       chat_id as chatId,
+      kind,
       content,
+      media_path as mediaPath,
+      media_mime_type as mediaMimeType,
+      media_filename as mediaFilename,
       priority,
       status,
       attempt_count as attemptCount,

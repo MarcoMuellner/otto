@@ -80,7 +80,11 @@ type OutboundMessagesRepository = {
     id: string
     dedupeKey: string | null
     chatId: number
+    kind: "text" | "document" | "photo"
     content: string
+    mediaPath: string | null
+    mediaMimeType: string | null
+    mediaFilename: string | null
     priority: "low" | "normal" | "high" | "critical"
     status: "queued"
     attemptCount: number

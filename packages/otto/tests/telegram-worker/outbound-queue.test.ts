@@ -1,3 +1,7 @@
+import { mkdtemp, stat, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
+
 import { describe, expect, it, vi } from "vitest"
 import type { Logger } from "pino"
 
@@ -42,7 +46,11 @@ describe("outbound queue processor", () => {
         {
           id: "out-1",
           chatId: 77,
+          kind: "text" as const,
           content: "hello",
+          mediaPath: null,
+          mediaMimeType: null,
+          mediaFilename: null,
           priority: "normal" as const,
           attemptCount: 0,
           createdAt: 900,
@@ -55,6 +63,8 @@ describe("outbound queue processor", () => {
     }
     const sender = {
       sendMessage: vi.fn(async () => {}),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
     }
     const processor = createOutboundQueueProcessor({
       logger,
@@ -89,7 +99,11 @@ describe("outbound queue processor", () => {
         {
           id: "out-2",
           chatId: 99,
+          kind: "text" as const,
           content: "hello",
+          mediaPath: null,
+          mediaMimeType: null,
+          mediaFilename: null,
           priority: "normal" as const,
           attemptCount: 1,
           createdAt: 900,
@@ -104,6 +118,8 @@ describe("outbound queue processor", () => {
       sendMessage: vi.fn(async () => {
         throw new Error("network timeout")
       }),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
     }
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(5_000)
     const processor = createOutboundQueueProcessor({
@@ -131,6 +147,66 @@ describe("outbound queue processor", () => {
     nowSpy.mockRestore()
   })
 
+  it("delivers queued document messages via sendDocument", async () => {
+    // Arrange
+    const logger = createLoggerStub()
+    const tempDirectory = await mkdtemp(path.join(tmpdir(), "otto-outbound-queue-"))
+    const stagedFilePath = path.join(tempDirectory, "report.pdf")
+    await writeFile(stagedFilePath, "pdf", "utf8")
+
+    const repository = {
+      listDue: vi.fn(() => [
+        {
+          id: "out-doc-1",
+          chatId: 88,
+          kind: "document" as const,
+          content: "doc caption",
+          mediaPath: stagedFilePath,
+          mediaMimeType: "application/pdf",
+          mediaFilename: "report.pdf",
+          priority: "normal" as const,
+          attemptCount: 0,
+          createdAt: 900,
+          errorMessage: null,
+        },
+      ]),
+      markSent: vi.fn(),
+      markRetry: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const sender = {
+      sendMessage: vi.fn(async () => {}),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
+    }
+
+    const processor = createOutboundQueueProcessor({
+      logger,
+      repository,
+      sender,
+      retryPolicy: {
+        maxAttempts: 5,
+        baseDelayMs: 1_000,
+        maxDelayMs: 60_000,
+      },
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: vi.fn(),
+      },
+    })
+
+    // Act
+    await processor.drainDueMessages(1_000)
+
+    // Assert
+    expect(sender.sendDocument).toHaveBeenCalledWith(88, {
+      filePath: stagedFilePath,
+      filename: "report.pdf",
+      caption: "doc caption",
+    })
+    await expect(stat(stagedFilePath)).rejects.toThrow()
+  })
+
   it("marks permanent failure when max attempts are reached", async () => {
     // Arrange
     const logger = createLoggerStub()
@@ -139,7 +215,11 @@ describe("outbound queue processor", () => {
         {
           id: "out-3",
           chatId: 88,
+          kind: "text" as const,
           content: "hello",
+          mediaPath: null,
+          mediaMimeType: null,
+          mediaFilename: null,
           priority: "normal" as const,
           attemptCount: 2,
           createdAt: 900,
@@ -154,6 +234,8 @@ describe("outbound queue processor", () => {
       sendMessage: vi.fn(async () => {
         throw new Error("telegram 429")
       }),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
     }
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(9_000)
     const processor = createOutboundQueueProcessor({
@@ -189,7 +271,11 @@ describe("outbound queue processor", () => {
         {
           id: "out-quiet-1",
           chatId: 101,
+          kind: "text" as const,
           content: "quiet test",
+          mediaPath: null,
+          mediaMimeType: null,
+          mediaFilename: null,
           priority: "normal" as const,
           attemptCount: 0,
           createdAt: 900,
@@ -202,6 +288,8 @@ describe("outbound queue processor", () => {
     }
     const sender = {
       sendMessage: vi.fn(async () => {}),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
     }
     const processor = createOutboundQueueProcessor({
       logger,
@@ -250,7 +338,11 @@ describe("outbound queue processor", () => {
         {
           id: "out-supp-1",
           chatId: 101,
+          kind: "text" as const,
           content: "suppressed",
+          mediaPath: null,
+          mediaMimeType: null,
+          mediaFilename: null,
           priority: "normal" as const,
           attemptCount: 1,
           createdAt: 900,
@@ -263,6 +355,8 @@ describe("outbound queue processor", () => {
     }
     const sender = {
       sendMessage: vi.fn(async () => {}),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
     }
     const processor = createOutboundQueueProcessor({
       logger,

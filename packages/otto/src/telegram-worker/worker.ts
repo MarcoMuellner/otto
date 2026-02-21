@@ -1,5 +1,5 @@
 import type { Logger } from "pino"
-import { Telegraf } from "telegraf"
+import { Input, Telegraf } from "telegraf"
 import { randomUUID } from "node:crypto"
 
 import { openPersistenceDatabase } from "../persistence/index.js"
@@ -8,6 +8,7 @@ import { createJobsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createUserProfileRepository } from "../persistence/repositories.js"
+import { createMediaInboundMessagesRepository } from "../persistence/repositories.js"
 import { createVoiceInboundMessagesRepository } from "../persistence/repositories.js"
 import type { TelegramWorkerConfig } from "./config.js"
 import { createInboundBridge } from "./inbound.js"
@@ -15,6 +16,13 @@ import type { OpencodeSessionGateway } from "./opencode.js"
 import { createOutboundQueueProcessor } from "./outbound-queue.js"
 import { createTranscriptionGateway, type TranscriptionGateway } from "./transcription.js"
 import { isProfileOnboardingComplete } from "../scheduler/notification-policy.js"
+import {
+  buildMediaDataUrl,
+  downloadInboundMediaFile,
+  validateInboundMediaPayload,
+  type TelegramInboundMediaMessage as TelegramInboundMediaPayload,
+  type TelegramMediaDownloadDescriptor,
+} from "./media-intake.js"
 import {
   downloadVoiceFile,
   validateVoicePayload,
@@ -47,6 +55,14 @@ export type TelegramInboundVoiceUpdate = {
   update: unknown
 }
 
+export type TelegramInboundMediaUpdate = {
+  sourceMessageId: string
+  chatId: number
+  userId: number
+  media: TelegramInboundMediaPayload
+  update: unknown
+}
+
 export type TelegramUnsupportedMediaUpdate = {
   sourceMessageId: string
   chatId: number
@@ -64,12 +80,19 @@ export type TelegramVoiceDownload = {
 export type TelegramBotRuntime = {
   onTextMessage: (handler: (update: TelegramInboundUpdate) => Promise<void>) => void
   onVoiceMessage: (handler: (update: TelegramInboundVoiceUpdate) => Promise<void>) => void
+  onMediaMessage: (handler: (update: TelegramInboundMediaUpdate) => Promise<void>) => void
   onUnsupportedMediaMessage: (
     handler: (update: TelegramUnsupportedMediaUpdate) => Promise<void>
   ) => void
   sendMessage: (chatId: number, text: string) => Promise<void>
+  sendDocument: (
+    chatId: number,
+    input: { filePath: string; filename?: string; caption?: string }
+  ) => Promise<void>
+  sendPhoto: (chatId: number, input: { filePath: string; caption?: string }) => Promise<void>
   sendChatAction?: (chatId: number, action: "typing") => Promise<void>
   resolveVoiceDownload: (fileId: string) => Promise<TelegramVoiceDownload>
+  resolveFileDownload: (fileId: string) => Promise<TelegramMediaDownloadDescriptor>
   launch: () => Promise<void>
   stop: () => Promise<void>
 }
@@ -86,6 +109,16 @@ export type TelegramWorkerDependencies = {
 }
 
 const TELEGRAM_LAUNCH_RETRY_DELAY_MS = 30_000
+const TELEGRAM_MEDIA_MAX_BYTES = 15 * 1024 * 1024
+const TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS = 25_000
+const ALLOWED_DOCUMENT_MIME_TYPES = [
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/json",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]
+const ALLOWED_PHOTO_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"]
 
 const classifyUnsupportedMediaType = (
   message: object
@@ -122,6 +155,7 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
 
   const textHandlers: Array<(update: TelegramInboundUpdate) => Promise<void>> = []
   const voiceHandlers: Array<(update: TelegramInboundVoiceUpdate) => Promise<void>> = []
+  const mediaHandlers: Array<(update: TelegramInboundMediaUpdate) => Promise<void>> = []
   const unsupportedMediaHandlers: Array<(update: TelegramUnsupportedMediaUpdate) => Promise<void>> =
     []
 
@@ -185,6 +219,54 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
       return
     }
 
+    if ("document" in message) {
+      const document = message.document
+      const mediaPayload: TelegramInboundMediaPayload = {
+        mediaType: "document",
+        fileId: document.file_id,
+        fileUniqueId: document.file_unique_id,
+        mimeType: document.mime_type ?? "application/octet-stream",
+        fileSizeBytes: document.file_size ?? null,
+        fileName: document.file_name ?? null,
+        caption: message.caption ?? null,
+      }
+
+      for (const handler of mediaHandlers) {
+        await handler({
+          sourceMessageId,
+          chatId,
+          userId,
+          media: mediaPayload,
+          update: context.update,
+        })
+      }
+      return
+    }
+
+    if ("photo" in message && Array.isArray(message.photo) && message.photo.length > 0) {
+      const photo = message.photo[message.photo.length - 1]
+      const mediaPayload: TelegramInboundMediaPayload = {
+        mediaType: "photo",
+        fileId: photo.file_id,
+        fileUniqueId: photo.file_unique_id,
+        mimeType: "image/jpeg",
+        fileSizeBytes: photo.file_size ?? null,
+        fileName: null,
+        caption: message.caption ?? null,
+      }
+
+      for (const handler of mediaHandlers) {
+        await handler({
+          sourceMessageId,
+          chatId,
+          userId,
+          media: mediaPayload,
+          update: context.update,
+        })
+      }
+      return
+    }
+
     const mediaType = classifyUnsupportedMediaType(message)
 
     for (const handler of unsupportedMediaHandlers) {
@@ -205,11 +287,24 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
     onVoiceMessage: (handler) => {
       voiceHandlers.push(handler)
     },
+    onMediaMessage: (handler) => {
+      mediaHandlers.push(handler)
+    },
     onUnsupportedMediaMessage: (handler) => {
       unsupportedMediaHandlers.push(handler)
     },
     sendMessage: async (chatId, text) => {
       await bot.telegram.sendMessage(chatId, text)
+    },
+    sendDocument: async (chatId, input) => {
+      await bot.telegram.sendDocument(chatId, Input.fromLocalFile(input.filePath, input.filename), {
+        caption: input.caption,
+      })
+    },
+    sendPhoto: async (chatId, input) => {
+      await bot.telegram.sendPhoto(chatId, Input.fromLocalFile(input.filePath), {
+        caption: input.caption,
+      })
     },
     sendChatAction: async (chatId, action) => {
       await bot.telegram.sendChatAction(chatId, action)
@@ -218,6 +313,21 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
       const file = await bot.telegram.getFile(fileId)
       if (!file.file_path) {
         throw new Error("Telegram file path is missing for voice message")
+      }
+
+      const filePath = file.file_path
+      const fileName = filePath.split("/").at(-1) ?? null
+
+      return {
+        url: `https://api.telegram.org/file/bot${botToken}/${filePath}`,
+        fileSizeBytes: file.file_size ?? null,
+        fileName,
+      }
+    },
+    resolveFileDownload: async (fileId) => {
+      const file = await bot.telegram.getFile(fileId)
+      if (!file.file_path) {
+        throw new Error("Telegram file path is missing")
       }
 
       const filePath = file.file_path
@@ -266,6 +376,7 @@ export const startTelegramWorker = async (
   const jobsRepository = createJobsRepository(database)
   const outboundMessagesRepository = createOutboundMessagesRepository(database)
   const voiceInboundMessagesRepository = createVoiceInboundMessagesRepository(database)
+  const mediaInboundMessagesRepository = createMediaInboundMessagesRepository(database)
   const userProfileRepository = createUserProfileRepository(database)
   const sessionGatewayFactory =
     dependencies.createSessionGateway ??
@@ -317,6 +428,8 @@ export const startTelegramWorker = async (
     repository: outboundMessagesRepository,
     sender: {
       sendMessage: bot.sendMessage,
+      sendDocument: bot.sendDocument,
+      sendPhoto: bot.sendPhoto,
     },
     retryPolicy: {
       maxAttempts: config.outboundMaxAttempts,
@@ -626,6 +739,179 @@ export const startTelegramWorker = async (
     }
   })
 
+  bot.onMediaMessage(async (update) => {
+    try {
+      logger.info(
+        {
+          sourceMessageId: update.sourceMessageId,
+          chatId: update.chatId,
+          userId: update.userId,
+          mediaType: update.media.mediaType,
+          mimeType: update.media.mimeType,
+          fileSizeBytes: update.media.fileSizeBytes,
+          hasCaption: Boolean(update.media.caption),
+        },
+        "Received inbound Telegram document/photo message"
+      )
+
+      const context = extractTelegramAccessContext(update.update)
+      const decision = evaluateTelegramAccess(context, {
+        allowedUserId: config.allowedUserId,
+      })
+      logDeniedTelegramAccess(logger, decision, context)
+
+      if (!decision.allowed) {
+        return
+      }
+
+      if (inFlightChats.has(update.chatId)) {
+        await bot.sendMessage(
+          update.chatId,
+          "I am still processing your previous message. Please wait."
+        )
+        return
+      }
+
+      const now = Date.now()
+      const insertResult = mediaInboundMessagesRepository.insertOrIgnore({
+        id: randomUUID(),
+        sourceMessageId: update.sourceMessageId,
+        chatId: update.chatId,
+        userId: update.userId,
+        telegramFileId: update.media.fileId,
+        telegramFileUniqueId: update.media.fileUniqueId,
+        mediaType: update.media.mediaType,
+        mimeType: update.media.mimeType,
+        fileName: update.media.fileName,
+        fileSizeBytes: update.media.fileSizeBytes,
+        downloadedSizeBytes: null,
+        caption: update.media.caption,
+        status: "accepted",
+        rejectReason: null,
+        errorMessage: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      if (insertResult === "duplicate") {
+        logger.info(
+          { sourceMessageId: update.sourceMessageId },
+          "Skipping duplicate inbound Telegram media message"
+        )
+        return
+      }
+
+      const validation = validateInboundMediaPayload(update.media, {
+        maxBytes: TELEGRAM_MEDIA_MAX_BYTES,
+        allowedMimeTypes:
+          update.media.mediaType === "document"
+            ? ALLOWED_DOCUMENT_MIME_TYPES
+            : ALLOWED_PHOTO_MIME_TYPES,
+        downloadTimeoutMs: TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS,
+      })
+
+      if (!validation.accepted) {
+        mediaInboundMessagesRepository.markRejected(update.sourceMessageId, validation.reason)
+        await bot.sendMessage(update.chatId, validation.message)
+        return
+      }
+
+      inFlightChats.add(update.chatId)
+      let downloadedBytes: number | null = null
+
+      try {
+        const descriptor = await bot.resolveFileDownload(update.media.fileId)
+        const downloaded = await downloadInboundMediaFile(descriptor, {
+          maxBytes: TELEGRAM_MEDIA_MAX_BYTES,
+          downloadTimeoutMs: TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS,
+        })
+        downloadedBytes = downloaded.bytes
+
+        try {
+          const resolvedMimeType = update.media.mimeType || "application/octet-stream"
+          const dataUrl = await buildMediaDataUrl(downloaded.filePath, resolvedMimeType)
+          const filename = update.media.fileName ?? descriptor.fileName ?? undefined
+          const parts = [
+            {
+              type: "text" as const,
+              text:
+                update.media.caption && update.media.caption.trim().length > 0
+                  ? `User sent a ${update.media.mediaType} with caption: ${update.media.caption.trim()}`
+                  : `User sent a ${update.media.mediaType}. Analyze it and respond helpfully.`,
+            },
+            {
+              type: "file" as const,
+              mime: resolvedMimeType,
+              filename,
+              url: dataUrl,
+            },
+          ]
+
+          const storageText =
+            update.media.caption && update.media.caption.trim().length > 0
+              ? `[${update.media.mediaType}] ${update.media.caption.trim()}`
+              : `[${update.media.mediaType}] ${filename ?? "media"}`
+
+          const mediaHandleResult = await bridge.handleMediaMessage({
+            sourceMessageId: update.sourceMessageId,
+            chatId: update.chatId,
+            userId: update.userId,
+            storageText,
+            parts,
+          })
+
+          if (mediaHandleResult.outcome === "processed") {
+            mediaInboundMessagesRepository.markProcessed(
+              update.sourceMessageId,
+              Date.now(),
+              downloadedBytes
+            )
+          } else if (mediaHandleResult.outcome === "failed") {
+            mediaInboundMessagesRepository.markFailed(
+              update.sourceMessageId,
+              mediaHandleResult.errorMessage,
+              Date.now(),
+              downloadedBytes
+            )
+          }
+        } finally {
+          await downloaded.cleanup()
+        }
+      } catch (error) {
+        const err = error as Error
+        mediaInboundMessagesRepository.markFailed(
+          update.sourceMessageId,
+          err.message,
+          Date.now(),
+          downloadedBytes
+        )
+
+        logger.error(
+          { error: err.message, chatId: update.chatId, sourceMessageId: update.sourceMessageId },
+          "Failed to process Telegram media message"
+        )
+
+        await bot.sendMessage(
+          update.chatId,
+          "I could not process that file right now. Please try again in a moment."
+        )
+      } finally {
+        inFlightChats.delete(update.chatId)
+      }
+    } catch (error) {
+      const err = error as Error
+      logger.error(
+        { error: err.message, sourceMessageId: update.sourceMessageId, chatId: update.chatId },
+        "Unhandled error while processing Telegram media message"
+      )
+
+      await bot.sendMessage(
+        update.chatId,
+        "Something went wrong while handling that file. Please try again."
+      )
+    }
+  })
+
   bot.onUnsupportedMediaMessage(async (update) => {
     try {
       logger.info(
@@ -650,7 +936,7 @@ export const startTelegramWorker = async (
 
       await bot.sendMessage(
         update.chatId,
-        "I cannot process this media type yet. Please send a voice note, an audio file, or plain text."
+        "I cannot process this media type yet. Please send text, voice/audio, a document, or a photo."
       )
     } catch (error) {
       const err = error as Error
@@ -661,7 +947,7 @@ export const startTelegramWorker = async (
 
       await bot.sendMessage(
         update.chatId,
-        "I could not process that media message. Please send plain text or try a short voice note."
+        "I could not process that media message. Please send text, voice/audio, a document, or a photo."
       )
     }
   })

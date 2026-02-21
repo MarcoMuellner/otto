@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -387,6 +387,65 @@ describe("buildInternalApiServer", () => {
         process.env.TELEGRAM_ALLOWED_USER_ID = previousAllowedUserId
       }
     }
+  })
+
+  it("queues outbound Telegram file when authorized", async () => {
+    // Arrange
+    const homeDirectory = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(homeDirectory)
+    const sourceFilePath = path.join(homeDirectory, "inbox", "report.txt")
+    await mkdir(path.dirname(sourceFilePath), { recursive: true })
+    await writeFile(sourceFilePath, "hello", "utf8")
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      ottoHome: homeDirectory,
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => 777),
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/queue-telegram-file",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        sessionId: "session-1",
+        kind: "document",
+        filePath: "inbox/report.txt",
+        mimeType: "text/plain",
+        caption: "latest report",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    const firstCall = vi.mocked(repository.enqueueOrIgnoreDedupe).mock.calls[0]?.[0]
+    expect(firstCall?.kind).toBe("document")
+    expect(firstCall?.chatId).toBe(777)
+    expect(firstCall?.mediaPath).toContain(path.join("data", "telegram-outbox"))
+
+    await app.close()
   })
 
   it("denies scheduled lane task mutations and allows list", async () => {
