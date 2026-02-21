@@ -85,6 +85,8 @@ export type TelegramWorkerDependencies = {
   ) => Promise<TranscriptionGateway> | TranscriptionGateway
 }
 
+const TELEGRAM_LAUNCH_RETRY_DELAY_MS = 30_000
+
 const classifyUnsupportedMediaType = (
   message: object
 ): TelegramUnsupportedMediaUpdate["mediaType"] => {
@@ -293,6 +295,9 @@ export const startTelegramWorker = async (
     dependencies.createBotRuntime?.(config.botToken) ?? createTelegrafRuntime(config.botToken)
   const inFlightChats = new Set<number>()
   const onboardingPromptedChats = new Set<number>()
+  let stopRequested = false
+  let launchInFlight = false
+  let launchRetryTimer: NodeJS.Timeout | null = null
 
   const bridge = createInboundBridge({
     logger,
@@ -661,13 +666,39 @@ export const startTelegramWorker = async (
     }
   })
 
-  void bot.launch().catch((error) => {
-    const err = error as Error
-    logger.error(
-      { error: err.message },
-      "Telegram bot launch failed; inbound updates may be unavailable"
-    )
-  })
+  const scheduleLaunchRetry = (): void => {
+    if (stopRequested || launchRetryTimer) {
+      return
+    }
+
+    launchRetryTimer = setTimeout(() => {
+      launchRetryTimer = null
+      void ensureBotLaunched()
+    }, TELEGRAM_LAUNCH_RETRY_DELAY_MS)
+  }
+
+  const ensureBotLaunched = async (): Promise<void> => {
+    if (stopRequested || launchInFlight) {
+      return
+    }
+
+    launchInFlight = true
+    try {
+      await bot.launch()
+      logger.info("Telegram bot polling started")
+    } catch (error) {
+      const err = error as Error
+      logger.error(
+        { error: err.message },
+        "Telegram bot launch failed; inbound updates may be unavailable"
+      )
+      scheduleLaunchRetry()
+    } finally {
+      launchInFlight = false
+    }
+  }
+
+  void ensureBotLaunched()
 
   logger.info(
     {
@@ -696,6 +727,11 @@ export const startTelegramWorker = async (
 
   return {
     stop: async () => {
+      stopRequested = true
+      if (launchRetryTimer) {
+        clearTimeout(launchRetryTimer)
+        launchRetryTimer = null
+      }
       clearInterval(heartbeatTimer)
       clearInterval(outboundQueueTimer)
       if (transcriptionGateway) {

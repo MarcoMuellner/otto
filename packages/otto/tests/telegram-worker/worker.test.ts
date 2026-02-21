@@ -344,6 +344,56 @@ describe("startTelegramWorker", () => {
     await worker.stop()
   })
 
+  it("retries Telegram launch after initial failure", async () => {
+    // Arrange
+    vi.useFakeTimers()
+    const { logger, error, info } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+
+    const launch = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("launch failed"))
+      .mockResolvedValue(undefined)
+
+    const runtime: TelegramBotRuntime = {
+      onTextMessage: () => {},
+      onVoiceMessage: () => {},
+      onUnsupportedMediaMessage: () => {},
+      sendMessage: async () => {},
+      resolveVoiceDownload: async () => ({
+        url: "http://127.0.0.1/voice.ogg",
+        fileSizeBytes: 123,
+        fileName: "voice.ogg",
+      }),
+      launch,
+      stop: async () => {},
+    }
+
+    // Act
+    const worker = await startTelegramWorker(logger, createWorkerConfig(), {
+      createBotRuntime: () => runtime,
+      openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+      createSessionGateway: () => ({
+        ensureSession: async () => "session-1",
+        promptSession: async () => "ok",
+      }),
+    })
+
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    // Assert
+    expect(launch).toHaveBeenCalledTimes(2)
+    expect(error).toHaveBeenCalledWith(
+      { error: "launch failed" },
+      "Telegram bot launch failed; inbound updates may be unavailable"
+    )
+    expect(info).toHaveBeenCalledWith("Telegram bot polling started")
+
+    await worker.stop()
+  })
+
   it("rejects oversized voice payload before transcription", async () => {
     // Arrange
     const { logger } = createLoggerStub()

@@ -183,22 +183,26 @@ export const createOutboundQueueProcessor = (
     )
   }
 
-  const processMessage = async (message: OutboundDeliveryRecord): Promise<void> => {
+  const processMessage = async (
+    message: OutboundDeliveryRecord,
+    evaluationTime: number
+  ): Promise<void> => {
     const nextAttemptCount = message.attemptCount + 1
 
     const profile = resolveEffectiveNotificationProfile(dependencies.userProfileRepository.get())
     const urgency =
       message.priority === "high" || message.priority === "critical" ? "critical" : "normal"
-    const gateDecision = resolveNotificationGateDecision(profile, urgency, Date.now())
+    const gateDecision = resolveNotificationGateDecision(profile, urgency, evaluationTime)
 
     if (gateDecision.action === "hold") {
-      const retryAt = gateDecision.releaseAt ?? Date.now() + dependencies.retryPolicy.baseDelayMs
+      const retryAt =
+        gateDecision.releaseAt ?? evaluationTime + dependencies.retryPolicy.baseDelayMs
       dependencies.repository.markRetry(
         message.id,
         nextAttemptCount,
         retryAt,
         `${SUPPRESSED_PREFIX}${gateDecision.reason}`,
-        Date.now()
+        evaluationTime
       )
       dependencies.logger.info(
         {
@@ -272,7 +276,7 @@ export const createOutboundQueueProcessor = (
           if (digestHandledMessageIds.has(message.id)) {
             continue
           }
-          await processMessage(message)
+          await processMessage(message, now)
         }
       } finally {
         draining = false
