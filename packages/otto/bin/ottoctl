@@ -856,13 +856,13 @@ try {
 
   db.prepare(
     `UPDATE jobs
-     SET status = 'idle',
+     SET status = ?,
          next_run_at = ?,
-         lock_token = NULL,
-         lock_expires_at = NULL,
+         lock_token = ?,
+         lock_expires_at = ?,
          updated_at = ?
      WHERE id = ?`
-  ).run(runAt, runAt, taskId)
+  ).run("idle", runAt, null, null, runAt, taskId)
 } finally {
   db.close()
 }
