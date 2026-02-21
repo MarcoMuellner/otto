@@ -59,7 +59,10 @@ export default function HomeRoute() {
         </p>
       </header>
 
-      <CommandBar placeholder="Type a command (Ticket 002 scaffold)" />
+      <CommandBar
+        placeholder="Type a command (Ticket 003 jobs read)"
+        entries={[{ label: "Open jobs", to: "/jobs" }]}
+      />
       <RuntimeHealthCard health={health} refreshState={refreshState} onRefresh={handleRefresh} />
     </section>
   )

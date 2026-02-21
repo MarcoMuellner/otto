@@ -2,13 +2,14 @@ import {
   createOttoExternalApiClientFromEnvironment,
   OttoExternalApiError,
 } from "./otto-external-api.server.js"
+import type { ExternalJobsResponse } from "../features/jobs/contracts.js"
 
 type ApiJobsLoaderDependencies = {
-  loadJobs: () => Promise<{ jobs: unknown[] }>
+  loadJobs: () => Promise<ExternalJobsResponse>
 }
 
 const defaultDependencies: ApiJobsLoaderDependencies = {
-  loadJobs: async (): Promise<{ jobs: unknown[] }> => {
+  loadJobs: async (): Promise<ExternalJobsResponse> => {
     const client = await createOttoExternalApiClientFromEnvironment()
     return client.listJobs()
   },

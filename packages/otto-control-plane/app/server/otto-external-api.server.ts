@@ -1,20 +1,24 @@
 import { z } from "zod"
 
 import {
+  externalJobAuditResponseSchema,
+  externalJobResponseSchema,
+  externalJobsResponseSchema,
+  healthResponseSchema,
+  type ExternalJobAuditResponse,
+  type ExternalJobResponse,
+  type ExternalJobsResponse,
+  type HealthResponse,
+} from "../features/jobs/contracts.js"
+import {
   resolveCachedControlPlaneServerConfig,
   type ControlPlaneServerConfig,
 } from "./env.server.js"
 
-const healthResponseSchema = z.object({
-  status: z.literal("ok"),
-})
-
-const jobsResponseSchema = z.object({
-  jobs: z.array(z.unknown()),
-})
-
-export type OttoExternalHealthResponse = z.infer<typeof healthResponseSchema>
-export type OttoExternalJobsResponse = z.infer<typeof jobsResponseSchema>
+export type OttoExternalHealthResponse = HealthResponse
+export type OttoExternalJobsResponse = ExternalJobsResponse
+export type OttoExternalJobResponse = ExternalJobResponse
+export type OttoExternalJobAuditResponse = ExternalJobAuditResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -87,7 +91,17 @@ export const createOttoExternalApiClient = ({
       return request("/external/health", healthResponseSchema)
     },
     listJobs: async (): Promise<OttoExternalJobsResponse> => {
-      return request("/external/jobs", jobsResponseSchema)
+      return request("/external/jobs?lane=scheduled", externalJobsResponseSchema)
+    },
+    getJob: async (jobId: string): Promise<OttoExternalJobResponse> => {
+      return request(`/external/jobs/${encodeURIComponent(jobId)}`, externalJobResponseSchema)
+    },
+    getJobAudit: async (jobId: string, limit = 20): Promise<OttoExternalJobAuditResponse> => {
+      const sanitizedLimit = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 200) : 20
+      return request(
+        `/external/jobs/${encodeURIComponent(jobId)}/audit?limit=${sanitizedLimit}`,
+        externalJobAuditResponseSchema
+      )
     },
   }
 }

@@ -630,8 +630,10 @@ describe("persistence repositories", () => {
 
     // Assert
     const taskAudit = taskAuditRepository.listRecent()
+    const taskAuditForJob = taskAuditRepository.listByTaskId("job-audit-1")
     const commandAudit = commandAuditRepository.listRecent()
     expect(taskAudit[0]?.id).toBe("task-audit-1")
+    expect(taskAuditForJob[0]?.id).toBe("task-audit-1")
     expect(commandAudit[0]?.id).toBe("cmd-audit-1")
 
     db.close()

@@ -6,7 +6,11 @@ import pino from "pino"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { buildExternalApiServer, resolveExternalApiConfig } from "../../src/external-api/server.js"
-import type { JobRecord, TaskListRecord } from "../../src/persistence/repositories.js"
+import type {
+  JobRecord,
+  TaskAuditRecord,
+  TaskListRecord,
+} from "../../src/persistence/repositories.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-external-api-")
 const cleanupPaths: string[] = []
@@ -54,6 +58,20 @@ const createJobRecord = (id: string): JobRecord => {
   }
 }
 
+const createTaskAuditRecord = (taskId: string): TaskAuditRecord => {
+  return {
+    id: "audit-1",
+    taskId,
+    action: "update",
+    lane: "scheduled",
+    actor: "system",
+    beforeJson: null,
+    afterJson: null,
+    metadataJson: "{}",
+    createdAt: 2_000,
+  }
+}
+
 describe("resolveExternalApiConfig", () => {
   it("creates and reuses the persisted API token file", async () => {
     // Arrange
@@ -87,6 +105,9 @@ describe("buildExternalApiServer", () => {
         listTasks: (): TaskListRecord[] => [],
         getById: (): JobRecord | null => null,
       },
+      taskAuditRepository: {
+        listByTaskId: (): TaskAuditRecord[] => [],
+      },
     })
 
     // Act
@@ -115,6 +136,9 @@ describe("buildExternalApiServer", () => {
       jobsRepository: {
         listTasks: (): TaskListRecord[] => [],
         getById: (): JobRecord | null => null,
+      },
+      taskAuditRepository: {
+        listByTaskId: (): TaskAuditRecord[] => [],
       },
     })
 
@@ -150,6 +174,9 @@ describe("buildExternalApiServer", () => {
         listTasks: (): TaskListRecord[] => tasks,
         getById: (): JobRecord | null => null,
       },
+      taskAuditRepository: {
+        listByTaskId: (): TaskAuditRecord[] => [],
+      },
     })
 
     // Act
@@ -164,7 +191,7 @@ describe("buildExternalApiServer", () => {
     // Assert
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({
-      jobs: [{ id: "job-1" }],
+      jobs: [{ id: "job-1", managedBy: "system", isMutable: false }],
     })
 
     await app.close()
@@ -184,6 +211,9 @@ describe("buildExternalApiServer", () => {
       jobsRepository: {
         listTasks: (): TaskListRecord[] => [],
         getById: (): JobRecord | null => null,
+      },
+      taskAuditRepository: {
+        listByTaskId: (): TaskAuditRecord[] => [],
       },
     })
 
@@ -220,6 +250,9 @@ describe("buildExternalApiServer", () => {
           return jobId === job.id ? job : null
         },
       },
+      taskAuditRepository: {
+        listByTaskId: (): TaskAuditRecord[] => [],
+      },
     })
 
     // Act
@@ -237,7 +270,55 @@ describe("buildExternalApiServer", () => {
       job: {
         id: "job-2",
         type: "heartbeat",
+        managedBy: "system",
+        isMutable: false,
       },
+    })
+
+    await app.close()
+  })
+
+  it("returns job audit entries when authorized", async () => {
+    // Arrange
+    const job = createJobRecord("job-audit")
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: {
+        listTasks: (): TaskListRecord[] => [],
+        getById: (): JobRecord | null => job,
+      },
+      taskAuditRepository: {
+        listByTaskId: (): TaskAuditRecord[] => [createTaskAuditRecord("job-audit")],
+      },
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/jobs/job-audit/audit?limit=10",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      taskId: "job-audit",
+      entries: [
+        {
+          id: "audit-1",
+          taskId: "job-audit",
+          action: "update",
+        },
+      ],
     })
 
     await app.close()

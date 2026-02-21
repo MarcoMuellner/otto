@@ -9,7 +9,23 @@ describe("api.jobs loader", () => {
     const loader = createApiJobsLoader({
       loadJobs: async () => {
         return {
-          jobs: [{ id: "job-1" }],
+          jobs: [
+            {
+              id: "job-1",
+              type: "heartbeat",
+              scheduleType: "recurring",
+              profileId: null,
+              status: "idle",
+              runAt: null,
+              cadenceMinutes: 5,
+              nextRunAt: 1_000,
+              terminalState: null,
+              terminalReason: null,
+              updatedAt: 1_000,
+              managedBy: "system",
+              isMutable: false,
+            },
+          ],
         }
       },
     })
@@ -20,7 +36,7 @@ describe("api.jobs loader", () => {
 
     // Assert
     expect(response.status).toBe(200)
-    expect(body).toEqual({ jobs: [{ id: "job-1" }] })
+    expect(body).toMatchObject({ jobs: [{ id: "job-1" }] })
   })
 
   it("returns 503 for Otto external API failures", async () => {

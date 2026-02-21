@@ -2,10 +2,15 @@ import Fastify, { type FastifyInstance } from "fastify"
 import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
-import { getTaskById, listTasksForLane } from "../api-services/tasks-read.js"
+import {
+  getTaskById,
+  listTasksForLane,
+  mapTaskDetailsForExternal,
+  mapTaskListForExternal,
+} from "../api-services/tasks-read.js"
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
-import type { JobRecord, TaskListRecord } from "../persistence/repositories.js"
+import type { JobRecord, TaskAuditRecord, TaskListRecord } from "../persistence/repositories.js"
 
 const DEFAULT_HOST = "0.0.0.0"
 const DEFAULT_PORT = 4190
@@ -25,10 +30,21 @@ type ExternalApiServerDependencies = {
     listTasks: () => TaskListRecord[]
     getById: (jobId: string) => JobRecord | null
   }
+  taskAuditRepository: {
+    listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
+  }
 }
+
+const listJobsQuerySchema = z.object({
+  lane: z.literal("scheduled").optional().default("scheduled"),
+})
 
 const getJobParamsSchema = z.object({
   id: z.string().trim().min(1),
+})
+
+const listAuditQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional().default(20),
 })
 
 const taskListRecordSchema = z.object({
@@ -43,6 +59,8 @@ const taskListRecordSchema = z.object({
   terminalState: z.enum(["completed", "expired", "cancelled"]).nullable(),
   terminalReason: z.string().nullable(),
   updatedAt: z.number().int(),
+  managedBy: z.enum(["system", "operator"]),
+  isMutable: z.boolean(),
 })
 
 const jobRecordSchema = z.object({
@@ -62,6 +80,18 @@ const jobRecordSchema = z.object({
   lockExpiresAt: z.number().int().nullable(),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
+  managedBy: z.enum(["system", "operator"]),
+  isMutable: z.boolean(),
+})
+
+const taskAuditEntrySchema = z.object({
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+  action: z.enum(["create", "update", "delete"]),
+  lane: z.enum(["interactive", "scheduled"]),
+  actor: z.string().nullable(),
+  metadataJson: z.string().nullable(),
+  createdAt: z.number().int(),
 })
 
 const healthResponseSchema = z.object({
@@ -74,6 +104,11 @@ const listJobsResponseSchema = z.object({
 
 const jobDetailsResponseSchema = z.object({
   job: jobRecordSchema,
+})
+
+const jobAuditResponseSchema = z.object({
+  taskId: z.string().min(1),
+  entries: z.array(taskAuditEntrySchema),
 })
 
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
@@ -155,8 +190,10 @@ export const buildExternalApiServer = (
 
   app.get("/external/jobs", async (request, reply) => {
     try {
-      void request
-      const jobs = listTasksForLane(dependencies.jobsRepository, "scheduled")
+      const query = listJobsQuerySchema.parse(request.query)
+      const jobs = listTasksForLane(dependencies.jobsRepository, query.lane).map(
+        mapTaskListForExternal
+      )
 
       return reply.code(200).send(
         listJobsResponseSchema.parse({
@@ -183,7 +220,9 @@ export const buildExternalApiServer = (
         return reply.code(404).send({ error: "not_found", message: "Task not found" })
       }
 
-      return reply.code(200).send(jobDetailsResponseSchema.parse({ job }))
+      return reply
+        .code(200)
+        .send(jobDetailsResponseSchema.parse({ job: mapTaskDetailsForExternal(job) }))
     } catch (error) {
       if (error instanceof ZodError) {
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
@@ -191,6 +230,45 @@ export const buildExternalApiServer = (
 
       const err = error as Error
       dependencies.logger.error({ error: err.message }, "External API job detail failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/jobs/:id/audit", async (request, reply) => {
+    try {
+      const params = getJobParamsSchema.parse(request.params)
+      const query = listAuditQuerySchema.parse(request.query)
+      const job = getTaskById(dependencies.jobsRepository, params.id)
+
+      if (!job) {
+        return reply.code(404).send({ error: "not_found", message: "Task not found" })
+      }
+
+      const entries = dependencies.taskAuditRepository
+        .listByTaskId(params.id, query.limit)
+        .map((entry) => ({
+          id: entry.id,
+          taskId: entry.taskId,
+          action: entry.action,
+          lane: entry.lane,
+          actor: entry.actor,
+          metadataJson: entry.metadataJson,
+          createdAt: entry.createdAt,
+        }))
+
+      return reply.code(200).send(
+        jobAuditResponseSchema.parse({
+          taskId: params.id,
+          entries,
+        })
+      )
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API job audit failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

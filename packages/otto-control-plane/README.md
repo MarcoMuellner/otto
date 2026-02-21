@@ -13,6 +13,18 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
 - Otto runtime process hosts the source-of-truth external API (`/external/*`).
 - Control-plane process serves UI + BFF (`/api/*`) and calls Otto external API server-side.
 
+## Current Routes
+
+- UI routes:
+  - `/` health/home shell
+  - `/jobs` scheduled jobs list with system/operator grouping
+  - `/jobs/:jobId` job detail + recent audit evidence
+- BFF routes:
+  - `GET /api/health`
+  - `GET /api/jobs`
+  - `GET /api/jobs/:jobId`
+  - `GET /api/jobs/:jobId/audit`
+
 ## Environment
 
 - `OTTO_EXTERNAL_API_URL` (optional, default `http://127.0.0.1:4190`)

@@ -1071,12 +1071,32 @@ export const createTaskAuditRepository = (database: DatabaseSync) => {
      LIMIT ?`
   )
 
+  const listByTaskIdStatement = database.prepare(
+    `SELECT
+      id,
+      task_id as taskId,
+      action,
+      lane,
+      actor,
+      before_json as beforeJson,
+      after_json as afterJson,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM task_audit_log
+     WHERE task_id = ?
+     ORDER BY created_at DESC
+     LIMIT ?`
+  )
+
   return {
     insert: (record: TaskAuditRecord): void => {
       insertStatement.run(record)
     },
     listRecent: (limit = 50): TaskAuditRecord[] => {
       return listRecentStatement.all(limit) as TaskAuditRecord[]
+    },
+    listByTaskId: (taskId: string, limit = 50): TaskAuditRecord[] => {
+      return listByTaskIdStatement.all(taskId, limit) as TaskAuditRecord[]
     },
   }
 }

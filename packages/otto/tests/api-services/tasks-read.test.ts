@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest"
 
-import { getTaskById, listTasksForLane } from "../../src/api-services/tasks-read.js"
+import {
+  getTaskById,
+  listTasksForLane,
+  mapTaskDetailsForExternal,
+  mapTaskListForExternal,
+  resolveTaskManagedBy,
+} from "../../src/api-services/tasks-read.js"
 import type { JobRecord, TaskListRecord } from "../../src/persistence/repositories.js"
 
 const createTaskListRecord = (id: string): TaskListRecord => {
@@ -96,5 +102,57 @@ describe("tasks-read services", () => {
 
     // Assert
     expect(result).toBeNull()
+  })
+
+  it("classifies system managed tasks by id prefix", () => {
+    // Arrange
+    const task = createTaskListRecord("system-heartbeat")
+
+    // Act
+    const result = resolveTaskManagedBy(task)
+
+    // Assert
+    expect(result).toBe("system")
+  })
+
+  it("classifies system managed tasks by reserved type", () => {
+    // Arrange
+    const task = createTaskListRecord("custom-id")
+
+    // Act
+    const result = resolveTaskManagedBy(task)
+
+    // Assert
+    expect(result).toBe("system")
+  })
+
+  it("classifies operator managed tasks and marks them mutable", () => {
+    // Arrange
+    const task: TaskListRecord = {
+      ...createTaskListRecord("job-operator-1"),
+      type: "custom-task",
+    }
+
+    // Act
+    const mapped = mapTaskListForExternal(task)
+
+    // Assert
+    expect(mapped.managedBy).toBe("operator")
+    expect(mapped.isMutable).toBe(true)
+  })
+
+  it("maps task details with mutability metadata", () => {
+    // Arrange
+    const job: JobRecord = {
+      ...createJobRecord("system-watchdog-failures"),
+      type: "watchdog_failures",
+    }
+
+    // Act
+    const mapped = mapTaskDetailsForExternal(job)
+
+    // Assert
+    expect(mapped.managedBy).toBe("system")
+    expect(mapped.isMutable).toBe(false)
   })
 })

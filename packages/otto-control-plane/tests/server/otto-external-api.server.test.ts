@@ -29,6 +29,24 @@ const resolveAuthorizationHeader = (headers: HeadersInit | undefined): string | 
 }
 
 describe("createOttoExternalApiClient", () => {
+  const createListItem = () => {
+    return {
+      id: "job-1",
+      type: "heartbeat",
+      scheduleType: "recurring",
+      profileId: null,
+      status: "idle",
+      runAt: null,
+      cadenceMinutes: 5,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      updatedAt: 1_000,
+      managedBy: "system",
+      isMutable: false,
+    }
+  }
+
   it("sends bearer token on health requests", async () => {
     // Arrange
     const seenRequests: Array<{ url: string; authorization: string | null }> = []
@@ -68,7 +86,7 @@ describe("createOttoExternalApiClient", () => {
         externalApiToken: "secret-token",
       },
       fetchImpl: async (): Promise<Response> => {
-        return Response.json({ jobs: [{ id: "job-1" }] }, { status: 200 })
+        return Response.json({ jobs: [createListItem()] }, { status: 200 })
       },
     })
 
@@ -76,7 +94,7 @@ describe("createOttoExternalApiClient", () => {
     const payload = await client.listJobs()
 
     // Assert
-    expect(payload).toEqual({ jobs: [{ id: "job-1" }] })
+    expect(payload).toEqual({ jobs: [createListItem()] })
   })
 
   it("throws OttoExternalApiError on non-2xx responses", async () => {
@@ -93,5 +111,84 @@ describe("createOttoExternalApiClient", () => {
 
     // Act + Assert
     await expect(client.getHealth()).rejects.toBeInstanceOf(OttoExternalApiError)
+  })
+
+  it("fetches job details and audit payload", async () => {
+    // Arrange
+    const responses = new Map<string, Response>([
+      [
+        "http://127.0.0.1:4190/external/jobs/job-1",
+        Response.json(
+          {
+            job: {
+              id: "job-1",
+              type: "heartbeat",
+              status: "idle",
+              scheduleType: "recurring",
+              profileId: null,
+              runAt: null,
+              cadenceMinutes: 5,
+              payload: null,
+              lastRunAt: null,
+              nextRunAt: 1_000,
+              terminalState: null,
+              terminalReason: null,
+              lockToken: null,
+              lockExpiresAt: null,
+              createdAt: 1_000,
+              updatedAt: 1_000,
+              managedBy: "system",
+              isMutable: false,
+            },
+          },
+          { status: 200 }
+        ),
+      ],
+      [
+        "http://127.0.0.1:4190/external/jobs/job-1/audit?limit=25",
+        Response.json(
+          {
+            taskId: "job-1",
+            entries: [
+              {
+                id: "audit-1",
+                taskId: "job-1",
+                action: "update",
+                lane: "scheduled",
+                actor: "system",
+                metadataJson: "{}",
+                createdAt: 2_000,
+              },
+            ],
+          },
+          { status: 200 }
+        ),
+      ],
+    ])
+
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL): Promise<Response> => {
+        const key = typeof input === "string" ? input : input.toString()
+        const response = responses.get(key)
+        if (!response) {
+          return Response.json({ error: "not_found" }, { status: 404 })
+        }
+
+        return response
+      },
+    })
+
+    // Act
+    const detail = await client.getJob("job-1")
+    const audit = await client.getJobAudit("job-1", 25)
+
+    // Assert
+    expect(detail.job.id).toBe("job-1")
+    expect(audit.taskId).toBe("job-1")
+    expect(audit.entries[0]?.id).toBe("audit-1")
   })
 })

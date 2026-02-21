@@ -135,6 +135,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       logger,
       config: externalApiConfig,
       jobsRepository,
+      taskAuditRepository,
     })
   } catch (error) {
     await internalApiServer.close()
