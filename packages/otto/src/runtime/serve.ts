@@ -5,6 +5,7 @@ import { constants } from "node:fs"
 import type { Logger } from "pino"
 
 import { ensureOttoConfigFile } from "../config/otto-config.js"
+import { resolveExternalApiConfig, startExternalApiServer } from "../external-api/server.js"
 import { resolveInternalApiConfig, startInternalApiServer } from "../internal-api/server.js"
 import { startOpencodeServer } from "../opencode/server.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
@@ -97,12 +98,15 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   const sessionBindingsRepository = createSessionBindingsRepository(persistenceDatabase)
   const userProfileRepository = createUserProfileRepository(persistenceDatabase)
   const internalApiConfig = await resolveInternalApiConfig(config.ottoHome)
+  const externalApiConfig = await resolveExternalApiConfig(config.ottoHome)
   const schedulerConfig = resolveSchedulerConfig()
 
   process.env.OTTO_INTERNAL_API_URL = internalApiConfig.baseUrl
   process.env.OTTO_INTERNAL_API_TOKEN = internalApiConfig.token
+  process.env.OTTO_EXTERNAL_API_URL = externalApiConfig.baseUrl
 
   let internalApiServer: { url: string; close: () => Promise<void> } | null = null
+  let externalApiServer: { url: string; close: () => Promise<void> } | null = null
 
   try {
     internalApiServer = await startInternalApiServer({
@@ -126,6 +130,24 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     throw new Error("Internal API server failed to start")
   }
 
+  try {
+    externalApiServer = await startExternalApiServer({
+      logger,
+      config: externalApiConfig,
+      jobsRepository,
+    })
+  } catch (error) {
+    await internalApiServer.close()
+    persistenceDatabase.close()
+    throw error
+  }
+
+  if (!externalApiServer) {
+    await internalApiServer.close()
+    persistenceDatabase.close()
+    throw new Error("External API server failed to start")
+  }
+
   let server: { url: string; close: () => void } | null = null
   let schedulerKernel: { stop: () => Promise<void> } | null = null
   let telegramWorker: TelegramWorkerHandle | null = null
@@ -137,6 +159,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       configPath: opencodeConfigPath,
     })
   } catch (error) {
+    await externalApiServer.close()
     await internalApiServer.close()
     persistenceDatabase.close()
     throw error
@@ -153,6 +176,8 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       url: server.url,
       internalApiUrl: internalApiServer.url,
       internalApiTokenPath: internalApiConfig.tokenPath,
+      externalApiUrl: externalApiServer.url,
+      externalApiTokenPath: externalApiConfig.tokenPath,
     },
     "OpenCode server started"
   )
@@ -236,6 +261,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     await schedulerKernel.stop()
   }
   server.close()
+  await externalApiServer.close()
   await internalApiServer.close()
   persistenceDatabase.close()
 

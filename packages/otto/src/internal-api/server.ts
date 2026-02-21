@@ -1,11 +1,12 @@
-import { randomBytes, randomUUID } from "node:crypto"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import path from "node:path"
+import { randomUUID } from "node:crypto"
 
 import Fastify, { type FastifyInstance } from "fastify"
 import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
+import { listTasksForLane } from "../api-services/tasks-read.js"
+import { extractBearerToken } from "../api/http-auth.js"
+import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
 import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbound-enqueue.js"
 import { enqueueTelegramFile } from "../telegram-worker/outbound-enqueue.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
@@ -24,8 +25,6 @@ import { checkTaskFailures, resolveDefaultWatchdogChatId } from "../scheduler/wa
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
-const TOKEN_FILE_NAME = "internal-api.token"
-const AUTHORIZATION_PREFIX = "Bearer "
 const TELEGRAM_OUTBOUND_MAX_FILE_BYTES = 20 * 1024 * 1024
 
 export type InternalApiConfig = {
@@ -339,35 +338,6 @@ const resolveApiPort = (environment: NodeJS.ProcessEnv): number => {
   return port
 }
 
-const resolveTokenPath = (ottoHome: string): string => {
-  return path.join(ottoHome, "secrets", TOKEN_FILE_NAME)
-}
-
-const generateToken = (): string => {
-  return randomBytes(32).toString("hex")
-}
-
-const resolveOrCreateToken = async (tokenPath: string): Promise<string> => {
-  try {
-    const existing = await readFile(tokenPath, "utf8")
-    const token = existing.trim()
-    if (token.length > 0) {
-      return token
-    }
-  } catch (error) {
-    const err = error as NodeJS.ErrnoException
-    if (err.code !== "ENOENT") {
-      throw error
-    }
-  }
-
-  const token = generateToken()
-  await mkdir(path.dirname(tokenPath), { recursive: true })
-  await writeFile(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 })
-
-  return token
-}
-
 /**
  * Resolves and persists internal API credentials so local tool integrations remain secure,
  * restart-safe, and independent from ephemeral process state.
@@ -382,8 +352,8 @@ export const resolveInternalApiConfig = async (
 ): Promise<InternalApiConfig> => {
   const host = resolveApiHost(environment)
   const port = resolveApiPort(environment)
-  const tokenPath = resolveTokenPath(ottoHome)
-  const token = await resolveOrCreateToken(tokenPath)
+  const tokenPath = resolveApiTokenPath(ottoHome)
+  const token = await resolveOrCreateApiToken(tokenPath)
 
   return {
     host,
@@ -392,15 +362,6 @@ export const resolveInternalApiConfig = async (
     tokenPath,
     baseUrl: `http://${host}:${port}`,
   }
-}
-
-const extractBearerToken = (authorizationHeader: string | undefined): string | null => {
-  if (!authorizationHeader?.startsWith(AUTHORIZATION_PREFIX)) {
-    return null
-  }
-
-  const token = authorizationHeader.slice(AUTHORIZATION_PREFIX.length).trim()
-  return token.length > 0 ? token : null
 }
 
 /**
@@ -925,7 +886,7 @@ export const buildInternalApiServer = (
 
     try {
       const payload = listTasksApiSchema.parse(request.body)
-      const tasks = dependencies.jobsRepository.listTasks()
+      const tasks = listTasksForLane(dependencies.jobsRepository, payload.lane)
       writeCommandAudit(dependencies, {
         command: "list_tasks",
         lane: payload.lane,

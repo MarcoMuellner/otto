@@ -34,7 +34,10 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Telegram voice/transcription settings live in `~/.config/otto/config.jsonc` under `telegram.voice` and `telegram.transcription`; local installs use provider `worker` so Faster-Whisper stays loaded in a background process during Otto runtime
 - `ottoctl configure-voice-transcription` attempts one-shot local provisioning via `scripts/install-parakeet-v3.sh` (Python venv + Faster-Whisper model cache) and falls back safely when auto-provisioning is unavailable
 - Internal API env (optional): `OTTO_INTERNAL_API_HOST` (default `127.0.0.1`, loopback only), `OTTO_INTERNAL_API_PORT` (default `4180`)
+- External API env (optional): `OTTO_EXTERNAL_API_HOST` (default `0.0.0.0`), `OTTO_EXTERNAL_API_PORT` (default `4190`)
 - Internal API token: persisted in `~/.otto/secrets/internal-api.token` and exported at runtime as `OTTO_INTERNAL_API_URL` + `OTTO_INTERNAL_API_TOKEN` for OpenCode tools
+- External API token: reuses `~/.otto/secrets/internal-api.token`; runtime exports `OTTO_EXTERNAL_API_URL`
+- API boundary: `/internal/*` is OpenCode-tool/internal runtime integration, `/external/*` is authenticated LAN-facing control-plane/app integration
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
 - Extension store root: `~/.otto/extensions/store/<id>/<version>`
 - Extension activation state file: `~/.otto/extensions/state.json`
