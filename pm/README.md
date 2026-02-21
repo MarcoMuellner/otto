@@ -10,6 +10,7 @@ This directory stores deployable epics and tickets.
 - `epic_004`: Heartbeats, onboarding, and operations hardening.
 - `epic_005`: Voice and multimodal intake.
 - `epic_006`: Monorepo extension platform for installable OpenCode tools/skills/MCP bundles.
+- `epic_007`: Otto web control plane (separate UI process + runtime-owned external API).
 
 ## Structure
 
