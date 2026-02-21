@@ -1,14 +1,53 @@
+import { useEffect, useState } from "react"
 import { Outlet } from "react-router"
 
+import { CommandPalette } from "../components/command/command-palette.js"
+import { OPEN_COMMAND_PALETTE_EVENT } from "../components/command/events.js"
 import { AmbientRings } from "../components/layout/ambient-rings.js"
 
 export default function LayoutRoute() {
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+
+  useEffect(() => {
+    const openPalette = (): void => {
+      setIsCommandPaletteOpen(true)
+    }
+
+    const closePalette = (): void => {
+      setIsCommandPaletteOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault()
+        openPalette()
+        return
+      }
+
+      if (event.key === "Escape") {
+        closePalette()
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, openPalette)
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, openPalette)
+    }
+  }, [])
+
   return (
     <main className="relative flex min-h-dvh justify-center overflow-hidden px-5 py-8 max-[720px]:px-3.5 max-[720px]:py-[18px]">
       <AmbientRings />
-      <section className="relative z-[1] w-full max-w-[720px]">
+      <section className="relative z-[1] w-full">
         <Outlet />
       </section>
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+      />
     </main>
   )
 }

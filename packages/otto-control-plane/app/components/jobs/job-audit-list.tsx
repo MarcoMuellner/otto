@@ -1,46 +1,38 @@
 import type { ExternalJobAuditEntry } from "../../features/jobs/contracts.js"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card.js"
 
 type JobAuditListProps = {
   entries: ExternalJobAuditEntry[]
 }
 
 const formatTimestamp = (timestamp: number): string => {
-  return new Date(timestamp).toLocaleString()
+  return new Date(timestamp).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
 }
 
 /**
- * Renders recent task audit evidence so operators can inspect recent mutation history in the
- * detail view without leaving the job context.
+ * Renders task audit events in a console-like block so operators can quickly scan recent task
+ * history in the same visual language as the prototype's run-detail log panel.
  */
 export const JobAuditList = ({ entries }: JobAuditListProps) => {
   return (
-    <Card>
-      <CardHeader>
-        <CardDescription>Recent task audit</CardDescription>
-        <CardTitle>Audit evidence</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <section>
+      <h3 className="mb-3 text-sm font-medium text-[#1a1a1a]">Recent Audit Events</h3>
+      <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(248,248,248,0.85)] p-4 font-mono text-xs text-[#666666] shadow-inner">
         {entries.length === 0 ? (
-          <p className="m-0 text-sm text-[#888888]">No audit entries for this task yet.</p>
+          <p className="m-0 text-[#888888]">No audit entries for this task yet.</p>
         ) : (
-          <ul className="m-0 grid list-none gap-2 p-0">
-            {entries.map((entry) => (
-              <li
-                key={entry.id}
-                className="rounded-lg border border-[rgba(26,26,26,0.1)] bg-white px-3 py-2 text-sm"
-              >
-                <p className="m-0 font-medium text-[#1a1a1a]">
-                  {entry.action} ({entry.lane})
-                </p>
-                <p className="m-0 mt-1 text-xs text-[#888888]">
-                  {formatTimestamp(entry.createdAt)}
-                </p>
-              </li>
-            ))}
-          </ul>
+          entries.map((entry) => (
+            <p key={entry.id} className="m-0">
+              <span className="text-[#888888]">[{formatTimestamp(entry.createdAt)}]</span>{" "}
+              <span className="text-[#1a1a1a]">{entry.action}</span> lane={entry.lane}
+            </p>
+          ))
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

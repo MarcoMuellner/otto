@@ -1,6 +1,5 @@
-import { useLoaderData, useNavigation } from "react-router"
+import { Link, useLoaderData, useNavigation } from "react-router"
 
-import { CommandBar } from "../components/command/command-bar.js"
 import { JobsGroupCard } from "../components/jobs/jobs-group-card.js"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js"
 import type { ExternalJobListItem } from "../features/jobs/contracts.js"
@@ -39,14 +38,20 @@ export default function JobsRoute() {
 
   if (data.status === "error") {
     return (
-      <section className="rounded-[24px] border border-[rgba(26,26,26,0.08)] bg-[rgba(255,255,255,0.74)] p-[26px] backdrop-blur-[8px] max-[720px]:p-[18px]">
-        <CommandBar
-          placeholder="Type a command (Jobs read surface)"
-          entries={[
-            { label: "Home", to: "/" },
-            { label: "Jobs", to: "/jobs" },
-          ]}
-        />
+      <section className="mx-auto flex h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col px-2 pb-6 pt-16">
+        <header className="mb-8 flex items-end justify-between gap-4 border-b border-[rgba(26,26,26,0.08)] pb-4">
+          <div>
+            <h1 className="m-0 text-4xl leading-none font-light text-[#1a1a1a]">Job Queue</h1>
+            <p className="mt-2 mb-0 font-mono text-sm text-[#888888]">Runtime unavailable</p>
+          </div>
+          <Link
+            to="/"
+            className="font-mono text-xs tracking-[0.12em] text-[#888888] uppercase transition-colors hover:text-[#1a1a1a]"
+          >
+            ESC / Back
+          </Link>
+        </header>
+
         <Card>
           <CardHeader>
             <CardTitle>Jobs unavailable</CardTitle>
@@ -62,21 +67,25 @@ export default function JobsRoute() {
   const systemJobs = data.jobs.filter((job) => job.managedBy === "system")
   const operatorJobs = data.jobs.filter((job) => job.managedBy === "operator")
   const hasJobs = data.jobs.length > 0
+  const activeCount = data.jobs.filter((job) => job.status === "running").length
+  const scheduledCount = data.jobs.filter((job) => job.status !== "running").length
 
   return (
-    <section className="rounded-[24px] border border-[rgba(26,26,26,0.08)] bg-[rgba(255,255,255,0.74)] p-[26px] backdrop-blur-[8px] max-[720px]:p-[18px]">
-      <header className="mb-4">
-        <p className="m-0 font-mono text-[11px] tracking-[0.12em] text-[#888888] uppercase">Jobs</p>
-        <h1 className="mt-1 mb-0 text-3xl leading-none font-light">Scheduled Tasks</h1>
+    <section className="mx-auto flex h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col px-2 pb-6 pt-16">
+      <header className="mb-8 flex items-end justify-between gap-4 border-b border-[rgba(26,26,26,0.08)] pb-4">
+        <div>
+          <h1 className="m-0 text-4xl leading-none font-light text-[#1a1a1a]">Job Queue</h1>
+          <p className="mt-2 mb-0 font-mono text-sm text-[#888888]">
+            {activeCount} Active • {scheduledCount} Scheduled
+          </p>
+        </div>
+        <Link
+          to="/"
+          className="font-mono text-xs tracking-[0.12em] text-[#888888] uppercase transition-colors hover:text-[#1a1a1a]"
+        >
+          ESC / Back
+        </Link>
       </header>
-
-      <CommandBar
-        placeholder="Type a command (Jobs read surface)"
-        entries={[
-          { label: "Home", to: "/" },
-          { label: "Jobs", to: "/jobs" },
-        ]}
-      />
 
       {isLoading ? <p className="mb-3 mt-0 text-xs text-[#888888]">Refreshing jobs...</p> : null}
 
@@ -92,7 +101,7 @@ export default function JobsRoute() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4">
+        <div className="hide-scrollbar grid flex-1 gap-4 overflow-y-auto pr-2">
           <JobsGroupCard
             title="System-managed jobs"
             description="Read-only runtime automation"

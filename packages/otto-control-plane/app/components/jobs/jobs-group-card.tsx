@@ -15,12 +15,13 @@ type JobsGroupCardProps = {
  */
 export const JobsGroupCard = ({ title, description, emptyMessage, jobs }: JobsGroupCardProps) => {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="rounded-xl border-[rgba(26,26,26,0.08)] shadow-sm">
+      <CardHeader className="border-b border-[rgba(26,26,26,0.06)] pb-4">
         <CardDescription>{description}</CardDescription>
-        <CardTitle>{title}</CardTitle>
+        <CardTitle className="text-[1.6rem] font-light tracking-tight">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3 pt-4 pb-4">
+        <p className="m-0 font-mono text-xs text-[#888888]">{jobs.length} entries</p>
         {jobs.length === 0 ? (
           <p className="m-0 text-sm text-[#888888]">{emptyMessage}</p>
         ) : (

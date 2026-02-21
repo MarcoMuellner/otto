@@ -1,48 +1,42 @@
-import { Link } from "react-router"
+import { openCommandPalette } from "./events.js"
 
 type CommandBarProps = {
   placeholder: string
-  entries?: Array<{
-    label: string
-    to: string
-  }>
+  keyboardHint?: string
 }
 
 /**
  * Holds command-first entry treatment as an atomic component so every route can expose a
  * consistent operator launch surface before deeper interaction patterns are added.
  */
-export const CommandBar = ({ placeholder, entries = [] }: CommandBarProps) => {
+export const CommandBar = ({ placeholder, keyboardHint = "CMD+K" }: CommandBarProps) => {
   return (
-    <section className="mb-[18px] space-y-3">
-      <div
-        className="grid grid-cols-[auto_1fr] items-center gap-3 rounded-[14px] border border-[rgba(26,26,26,0.12)] bg-white px-3.5 py-2.5"
-        role="search"
+    <button
+      type="button"
+      role="search"
+      onClick={openCommandPalette}
+      className="group relative flex w-full max-w-lg items-center rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white p-2 text-left shadow-sm transition-all duration-300 hover:shadow-md active:scale-[0.99]"
+      aria-label="Open command palette"
+    >
+      <span
+        className="inline-flex h-10 w-10 items-center justify-center text-[#888888]"
+        aria-hidden="true"
       >
-        <span className="font-mono text-[0.85rem] text-[#888888]" aria-hidden="true">
-          //
-        </span>
-        <input
-          value={placeholder}
-          readOnly
-          aria-label="Command bar"
-          className="border-none bg-transparent p-0 text-base text-[rgba(26,26,26,0.76)]"
-        />
-      </div>
-
-      {entries.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {entries.map((entry) => (
-            <Link
-              key={entry.to}
-              to={entry.to}
-              className="rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3 py-1.5 text-xs font-mono tracking-[0.06em] text-[#1a1a1a] uppercase hover:bg-[rgba(26,26,26,0.04)]"
-            >
-              {entry.label}
-            </Link>
-          ))}
-        </div>
-      ) : null}
-    </section>
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M13 10V3L4 14h7v7l9-11h-7z"
+          />
+        </svg>
+      </span>
+      <span className="flex-1 px-2 text-base font-light text-[rgba(136,136,136,0.72)] md:px-4 md:text-lg">
+        {placeholder}
+      </span>
+      <span className="hidden pr-4 font-mono text-xs text-[rgba(136,136,136,0.5)] sm:block">
+        {keyboardHint}
+      </span>
+    </button>
   )
 }

@@ -1,5 +1,8 @@
 import { z } from "zod"
 
+import { request as httpRequest } from "node:http"
+import { request as httpsRequest } from "node:https"
+
 import {
   externalJobAuditResponseSchema,
   externalJobResponseSchema,
@@ -10,10 +13,7 @@ import {
   type ExternalJobsResponse,
   type HealthResponse,
 } from "../features/jobs/contracts.js"
-import {
-  resolveCachedControlPlaneServerConfig,
-  type ControlPlaneServerConfig,
-} from "./env.server.js"
+import { resolveCachedControlPlaneServerConfig, type ControlPlaneServerConfig } from "./env.js"
 
 export type OttoExternalHealthResponse = HealthResponse
 export type OttoExternalJobsResponse = ExternalJobsResponse
@@ -31,10 +31,17 @@ export class OttoExternalApiError extends Error {
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+type RequestLike = (url: URL, headers: Record<string, string>) => Promise<RawHttpResponse>
+
+type RawHttpResponse = {
+  statusCode: number
+  bodyText: string
+}
 
 type OttoExternalApiClientInput = {
   config: ControlPlaneServerConfig
   fetchImpl?: FetchLike
+  requestImpl?: RequestLike
 }
 
 const buildAuthHeaders = (token: string): Record<string, string> => {
@@ -65,6 +72,63 @@ const parseResponse = async <T>(
   return parsed.data
 }
 
+const parseRawResponse = <T>(
+  response: RawHttpResponse,
+  schema: z.ZodType<T>,
+  endpoint: string
+): T => {
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new OttoExternalApiError(
+      `Otto external API request failed for ${endpoint} (${response.statusCode})`,
+      response.statusCode
+    )
+  }
+
+  let body: unknown
+  try {
+    body = response.bodyText.length === 0 ? {} : JSON.parse(response.bodyText)
+  } catch {
+    throw new OttoExternalApiError(`Otto external API returned invalid payload for ${endpoint}`)
+  }
+
+  const parsed = schema.safeParse(body)
+  if (!parsed.success) {
+    throw new OttoExternalApiError(`Otto external API returned invalid payload for ${endpoint}`)
+  }
+
+  return parsed.data
+}
+
+const requestViaNodeHttp: RequestLike = async (url, headers) => {
+  const requestFn = url.protocol === "https:" ? httpsRequest : httpRequest
+
+  return await new Promise<RawHttpResponse>((resolve, reject) => {
+    const request = requestFn(
+      url,
+      {
+        method: "GET",
+        headers,
+      },
+      (response) => {
+        let bodyText = ""
+        response.setEncoding("utf8")
+        response.on("data", (chunk) => {
+          bodyText += chunk
+        })
+        response.on("end", () => {
+          resolve({
+            statusCode: response.statusCode ?? 500,
+            bodyText,
+          })
+        })
+      }
+    )
+
+    request.on("error", reject)
+    request.end()
+  })
+}
+
 /**
  * Creates a server-side Otto external API client so BFF route modules can call runtime
  * contracts with shared auth/header behavior and consistent response validation.
@@ -74,16 +138,23 @@ const parseResponse = async <T>(
  */
 export const createOttoExternalApiClient = ({
   config,
-  fetchImpl = fetch,
+  fetchImpl,
+  requestImpl = requestViaNodeHttp,
 }: OttoExternalApiClientInput) => {
   const request = async <T>(endpoint: string, schema: z.ZodType<T>): Promise<T> => {
     const url = new URL(endpoint, config.externalApiBaseUrl)
-    const response = await fetchImpl(url, {
-      method: "GET",
-      headers: buildAuthHeaders(config.externalApiToken),
-    })
+    if (fetchImpl) {
+      const response = await fetchImpl(url, {
+        method: "GET",
+        headers: buildAuthHeaders(config.externalApiToken),
+      })
 
-    return parseResponse(response, schema, endpoint)
+      return parseResponse(response, schema, endpoint)
+    }
+
+    const response = await requestImpl(url, buildAuthHeaders(config.externalApiToken))
+
+    return parseRawResponse(response, schema, endpoint)
   }
 
   return {

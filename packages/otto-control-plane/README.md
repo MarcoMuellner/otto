@@ -31,6 +31,12 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
 - `OTTO_EXTERNAL_API_TOKEN` (optional, highest precedence)
 - `OTTO_EXTERNAL_API_TOKEN_FILE` (optional, defaults to `~/.otto/secrets/internal-api.token`)
 
+Resolution order for these values:
+
+1. local `packages/otto-control-plane/.env` (when present)
+2. process environment
+3. built-in fallbacks (URL default + token file default)
+
 ## Scripts
 
 - `pnpm -C packages/otto-control-plane run dev`
