@@ -142,4 +142,35 @@ describe("api.settings.notification-profile action", () => {
     // Assert
     expect(response.status).toBe(405)
   })
+
+  it("rejects invalid timezone payload", async () => {
+    // Arrange
+    const action = createApiSettingsNotificationProfileAction({
+      loadNotificationProfile: async () => {
+        throw new Error("unused in action test")
+      },
+      updateNotificationProfile: async () => {
+        throw new Error("should not run")
+      },
+    })
+
+    // Act
+    const response = await action({
+      request: new Request("http://localhost/api/settings/notification-profile", {
+        method: "PUT",
+        body: JSON.stringify({
+          timezone: "Europe/Viena",
+        }),
+      }),
+    })
+
+    // Assert
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: "invalid_request",
+      details: expect.arrayContaining([
+        expect.objectContaining({ message: "timezone must be a valid IANA timezone" }),
+      ]),
+    })
+  })
 })

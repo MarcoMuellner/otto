@@ -28,6 +28,15 @@ import {
 } from "../api-services/tasks-read.js"
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
+import type { OttoModelFlowDefaults } from "../config/otto-config.js"
+import {
+  externalModelCatalogResponseSchema,
+  externalModelDefaultsResponseSchema,
+  externalModelDefaultsUpdateRequestSchema,
+  externalModelRefreshResponseSchema,
+  modelRefSchema,
+} from "../model-management/contracts.js"
+import type { ModelCatalogSnapshot } from "../model-management/types.js"
 import type {
   CommandAuditRecord,
   JobRecord,
@@ -120,6 +129,12 @@ type ExternalApiServerDependencies = {
     get: () => UserProfileRecord | null
     upsert: (record: UserProfileRecord) => void
   }
+  modelManagement?: {
+    getCatalogSnapshot: () => ModelCatalogSnapshot
+    refreshCatalog: () => Promise<ModelCatalogSnapshot>
+    getFlowDefaults: () => Promise<OttoModelFlowDefaults>
+    updateFlowDefaults: (flowDefaults: OttoModelFlowDefaults) => Promise<OttoModelFlowDefaults>
+  }
 }
 
 const listJobsQuerySchema = z.object({
@@ -153,6 +168,7 @@ const taskListRecordSchema = z.object({
   type: z.string().min(1),
   scheduleType: z.enum(["recurring", "oneshot"]),
   profileId: z.string().min(1).nullable(),
+  modelRef: modelRefSchema.nullable(),
   status: z.enum(["idle", "running", "paused"]),
   runAt: z.number().int().nullable(),
   cadenceMinutes: z.number().int().min(1).nullable(),
@@ -170,6 +186,7 @@ const jobRecordSchema = z.object({
   status: z.enum(["idle", "running", "paused"]),
   scheduleType: z.enum(["recurring", "oneshot"]),
   profileId: z.string().min(1).nullable(),
+  modelRef: modelRefSchema.nullable(),
   runAt: z.number().int().nullable(),
   cadenceMinutes: z.number().int().min(1).nullable(),
   payload: z.string().nullable(),
@@ -357,6 +374,27 @@ const resolveTaskMutationErrorResponse = (error: TaskMutationError) => {
   }
 }
 
+const writeCommandAudit = (
+  commandAuditRepository: ExternalApiServerDependencies["commandAuditRepository"],
+  record: {
+    command: string
+    status: "success" | "failed" | "denied"
+    errorMessage?: string | null
+    metadataJson?: string | null
+    createdAt?: number
+  }
+): void => {
+  commandAuditRepository?.insert({
+    id: randomUUID(),
+    command: record.command,
+    lane: "interactive",
+    status: record.status,
+    errorMessage: record.errorMessage ?? null,
+    metadataJson: record.metadataJson ?? null,
+    createdAt: record.createdAt ?? Date.now(),
+  })
+}
+
 /**
  * Resolves external API network settings and shared auth token so Otto can expose a
  * stable LAN-facing control plane contract without splitting credential management.
@@ -448,6 +486,7 @@ export const buildExternalApiServer = (
         fallbackProfile = record
       },
     } as const)
+  const modelManagement = dependencies.modelManagement
 
   app.addHook("onRequest", async (request, reply) => {
     const token = extractBearerToken(request.headers.authorization)
@@ -483,12 +522,9 @@ export const buildExternalApiServer = (
       const requestedAt = Date.now()
       await restartRuntime()
 
-      commandAuditRepository?.insert({
-        id: randomUUID(),
+      writeCommandAudit(commandAuditRepository, {
         command: "external_system_restart",
-        lane: "interactive",
         status: "success",
-        errorMessage: null,
         metadataJson: JSON.stringify({ source: "external_api", requestedAt }),
         createdAt: requestedAt,
       })
@@ -502,14 +538,11 @@ export const buildExternalApiServer = (
       )
     } catch (error) {
       const err = error as Error
-      commandAuditRepository?.insert({
-        id: randomUUID(),
+      writeCommandAudit(commandAuditRepository, {
         command: "external_system_restart",
-        lane: "interactive",
         status: "failed",
         errorMessage: err.message,
         metadataJson: JSON.stringify({ source: "external_api" }),
-        createdAt: Date.now(),
       })
       dependencies.logger.error({ error: err.message }, "External API runtime restart failed")
       return reply.code(500).send({ error: "internal_error" })
@@ -544,12 +577,9 @@ export const buildExternalApiServer = (
       const changedFields = diffNotificationProfileFields(existing, merged)
 
       userProfileRepository.upsert(merged)
-      commandAuditRepository?.insert({
-        id: randomUUID(),
+      writeCommandAudit(commandAuditRepository, {
         command: "set_notification_policy",
-        lane: "interactive",
         status: "success",
-        errorMessage: null,
         metadataJson: JSON.stringify({
           source: "external_api",
           changedFields,
@@ -569,21 +599,158 @@ export const buildExternalApiServer = (
       }
 
       const err = error as Error
-      commandAuditRepository?.insert({
-        id: randomUUID(),
+      writeCommandAudit(commandAuditRepository, {
         command: "set_notification_policy",
-        lane: "interactive",
         status: "failed",
         errorMessage: err.message,
         metadataJson: JSON.stringify({
           source: "external_api",
         }),
-        createdAt: Date.now(),
       })
       dependencies.logger.error(
         { error: err.message },
         "External API notification profile set failed"
       )
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/models/catalog", async (_request, reply) => {
+    if (!modelManagement) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const snapshot = modelManagement.getCatalogSnapshot()
+      return reply.code(200).send(
+        externalModelCatalogResponseSchema.parse({
+          models: snapshot.refs,
+          updatedAt: snapshot.updatedAt,
+          source: snapshot.source,
+        })
+      )
+    } catch (error) {
+      const err = error as Error
+      if (err.message.includes("not ready")) {
+        return reply.code(503).send({ error: "service_unavailable" })
+      }
+
+      dependencies.logger.error({ error: err.message }, "External API model catalog read failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/external/models/refresh", async (_request, reply) => {
+    if (!modelManagement) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const snapshot = await modelManagement.refreshCatalog()
+      if (snapshot.updatedAt == null) {
+        throw new Error("Model catalog refresh did not provide updatedAt")
+      }
+
+      writeCommandAudit(commandAuditRepository, {
+        command: "external_models_refresh",
+        status: "success",
+        metadataJson: JSON.stringify({
+          source: "external_api",
+          updatedAt: snapshot.updatedAt,
+          count: snapshot.refs.length,
+          catalogSource: snapshot.source,
+        }),
+      })
+
+      dependencies.logger.info(
+        {
+          updatedAt: snapshot.updatedAt,
+          count: snapshot.refs.length,
+          source: snapshot.source,
+        },
+        "External API model catalog refreshed"
+      )
+
+      return reply.code(200).send(
+        externalModelRefreshResponseSchema.parse({
+          status: "ok",
+          updatedAt: snapshot.updatedAt,
+          count: snapshot.refs.length,
+        })
+      )
+    } catch (error) {
+      const err = error as Error
+      if (err.message.includes("not ready")) {
+        return reply.code(503).send({ error: "service_unavailable" })
+      }
+
+      writeCommandAudit(commandAuditRepository, {
+        command: "external_models_refresh",
+        status: "failed",
+        errorMessage: err.message,
+        metadataJson: JSON.stringify({ source: "external_api" }),
+      })
+      dependencies.logger.error({ error: err.message }, "External API model refresh failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/models/defaults", async (_request, reply) => {
+    if (!modelManagement) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const flowDefaults = await modelManagement.getFlowDefaults()
+      return reply.code(200).send(externalModelDefaultsResponseSchema.parse({ flowDefaults }))
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API model defaults read failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.put("/external/models/defaults", async (request, reply) => {
+    if (!modelManagement) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = externalModelDefaultsUpdateRequestSchema.parse(request.body)
+      const flowDefaults = await modelManagement.updateFlowDefaults(payload.flowDefaults)
+
+      writeCommandAudit(commandAuditRepository, {
+        command: "external_models_defaults_update",
+        status: "success",
+        metadataJson: JSON.stringify({
+          source: "external_api",
+          flowDefaults,
+        }),
+      })
+
+      dependencies.logger.info({ flowDefaults }, "External API model defaults updated")
+
+      return reply.code(200).send(externalModelDefaultsResponseSchema.parse({ flowDefaults }))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(commandAuditRepository, {
+          command: "external_models_defaults_update",
+          status: "failed",
+          errorMessage: "invalid_request",
+          metadataJson: JSON.stringify({ source: "external_api" }),
+        })
+
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(commandAuditRepository, {
+        command: "external_models_defaults_update",
+        status: "failed",
+        errorMessage: err.message,
+        metadataJson: JSON.stringify({ source: "external_api" }),
+      })
+      dependencies.logger.error({ error: err.message }, "External API model defaults update failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

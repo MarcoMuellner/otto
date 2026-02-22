@@ -7,7 +7,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   buildDefaultOttoConfig,
   ensureOttoConfigFile,
+  readOttoModelFlowDefaults,
   resolveOttoConfigPath,
+  updateOttoModelFlowDefaults,
 } from "../../src/config/otto-config.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-config-")
@@ -144,5 +146,33 @@ describe("ensureOttoConfigFile", () => {
     expect(result.config.modelManagement.flowDefaults.interactiveAssistant).toBe(
       "openrouter/openai/gpt-5.3-codex"
     )
+  })
+
+  it("updates and reads model flow defaults", async () => {
+    // Arrange
+    const homeDirectory = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(homeDirectory)
+
+    await ensureOttoConfigFile(homeDirectory)
+
+    // Act
+    await updateOttoModelFlowDefaults(
+      {
+        interactiveAssistant: "openai/gpt-5.3-codex",
+        scheduledTasks: "anthropic/claude-sonnet-4",
+        heartbeat: null,
+        watchdogFailures: null,
+      },
+      homeDirectory
+    )
+    const flowDefaults = await readOttoModelFlowDefaults(homeDirectory)
+
+    // Assert
+    expect(flowDefaults).toEqual({
+      interactiveAssistant: "openai/gpt-5.3-codex",
+      scheduledTasks: "anthropic/claude-sonnet-4",
+      heartbeat: null,
+      watchdogFailures: null,
+    })
   })
 })

@@ -148,6 +148,30 @@ describe("tasks-mutations service", () => {
     })
   })
 
+  it("persists explicit modelRef during create", () => {
+    // Arrange
+    const harness = createMutationHarness()
+
+    // Act
+    const result = createTaskMutation(
+      harness.dependencies,
+      {
+        type: "operator-task",
+        scheduleType: "oneshot",
+        runAt: 9_500,
+        modelRef: "openai/gpt-5.3-codex",
+      },
+      {
+        lane: "scheduled",
+        actor: "control_plane",
+        source: "external_api",
+      }
+    )
+
+    // Assert
+    expect(harness.jobs.get(result.id)?.modelRef).toBe("openai/gpt-5.3-codex")
+  })
+
   it("rejects updates for system-managed jobs", () => {
     // Arrange
     const harness = createMutationHarness([
@@ -291,5 +315,44 @@ describe("tasks-mutations service", () => {
       nextRunAt: 6_000,
       type: "operator-task-v2",
     })
+  })
+
+  it("updates task modelRef to explicit value and inherit", () => {
+    // Arrange
+    const harness = createMutationHarness([
+      createJobRecord("job-model", {
+        modelRef: null,
+      }),
+    ])
+
+    // Act
+    updateTaskMutation(
+      harness.dependencies,
+      "job-model",
+      {
+        modelRef: "anthropic/claude-sonnet-4",
+      },
+      {
+        lane: "scheduled",
+        actor: "control_plane",
+        source: "external_api",
+      }
+    )
+
+    updateTaskMutation(
+      harness.dependencies,
+      "job-model",
+      {
+        modelRef: null,
+      },
+      {
+        lane: "scheduled",
+        actor: "control_plane",
+        source: "external_api",
+      }
+    )
+
+    // Assert
+    expect(harness.jobs.get("job-model")?.modelRef).toBeNull()
   })
 })

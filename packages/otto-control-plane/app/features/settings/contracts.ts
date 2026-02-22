@@ -1,5 +1,14 @@
 import { z } from "zod"
 
+const isValidIanaTimezone = (value: string): boolean => {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const notificationProfileSchema = z.object({
   timezone: z.string().nullable(),
   quietHoursStart: z.string().nullable(),
@@ -21,7 +30,12 @@ export const notificationProfileResponseSchema = z.object({
 })
 
 export const updateNotificationProfileRequestSchema = z.object({
-  timezone: z.string().trim().min(1).optional(),
+  timezone: z
+    .string()
+    .trim()
+    .min(1)
+    .refine((value) => isValidIanaTimezone(value), "timezone must be a valid IANA timezone")
+    .optional(),
   quietHoursStart: z.string().trim().nullable().optional(),
   quietHoursEnd: z.string().trim().nullable().optional(),
   heartbeatMorning: z.string().trim().nullable().optional(),

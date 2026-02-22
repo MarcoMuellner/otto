@@ -1015,6 +1015,9 @@ cmd_task() {
     run-now)
       cmd_task_run_now "$@"
       ;;
+    set-model)
+      run_model_cli task set-model "$@"
+      ;;
     *)
       error "Unknown task command: ${subcommand}"
       exit 1
@@ -1024,6 +1027,14 @@ cmd_task() {
 
 run_extension_cli() {
   NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/extension-cli.mjs" "$@"
+}
+
+run_model_cli() {
+  NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/model-cli.mjs" "$@"
+}
+
+cmd_model() {
+  run_model_cli model "$@"
 }
 
 cmd_extension() {
@@ -1694,9 +1705,14 @@ Usage:
   ottoctl task profiles install <profile-file.jsonc>
   ottoctl task list
   ottoctl task bind-profile <task-id> <profile-id>
+  ottoctl task set-model <task-id> <provider/model|inherit>
   ottoctl task show <task-id>
   ottoctl task audit [limit]
   ottoctl task run-now <task-id>
+  ottoctl model list
+  ottoctl model refresh
+  ottoctl model defaults show
+  ottoctl model defaults set <flow> <provider/model|inherit>
   ottoctl heartbeat status
   ottoctl heartbeat mode <observe|mute>
   ottoctl extension list
@@ -1748,6 +1764,10 @@ main() {
     task)
       shift
       cmd_task "$@"
+      ;;
+    model)
+      shift
+      cmd_model "$@"
       ;;
     heartbeat)
       shift

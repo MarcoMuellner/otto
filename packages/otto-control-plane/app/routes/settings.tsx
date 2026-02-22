@@ -41,6 +41,15 @@ type Feedback = {
 
 const timePattern = /^(?:[01]?\d|2[0-3]):[0-5]\d$/
 
+const isValidIanaTimezone = (value: string): boolean => {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
+}
+
 const defaultSettingsFormState: SettingsFormState = {
   timezone: "Europe/Vienna",
   quietHoursStart: "20:00",
@@ -163,6 +172,11 @@ export default function SettingsRoute() {
       return
     }
 
+    if (!isValidIanaTimezone(formState.timezone.trim())) {
+      setFeedback({ kind: "error", message: "Timezone must be a valid IANA timezone." })
+      return
+    }
+
     const timeFields: Array<{ label: string; value: string }> = [
       { label: "Quiet start", value: formState.quietHoursStart },
       { label: "Quiet end", value: formState.quietHoursEnd },
@@ -219,7 +233,14 @@ export default function SettingsRoute() {
       const body = await response.json()
 
       if (!response.ok) {
-        const message = typeof body?.message === "string" ? body.message : "Could not save settings"
+        const zodMessage =
+          Array.isArray(body?.details) && typeof body.details[0]?.message === "string"
+            ? body.details[0].message
+            : null
+        const message =
+          typeof body?.message === "string"
+            ? body.message
+            : (zodMessage ?? "Could not save settings")
         setFeedback({ kind: "error", message })
         return
       }
