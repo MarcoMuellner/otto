@@ -14,6 +14,7 @@ const sampleJobResponse: ExternalJobResponse = {
     status: "idle",
     scheduleType: "recurring",
     profileId: null,
+    modelRef: null,
     runAt: null,
     cadenceMinutes: 5,
     payload: null,

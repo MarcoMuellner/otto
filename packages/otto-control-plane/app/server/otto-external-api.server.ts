@@ -4,6 +4,16 @@ import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 
 import {
+  modelCatalogResponseSchema,
+  modelDefaultsResponseSchema,
+  modelDefaultsUpdateRequestSchema,
+  modelRefreshResponseSchema,
+  type ModelCatalogResponse,
+  type ModelDefaultsResponse,
+  type ModelDefaultsUpdateRequest,
+  type ModelRefreshResponse,
+} from "../features/models/contracts.js"
+import {
   createJobMutationRequestSchema,
   deleteJobMutationRequestSchema,
   externalJobMutationResponseSchema,
@@ -50,6 +60,9 @@ export type OttoExternalSystemStatusResponse = ExternalSystemStatusResponse
 export type OttoExternalSystemRestartResponse = ExternalSystemRestartResponse
 export type OttoExternalNotificationProfileResponse = NotificationProfileResponse
 export type OttoExternalUpdateNotificationProfileResponse = UpdateNotificationProfileResponse
+export type OttoExternalModelCatalogResponse = ModelCatalogResponse
+export type OttoExternalModelRefreshResponse = ModelRefreshResponse
+export type OttoExternalModelDefaultsResponse = ModelDefaultsResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -250,6 +263,26 @@ export const createOttoExternalApiClient = ({
           body: payload,
         }
       )
+    },
+    getModelCatalog: async (): Promise<OttoExternalModelCatalogResponse> => {
+      return request("/external/models/catalog", modelCatalogResponseSchema)
+    },
+    refreshModelCatalog: async (): Promise<OttoExternalModelRefreshResponse> => {
+      return request("/external/models/refresh", modelRefreshResponseSchema, {
+        method: "POST",
+      })
+    },
+    getModelDefaults: async (): Promise<OttoExternalModelDefaultsResponse> => {
+      return request("/external/models/defaults", modelDefaultsResponseSchema)
+    },
+    updateModelDefaults: async (
+      input: ModelDefaultsUpdateRequest
+    ): Promise<OttoExternalModelDefaultsResponse> => {
+      const payload = modelDefaultsUpdateRequestSchema.parse(input)
+      return request("/external/models/defaults", modelDefaultsResponseSchema, {
+        method: "PUT",
+        body: payload,
+      })
     },
     listJobs: async (): Promise<OttoExternalJobsResponse> => {
       return request("/external/jobs?lane=scheduled", externalJobsResponseSchema)

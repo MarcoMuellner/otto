@@ -15,6 +15,7 @@ describe("api.jobs loader", () => {
               type: "heartbeat",
               scheduleType: "recurring",
               profileId: null,
+              modelRef: null,
               status: "idle",
               runAt: null,
               cadenceMinutes: 5,

@@ -82,6 +82,12 @@ export const JobDetailCard = ({ job, referenceNow }: JobDetailCardProps) => {
             <dd className="m-0 mt-1 text-[#1a1a1a]">{job.managedBy}</dd>
           </div>
           <div>
+            <dt className="font-mono text-xs tracking-[0.08em] text-[#888888] uppercase">Model</dt>
+            <dd className="m-0 mt-1 text-[#1a1a1a]">
+              {job.modelRef ? job.modelRef : "inherit scheduled default"}
+            </dd>
+          </div>
+          <div>
             <dt className="font-mono text-xs tracking-[0.08em] text-[#888888] uppercase">
               Next run
             </dt>

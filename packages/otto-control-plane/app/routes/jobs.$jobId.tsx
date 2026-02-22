@@ -7,6 +7,7 @@ import { JobDetailCard } from "../components/jobs/job-detail-card.js"
 import { JobRunsPanel } from "../components/jobs/job-runs-panel.js"
 import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js"
+import { modelCatalogResponseSchema } from "../features/models/contracts.js"
 import type {
   ExternalJobAuditEntry,
   ExternalJobDetail,
@@ -29,6 +30,7 @@ type JobScheduleType = "recurring" | "oneshot"
 type JobEditFormState = {
   type: string
   scheduleType: JobScheduleType
+  modelRef: string
   cadenceMinutes: string
   runAt: string
   profileId: string
@@ -39,6 +41,8 @@ type MutationFeedback = {
   kind: "success" | "error"
   message: string
 }
+
+const INHERIT_MODEL_OPTION = "__INHERIT__"
 
 const systemReservedJobTypes = new Set(["heartbeat", "watchdog_failures"])
 
@@ -109,6 +113,7 @@ const buildEditFormStateFromJob = (job: ExternalJobDetail): JobEditFormState => 
   return {
     type: job.type,
     scheduleType: job.scheduleType,
+    modelRef: job.modelRef ?? INHERIT_MODEL_OPTION,
     cadenceMinutes: job.cadenceMinutes == null ? "" : String(job.cadenceMinutes),
     runAt: formatEpochToDateTimeLocal(job.runAt),
     profileId: job.profileId ?? "",
@@ -256,6 +261,8 @@ export default function JobDetailRoute() {
   const [cancelReason, setCancelReason] = useState("")
   const [isMutating, setIsMutating] = useState(false)
   const [mutationFeedback, setMutationFeedback] = useState<MutationFeedback | null>(null)
+  const [catalogModels, setCatalogModels] = useState<string[]>([])
+  const [catalogError, setCatalogError] = useState<string | null>(null)
   const displayTitle =
     data.status === "success" ? getJobDisplayTitle(data.job.type) : "Task inspection"
 
@@ -306,6 +313,41 @@ export default function JobDetailRoute() {
       window.removeEventListener("keydown", handleEscape, { capture: true })
     }
   }, [isInfoPanelOpen])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadCatalog = async () => {
+      try {
+        const response = await fetch("/api/models/catalog", {
+          method: "GET",
+        })
+        const body = await response.json()
+        if (!response.ok) {
+          throw new Error(
+            typeof body?.message === "string" ? body.message : "Could not load model catalog"
+          )
+        }
+
+        const parsed = modelCatalogResponseSchema.parse(body)
+        if (!cancelled) {
+          setCatalogModels(parsed.models)
+          setCatalogError(null)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCatalogModels([])
+          setCatalogError(error instanceof Error ? error.message : "Could not load model catalog")
+        }
+      }
+    }
+
+    void loadCatalog()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const submitRunNow = async () => {
     if (data.status !== "success" || isMutating || !data.job.isMutable) {
@@ -361,6 +403,7 @@ export default function JobDetailRoute() {
     const payload: Record<string, unknown> = {
       type,
       scheduleType: editFormState.scheduleType,
+      modelRef: editFormState.modelRef === INHERIT_MODEL_OPTION ? null : editFormState.modelRef,
     }
 
     if (editFormState.scheduleType === "recurring") {
@@ -604,6 +647,43 @@ export default function JobDetailRoute() {
                                 }
                                 className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
                               />
+                            </div>
+
+                            <div className="grid gap-1">
+                              <label
+                                htmlFor="edit-model-ref"
+                                className="text-xs font-mono text-[#666666] uppercase"
+                              >
+                                Model
+                              </label>
+                              <select
+                                id="edit-model-ref"
+                                value={editFormState.modelRef}
+                                onChange={(event) =>
+                                  setEditFormState((current) =>
+                                    current ? { ...current, modelRef: event.target.value } : current
+                                  )
+                                }
+                                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                              >
+                                <option value={INHERIT_MODEL_OPTION}>
+                                  inherit scheduled default
+                                </option>
+                                {[
+                                  ...catalogModels,
+                                  ...(editFormState.modelRef !== INHERIT_MODEL_OPTION &&
+                                  !catalogModels.includes(editFormState.modelRef)
+                                    ? [editFormState.modelRef]
+                                    : []),
+                                ].map((model) => (
+                                  <option key={model} value={model}>
+                                    {model}
+                                  </option>
+                                ))}
+                              </select>
+                              {catalogError ? (
+                                <p className="m-0 text-xs text-[#b42318]">{catalogError}</p>
+                              ) : null}
                             </div>
 
                             <div className="grid gap-1">
