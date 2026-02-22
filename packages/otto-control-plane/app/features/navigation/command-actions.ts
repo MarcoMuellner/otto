@@ -40,11 +40,11 @@ export const commandActions: CommandAction[] = [
   {
     id: "jump-chat",
     label: "Chat with Otto",
-    subtitle: "Operator chat surface (upcoming)",
+    subtitle: "Open operator chat threads",
     group: "jump",
     icon: "chat",
     shortcut: "G C",
-    disabled: true,
+    to: "/chat",
   },
   {
     id: "quick-system",

@@ -35,6 +35,7 @@ export default function LayoutRoute() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const isChatRoute = location.pathname === "/chat"
 
   useEffect(() => {
     const openPalette = (): void => {
@@ -83,9 +84,15 @@ export default function LayoutRoute() {
   }, [isCommandPaletteOpen, location.pathname, navigate])
 
   return (
-    <main className="relative flex min-h-dvh justify-center overflow-hidden px-5 py-8 max-[720px]:px-3.5 max-[720px]:py-[18px]">
+    <main
+      className={`relative flex min-h-dvh overflow-hidden ${
+        isChatRoute
+          ? "justify-stretch px-2 py-3 max-[720px]:px-2 max-[720px]:py-2"
+          : "justify-center px-5 py-8 max-[720px]:px-3.5 max-[720px]:py-[18px]"
+      }`}
+    >
       <AmbientRings />
-      <section className="relative z-[1] w-full">
+      <section className={`relative z-[1] w-full ${isChatRoute ? "max-w-none" : ""}`}>
         <Outlet />
       </section>
       <CommandPalette
