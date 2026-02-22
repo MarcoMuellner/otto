@@ -18,12 +18,15 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
 - UI routes:
   - `/` health/home shell
   - `/system` runtime metadata, service matrix, and runtime restart control
+  - `/settings` notification profile settings (non-secret runtime preferences)
   - `/jobs` scheduled jobs list with system/operator grouping and create form
   - `/jobs/:jobId` job detail + recent audit evidence + edit/cancel/run-now actions
 - BFF routes:
   - `GET /api/health`
   - `GET /api/system/status`
   - `POST /api/system/restart`
+  - `GET /api/settings/notification-profile`
+  - `PUT /api/settings/notification-profile`
   - `GET /api/jobs`
   - `POST /api/jobs`
   - `GET /api/jobs/:jobId`

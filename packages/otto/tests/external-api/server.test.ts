@@ -12,6 +12,7 @@ import type {
   JobRunRecord,
   TaskAuditRecord,
   TaskListRecord,
+  UserProfileRecord,
 } from "../../src/persistence/repositories.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-external-api-")
@@ -131,6 +132,11 @@ type CommandAuditRepositoryStub = {
   insert: (record: CommandAuditRecord) => void
 }
 
+type UserProfileRepositoryStub = {
+  get: () => UserProfileRecord | null
+  upsert: (record: UserProfileRecord) => void
+}
+
 const createJobsRepositoryStub = (
   overrides: Partial<JobsRepositoryStub> = {}
 ): JobsRepositoryStub => {
@@ -174,6 +180,20 @@ const createCommandAuditRepositoryStub = (
   return {
     insert: () => {
       return
+    },
+    ...overrides,
+  }
+}
+
+const createUserProfileRepositoryStub = (
+  overrides: Partial<UserProfileRepositoryStub> = {}
+): UserProfileRepositoryStub => {
+  let profile: UserProfileRecord | null = null
+
+  return {
+    get: () => profile,
+    upsert: (record: UserProfileRecord): void => {
+      profile = record
     },
     ...overrides,
   }
@@ -360,6 +380,152 @@ describe("buildExternalApiServer", () => {
     expect(auditRecords[0]).toMatchObject({
       command: "external_system_restart",
       status: "success",
+    })
+
+    await app.close()
+  })
+
+  it("returns notification profile settings when authorized", async () => {
+    // Arrange
+    const profileRepository = createUserProfileRepositoryStub()
+    profileRepository.upsert({
+      timezone: "Europe/Vienna",
+      quietHoursStart: "21:00",
+      quietHoursEnd: "07:30",
+      quietMode: "critical_only",
+      muteUntil: null,
+      heartbeatMorning: "08:30",
+      heartbeatMidday: "12:30",
+      heartbeatEvening: "19:00",
+      heartbeatCadenceMinutes: 180,
+      heartbeatOnlyIfSignal: true,
+      onboardingCompletedAt: null,
+      lastDigestAt: null,
+      updatedAt: 1_000,
+    })
+
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      userProfileRepository: profileRepository,
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/settings/notification-profile",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      profile: {
+        timezone: "Europe/Vienna",
+        quietHoursStart: "21:00",
+      },
+    })
+
+    await app.close()
+  })
+
+  it("updates notification profile settings and writes audit metadata", async () => {
+    // Arrange
+    const auditRecords: CommandAuditRecord[] = []
+    const profileRepository = createUserProfileRepositoryStub()
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      userProfileRepository: profileRepository,
+      commandAuditRepository: createCommandAuditRepositoryStub({
+        insert: (record: CommandAuditRecord): void => {
+          auditRecords.push(record)
+        },
+      }),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "PUT",
+      url: "/external/settings/notification-profile",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        timezone: "Europe/Vienna",
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      profile: {
+        quietHoursStart: "22:00",
+        quietHoursEnd: "07:00",
+      },
+      changedFields: expect.arrayContaining(["quietHoursStart", "quietHoursEnd"]),
+    })
+    expect(auditRecords[0]).toMatchObject({
+      command: "set_notification_policy",
+      status: "success",
+      lane: "interactive",
+    })
+
+    await app.close()
+  })
+
+  it("rejects invalid notification profile updates", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      userProfileRepository: createUserProfileRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "PUT",
+      url: "/external/settings/notification-profile",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        timezone: "Europe/NopeTown",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: "invalid_request",
     })
 
     await app.close()

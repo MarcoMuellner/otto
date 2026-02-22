@@ -40,9 +40,11 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - API boundary: `/internal/*` is OpenCode-tool/internal runtime integration, `/external/*` is authenticated LAN-facing control-plane/app integration
 - External jobs endpoints currently exposed:
   - System: `GET /external/system/status`, `POST /external/system/restart`
+  - Settings: `GET /external/settings/notification-profile`, `PUT /external/settings/notification-profile`
   - Read: `GET /external/jobs?lane=scheduled`, `GET /external/jobs/:id`, `GET /external/jobs/:id/audit`, `GET /external/jobs/:id/runs`, `GET /external/jobs/:id/runs/:runId`
   - Mutations: `POST /external/jobs`, `PATCH /external/jobs/:id`, `DELETE /external/jobs/:id`, `POST /external/jobs/:id/run-now`
   - Guardrail: system-managed jobs are read-only; mutation attempts return `403 forbidden_mutation`
+  - Settings safety boundary: only non-secret notification profile fields are returned/editable; secret-bearing environment variables are never returned by settings endpoints
   - Restart caveat: `/external/system/restart` requests runtime process recycle only; control-plane stays online as a separate service.
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
 - Extension store root: `~/.otto/extensions/store/<id>/<version>`

@@ -5,6 +5,12 @@ import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
 import {
+  applyNotificationProfileUpdate,
+  diffNotificationProfileFields,
+  notificationProfileUpdateSchema,
+  resolveNotificationProfile,
+} from "../api-services/settings-notification-profile.js"
+import {
   createTaskMutation,
   deleteTaskMutation,
   runTaskNowMutation,
@@ -28,6 +34,7 @@ import type {
   JobRunRecord,
   TaskAuditRecord,
   TaskListRecord,
+  UserProfileRecord,
 } from "../persistence/repositories.js"
 import { getAppVersion } from "../version.js"
 
@@ -108,6 +115,10 @@ type ExternalApiServerDependencies = {
   }
   commandAuditRepository?: {
     insert: (record: CommandAuditRecord) => void
+  }
+  userProfileRepository?: {
+    get: () => UserProfileRecord | null
+    upsert: (record: UserProfileRecord) => void
   }
 }
 
@@ -260,6 +271,31 @@ const systemRestartResponseSchema = z.object({
   message: z.string().trim().min(1),
 })
 
+const notificationProfileSchema = z.object({
+  timezone: z.string().nullable(),
+  quietHoursStart: z.string().nullable(),
+  quietHoursEnd: z.string().nullable(),
+  quietMode: z.enum(["critical_only", "off"]).nullable(),
+  muteUntil: z.number().int().nullable(),
+  heartbeatMorning: z.string().nullable(),
+  heartbeatMidday: z.string().nullable(),
+  heartbeatEvening: z.string().nullable(),
+  heartbeatCadenceMinutes: z.number().int().nullable(),
+  heartbeatOnlyIfSignal: z.boolean(),
+  onboardingCompletedAt: z.number().int().nullable(),
+  lastDigestAt: z.number().int().nullable(),
+  updatedAt: z.number().int(),
+})
+
+const getNotificationProfileResponseSchema = z.object({
+  profile: notificationProfileSchema,
+})
+
+const updateNotificationProfileResponseSchema = z.object({
+  profile: notificationProfileSchema,
+  changedFields: z.array(z.string().min(1)),
+})
+
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
   const host = environment.OTTO_EXTERNAL_API_HOST?.trim() || DEFAULT_HOST
 
@@ -401,6 +437,17 @@ export const buildExternalApiServer = (
       })
     })
   const restartRuntime = dependencies.restartRuntime ?? (async () => undefined)
+  let fallbackProfile = resolveNotificationProfile({
+    get: () => null,
+  })
+  const userProfileRepository =
+    dependencies.userProfileRepository ??
+    ({
+      get: () => fallbackProfile,
+      upsert: (record) => {
+        fallbackProfile = record
+      },
+    } as const)
 
   app.addHook("onRequest", async (request, reply) => {
     const token = extractBearerToken(request.headers.authorization)
@@ -465,6 +512,78 @@ export const buildExternalApiServer = (
         createdAt: Date.now(),
       })
       dependencies.logger.error({ error: err.message }, "External API runtime restart failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/settings/notification-profile", async (_request, reply) => {
+    try {
+      const profile = resolveNotificationProfile(userProfileRepository)
+
+      return reply.code(200).send(
+        getNotificationProfileResponseSchema.parse({
+          profile,
+        })
+      )
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.error(
+        { error: err.message },
+        "External API notification profile get failed"
+      )
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.put("/external/settings/notification-profile", async (request, reply) => {
+    try {
+      const payload = notificationProfileUpdateSchema.parse(request.body)
+      const now = Date.now()
+      const existing = resolveNotificationProfile(userProfileRepository)
+      const merged = applyNotificationProfileUpdate(existing, payload, now)
+      const changedFields = diffNotificationProfileFields(existing, merged)
+
+      userProfileRepository.upsert(merged)
+      commandAuditRepository?.insert({
+        id: randomUUID(),
+        command: "set_notification_policy",
+        lane: "interactive",
+        status: "success",
+        errorMessage: null,
+        metadataJson: JSON.stringify({
+          source: "external_api",
+          changedFields,
+        }),
+        createdAt: now,
+      })
+
+      return reply.code(200).send(
+        updateNotificationProfileResponseSchema.parse({
+          profile: merged,
+          changedFields,
+        })
+      )
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      commandAuditRepository?.insert({
+        id: randomUUID(),
+        command: "set_notification_policy",
+        lane: "interactive",
+        status: "failed",
+        errorMessage: err.message,
+        metadataJson: JSON.stringify({
+          source: "external_api",
+        }),
+        createdAt: Date.now(),
+      })
+      dependencies.logger.error(
+        { error: err.message },
+        "External API notification profile set failed"
+      )
       return reply.code(500).send({ error: "internal_error" })
     }
   })
