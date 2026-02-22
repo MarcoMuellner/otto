@@ -1595,6 +1595,7 @@ EOF
 cmd_update() {
   local channel="stable"
   local repo_override=""
+  local pr_number=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1604,6 +1605,15 @@ cmd_update() {
         ;;
       --repo)
         repo_override="${2:-}"
+        shift 2
+        ;;
+      --pr)
+        pr_number="${2:-}"
+        if [[ ! "${pr_number}" =~ ^[0-9]+$ ]]; then
+          error "--pr expects a pull request number"
+          exit 1
+        fi
+        channel="pr-${pr_number}"
         shift 2
         ;;
       *)
@@ -1695,7 +1705,7 @@ Usage:
   ottoctl extension update --all
   ottoctl extension disable <id>
   ottoctl extension remove <id>[@version]
-  ottoctl update [--nightly] [--repo owner/repo]
+  ottoctl update [--nightly] [--pr number] [--repo owner/repo]
 EOF
 }
 

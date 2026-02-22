@@ -11,7 +11,8 @@ This directory stores deployable epics and tickets.
 - `epic_005`: Voice and multimodal intake.
 - `epic_006`: Monorepo extension platform for installable OpenCode tools/skills/MCP bundles.
 - `epic_007`: Otto web control plane (separate UI process + runtime-owned external API).
-- `epic_008`: Interactive background one-shot tasks across Telegram, CLI chat, and web chat.
+- `epic_008`: Runtime model management defaults and per-job model switching.
+- `epic_009`: Interactive background one-shot tasks across Telegram, CLI chat, and web chat.
 
 ## Structure
 

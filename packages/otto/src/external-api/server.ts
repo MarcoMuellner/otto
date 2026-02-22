@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import Fastify, { type FastifyInstance } from "fastify"
 import type { Logger } from "pino"
 import { z, ZodError } from "zod"
@@ -21,11 +23,13 @@ import {
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
 import type {
+  CommandAuditRecord,
   JobRecord,
   JobRunRecord,
   TaskAuditRecord,
   TaskListRecord,
 } from "../persistence/repositories.js"
+import { getAppVersion } from "../version.js"
 
 const DEFAULT_HOST = "0.0.0.0"
 const DEFAULT_PORT = 4190
@@ -38,9 +42,36 @@ export type ExternalApiConfig = {
   baseUrl: string
 }
 
+export type ExternalSystemServiceStatus = "ok" | "degraded" | "disabled"
+
+export type ExternalSystemStatusResponse = {
+  status: "ok" | "degraded"
+  checkedAt: number
+  runtime: {
+    version: string
+    pid: number
+    startedAt: number
+    uptimeSec: number
+  }
+  services: Array<{
+    id: string
+    label: string
+    status: ExternalSystemServiceStatus
+    message: string
+  }>
+}
+
+export type ExternalSystemRestartResponse = {
+  status: "accepted"
+  requestedAt: number
+  message: string
+}
+
 type ExternalApiServerDependencies = {
   logger: Logger
   config: ExternalApiConfig
+  systemStatusProvider?: () => ExternalSystemStatusResponse
+  restartRuntime?: () => Promise<void>
   jobsRepository: {
     listTasks: () => TaskListRecord[]
     getById: (jobId: string) => JobRecord | null
@@ -73,6 +104,9 @@ type ExternalApiServerDependencies = {
   taskAuditRepository: {
     listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
     insert: (record: TaskAuditRecord) => void
+  }
+  commandAuditRepository?: {
+    insert: (record: CommandAuditRecord) => void
   }
 }
 
@@ -198,6 +232,33 @@ const taskMutationResponseSchema = z.object({
   scheduledFor: z.number().int().optional(),
 })
 
+const serviceStatusSchema = z.enum(["ok", "degraded", "disabled"])
+
+const systemServiceSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  status: serviceStatusSchema,
+  message: z.string().trim().min(1),
+})
+
+const systemStatusResponseSchema = z.object({
+  status: z.enum(["ok", "degraded"]),
+  checkedAt: z.number().int(),
+  runtime: z.object({
+    version: z.string().trim().min(1),
+    pid: z.number().int().min(1),
+    startedAt: z.number().int(),
+    uptimeSec: z.number().min(0),
+  }),
+  services: z.array(systemServiceSchema),
+})
+
+const systemRestartResponseSchema = z.object({
+  status: z.literal("accepted"),
+  requestedAt: z.number().int(),
+  message: z.string().trim().min(1),
+})
+
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
   const host = environment.OTTO_EXTERNAL_API_HOST?.trim() || DEFAULT_HOST
 
@@ -286,6 +347,32 @@ export const resolveExternalApiConfig = async (
 }
 
 /**
+ * Builds a runtime-owned system status snapshot from process metadata and service-level
+ * health markers so operators can inspect actionable runtime truth through one contract.
+ *
+ * @param input Runtime and service status values known by the current process.
+ * @returns External system status payload suitable for `/external/system/status`.
+ */
+export const buildExternalSystemStatusSnapshot = (input: {
+  startedAt: number
+  services: ExternalSystemStatusResponse["services"]
+}): ExternalSystemStatusResponse => {
+  const hasDegradedService = input.services.some((service) => service.status === "degraded")
+
+  return {
+    status: hasDegradedService ? "degraded" : "ok",
+    checkedAt: Date.now(),
+    runtime: {
+      version: getAppVersion(),
+      pid: process.pid,
+      startedAt: input.startedAt,
+      uptimeSec: Number(process.uptime().toFixed(3)),
+    },
+    services: input.services,
+  }
+}
+
+/**
  * Builds the LAN-facing external API server used by the control-plane process and future
  * non-OpenCode clients while preserving Otto runtime ownership of source-of-truth data.
  *
@@ -296,6 +383,23 @@ export const buildExternalApiServer = (
   dependencies: ExternalApiServerDependencies
 ): FastifyInstance => {
   const app = Fastify({ logger: false })
+  const commandAuditRepository = dependencies.commandAuditRepository
+  const systemStatusProvider =
+    dependencies.systemStatusProvider ??
+    (() => {
+      return buildExternalSystemStatusSnapshot({
+        startedAt: Date.now(),
+        services: [
+          {
+            id: "runtime",
+            label: "Otto Runtime",
+            status: "ok",
+            message: "Runtime process is active",
+          },
+        ],
+      })
+    })
+  const restartRuntime = dependencies.restartRuntime ?? (async () => undefined)
 
   app.addHook("onRequest", async (request, reply) => {
     const token = extractBearerToken(request.headers.authorization)
@@ -313,6 +417,55 @@ export const buildExternalApiServer = (
 
   app.get("/external/health", async (_request, reply) => {
     return reply.code(200).send(healthResponseSchema.parse({ status: "ok" }))
+  })
+
+  app.get("/external/system/status", async (_request, reply) => {
+    try {
+      const snapshot = systemStatusResponseSchema.parse(systemStatusProvider())
+      return reply.code(200).send(snapshot)
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API system status failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/external/system/restart", async (_request, reply) => {
+    try {
+      const requestedAt = Date.now()
+      await restartRuntime()
+
+      commandAuditRepository?.insert({
+        id: randomUUID(),
+        command: "external_system_restart",
+        lane: "interactive",
+        status: "success",
+        errorMessage: null,
+        metadataJson: JSON.stringify({ source: "external_api", requestedAt }),
+        createdAt: requestedAt,
+      })
+
+      return reply.code(202).send(
+        systemRestartResponseSchema.parse({
+          status: "accepted",
+          requestedAt,
+          message: "Runtime restart requested",
+        })
+      )
+    } catch (error) {
+      const err = error as Error
+      commandAuditRepository?.insert({
+        id: randomUUID(),
+        command: "external_system_restart",
+        lane: "interactive",
+        status: "failed",
+        errorMessage: err.message,
+        metadataJson: JSON.stringify({ source: "external_api" }),
+        createdAt: Date.now(),
+      })
+      dependencies.logger.error({ error: err.message }, "External API runtime restart failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
   })
 
   app.get("/external/jobs", async (request, reply) => {

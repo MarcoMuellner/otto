@@ -1,52 +1,53 @@
-# Epic 008 - Interactive Background One-Shot Tasks
+# Epic 008 - Runtime Model Management
 
 ## Status
 
 - `id`: `epic_008`
 - `type`: epic ticket
 - `state`: `planned`
-- `goal`: enable Otto to auto-escalate long interactive requests into background one-shot jobs so Marco can continue chatting while work runs and completes asynchronously.
+- `goal`: deliver a small, runtime-first model management surface so Marco can see available OpenCode models and switch defaults per flow, with optional per-job override.
 
 ## Why
 
-Interactive long-running tasks currently block chat flow. Marco wants Otto to delegate long work immediately, push natural updates to Telegram, and make task state visible from Telegram, CLI chat, and Control Plane UI.
+Model selection is currently global and opaque. Otto needs a simple way to expose available models and switch model defaults by runtime flow without restarts.
 
 ## Decisions Locked In
 
-- Single operator scope (Marco), global access across surfaces.
-- Inline-first interaction; model decides when to escalate.
-- Escalation is automatic and immediately acknowledged.
-- Background runs are non-interruptible while running.
-- New incoming messages remain independent while a run is active.
-- Reuse existing jobs and scheduler mechanics.
-- Background runs use dedicated OpenCode sessions.
-- Cancellation reuses OpenCode session stop behavior.
-- Telegram is the push channel for start/milestone/final updates.
-- Milestones are free-text from the LLM via an internal tool, with rate limiting.
-- Canonical cross-surface identifier is raw `job_id`.
-- Control Plane reuses jobs UI with a dedicated background tab/filter.
+- Source of truth for available models is OpenCode API/SDK (not static file parsing).
+- Otto fetches model catalog at startup; startup fails if initial fetch fails.
+- Otto refreshes catalog automatically every 24h; failed periodic refresh keeps last cache and logs warning.
+- Manual refresh must be available in both `ottoctl` and web control plane.
+- Flow defaults in MVP:
+  - `interactiveAssistant`
+  - `scheduledTasks`
+  - `heartbeat`
+  - `watchdogFailures`
+- Per-job model selection is direct on job record (`modelRef`) with two states:
+  - explicit model
+  - inherit scheduled flow default (`null`)
+- Resolution precedence for scheduled execution:
+  1. job `modelRef`
+  2. flow default
+  3. global OpenCode default model
+- If configured model is unavailable, runtime falls back to global OpenCode default and logs warning.
+- Changes to defaults or job model apply immediately (no restart).
+- Telegram/transcription model settings are out of scope.
 
 ## Success Criteria
 
-- Telegram-originated long requests can be escalated to background with immediate acknowledgment.
-- Background run lifecycle is persisted through existing jobs/job_runs state transitions.
-- Telegram receives natural-language start, milestone, and final/failure updates.
-- `list/show/cancel` works consistently in Telegram, CLI chat, and Web chat.
-- Control Plane shows background one-shot runs in a dedicated filtered view using existing jobs surfaces.
+- Operator can list available models and refresh catalog from CLI and web.
+- Operator can set and inspect flow defaults for the four MVP flows.
+- Operator can set per-job model override (or inherit) from CLI and web job forms.
+- Runtime consistently resolves model via locked precedence and fallback behavior.
 
 ## Delivery Plan (Deployable Tickets)
 
-1. `ticket_001`: Background job contract and escalation hook.
-2. `ticket_002`: Scheduler execution path with dedicated session lifecycle.
-3. `ticket_003`: Telegram lifecycle messaging and milestone tool.
-4. `ticket_004`: Cross-surface list/show/cancel and cancel semantics.
-5. `ticket_005`: Control Plane background tab/filter and parity checks.
+1. `ticket_001`: Runtime model catalog, config defaults, resolver, and job schema support.
+2. `ticket_002`: External API + `ottoctl` model management commands.
+3. `ticket_003`: Control-plane BFF/UI for global defaults and per-job model selection.
 
-## Out of Scope
+## Out of Scope for Epic 008
 
-- Pause/resume.
-- Mid-run user intervention into active run context.
-- Auto-retry/backoff policy.
-- Multi-user auth/RBAC.
-- Background task creation from CLI/Web in MVP.
-- Telegram menu command UX in MVP (text understanding remains supported).
+- Provider credential setup UX.
+- Multi-user preferences or RBAC.
+- Non-runtime model domains (voice/transcription).
