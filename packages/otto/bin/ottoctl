@@ -148,6 +148,40 @@ resolve_control_plane_port() {
   echo "${port}"
 }
 
+prepend_path_entry() {
+  local current_path="$1"
+  local entry="$2"
+
+  if [[ -z "${entry}" ]] || [[ ! -d "${entry}" ]]; then
+    echo "${current_path}"
+    return
+  fi
+
+  case ":${current_path}:" in
+    *":${entry}:"*)
+      echo "${current_path}"
+      ;;
+    *)
+      if [[ -z "${current_path}" ]]; then
+        echo "${entry}"
+      else
+        echo "${entry}:${current_path}"
+      fi
+      ;;
+  esac
+}
+
+build_service_path() {
+  local service_path="${PATH}"
+  local node_dir
+  node_dir="$(dirname "$(command -v node)")"
+  service_path="$(prepend_path_entry "${service_path}" "${node_dir}")"
+  service_path="$(prepend_path_entry "${service_path}" "${HOME}/.opencode/bin")"
+  service_path="$(prepend_path_entry "${service_path}" "${HOME}/.local/bin")"
+
+  echo "${service_path}"
+}
+
 control_plane_server_path() {
   echo "${CURRENT_LINK}/control-plane/build/server/index.js"
 }
@@ -1294,6 +1328,8 @@ run_setup() {
 install_service_linux() {
   local node_path
   node_path="$(command -v node)"
+  local service_path
+  service_path="$(build_service_path)"
   local user_dir="${HOME}/.config/systemd/user"
   local service_file="${user_dir}/${SERVICE_NAME}.service"
   local control_plane_service_file="${user_dir}/${CONTROL_PLANE_SERVICE_NAME}.service"
@@ -1313,7 +1349,7 @@ Restart=on-failure
 RestartSec=5
 EnvironmentFile=-${RUNTIME_ENV_FILE}
 Environment=HOME=${HOME}
-Environment=PATH=${PATH}
+Environment=PATH=${service_path}
 Environment=NODE_ENV=production
 StandardOutput=journal
 StandardError=journal
@@ -1340,14 +1376,16 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${node_path} ${control_plane_serve_cli} ${control_plane_server} --host ${control_plane_host} --port ${control_plane_port}
+ExecStart=${node_path} ${control_plane_serve_cli} ${control_plane_server}
 WorkingDirectory=${CURRENT_LINK}/control-plane
 Restart=on-failure
 RestartSec=5
 EnvironmentFile=-${RUNTIME_ENV_FILE}
 Environment=HOME=${HOME}
-Environment=PATH=${PATH}
+Environment=PATH=${service_path}
 Environment=NODE_ENV=production
+Environment=HOST=${control_plane_host}
+Environment=PORT=${control_plane_port}
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=otto-control-plane
@@ -1376,6 +1414,8 @@ EOF
 install_service_macos() {
   local node_path
   node_path="$(command -v node)"
+  local service_path
+  service_path="$(build_service_path)"
   local runtime_env_keys=""
   runtime_env_keys="$(runtime_env_plist_entries)"
 
@@ -1405,7 +1445,7 @@ install_service_macos() {
     <key>HOME</key>
     <string>${HOME}</string>
     <key>PATH</key>
-    <string>${PATH}</string>
+    <string>${service_path}</string>
     <key>NODE_ENV</key>
     <string>production</string>
 ${runtime_env_keys}
@@ -1440,10 +1480,6 @@ EOF
     <string>${node_path}</string>
     <string>${control_plane_serve_cli}</string>
     <string>${control_plane_server}</string>
-    <string>--host</string>
-    <string>${control_plane_host}</string>
-    <string>--port</string>
-    <string>${control_plane_port}</string>
   </array>
   <key>WorkingDirectory</key>
   <string>${CURRENT_LINK}/control-plane</string>
@@ -1456,10 +1492,14 @@ EOF
     <key>HOME</key>
     <string>${HOME}</string>
     <key>PATH</key>
-    <string>${PATH}</string>
+    <string>${service_path}</string>
     <key>NODE_ENV</key>
     <string>production</string>
 ${runtime_env_keys}
+    <key>HOST</key>
+    <string>${control_plane_host}</string>
+    <key>PORT</key>
+    <string>${control_plane_port}</string>
   </dict>
   <key>StandardOutPath</key>
   <string>${HOME}/.local/share/otto/logs/control-plane.log</string>
