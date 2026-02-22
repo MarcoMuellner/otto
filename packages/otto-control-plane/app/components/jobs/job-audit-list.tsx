@@ -11,7 +11,7 @@ type JobAuditListProps = {
  */
 export const JobAuditList = ({ entries }: JobAuditListProps) => {
   return (
-    <section>
+    <section className="rounded-lg border border-[rgba(26,26,26,0.08)] bg-white p-4">
       <h3 className="mb-3 text-sm font-medium text-[#1a1a1a]">Recent Audit Events</h3>
       <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(248,248,248,0.85)] p-4 font-mono text-xs text-[#666666] shadow-inner">
         {entries.length === 0 ? (
