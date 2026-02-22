@@ -17,6 +17,7 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
 
 - UI routes:
   - `/` health/home shell
+  - `/chat` operator chat surface backed by OpenCode sessions
   - `/system` runtime metadata, service matrix, and runtime restart control
   - `/settings` notification profile settings (non-secret runtime preferences)
   - `/jobs` scheduled jobs list with system/operator grouping and create form
@@ -40,18 +41,26 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
   - `GET /api/jobs/:jobId/audit`
   - `GET /api/jobs/:jobId/runs`
   - `GET /api/jobs/:jobId/runs/:runId`
+  - `GET /api/chat/threads`
+  - `POST /api/chat/threads`
+  - `GET /api/chat/threads/:threadId/messages`
+  - `POST /api/chat/threads/:threadId/messages`
 
 ## Environment
 
 - `OTTO_EXTERNAL_API_URL` (optional, default `http://127.0.0.1:4190`)
 - `OTTO_EXTERNAL_API_TOKEN` (optional, highest precedence)
 - `OTTO_EXTERNAL_API_TOKEN_FILE` (optional, defaults to `~/.otto/secrets/internal-api.token`)
+- `OTTO_OPENCODE_API_URL` (optional, defaults from `~/.config/otto/config.jsonc` then `http://127.0.0.1:4096`)
+- `OTTO_STATE_DB_PATH` (optional, defaults from Otto `ottoHome` config then `~/.otto/data/otto-state.db`)
+
+When `OTTO_OPENCODE_API_URL` is unset but `OTTO_EXTERNAL_API_URL` is set, chat derives the OpenCode URL host from `OTTO_EXTERNAL_API_URL` and keeps the OpenCode port from Otto config/defaults.
 
 Resolution order for these values:
 
 1. local `packages/otto-control-plane/.env` (when present)
 2. process environment
-3. built-in fallbacks (URL default + token file default)
+3. built-in fallbacks (runtime URL/token defaults + OpenCode/session-db defaults)
 
 ## Scripts
 

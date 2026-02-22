@@ -6,63 +6,85 @@
 
 ## Objective
 
-Add an operator chat surface to the control plane for viewing and sending messages through runtime-owned chat APIs.
+Add an operator chat surface to the control plane by integrating directly with OpenCode session/message APIs, reusing persisted Otto session IDs as the primary thread anchors.
 
 ## Why
 
-Chat is a core Otto interaction mode and must be available in the same operational UI after jobs and system/settings are stable.
+Otto chat state is fundamentally OpenCode session state. For this slice, avoid introducing runtime external chat transport contracts and instead use OpenCode APIs directly, while still honoring Otto-owned persisted session bindings.
 
 ## Scope
 
-- Add external API chat contracts for thread/message retrieval and message send.
-- Add control-plane chat page with thread view, message history, and compose/send UX.
-- Include loading, empty, error, and reconnect/degraded states.
-- Ensure chat actions are logged/audited consistently with other operations.
+- Add control-plane server OpenCode chat client using official SDK session/message APIs.
+- Build thread index from persisted session IDs (session bindings) and enrich with OpenCode session metadata.
+- Add chat UI route with thread list, message history, compose/send, and selected-thread refresh.
+- Add required states: loading, empty, error, reconnect/degraded.
+- Add chat BFF endpoints in control-plane process (browser does not call OpenCode directly by default).
+- Enable command palette navigation entry for chat.
+- Add audit logging for chat read/send actions using the same operational audit model used by existing control-plane operations.
 
 ## Interfaces and Contracts
 
-- Runtime external endpoints:
-  - `GET /external/chat/threads`
-  - `GET /external/chat/threads/:id/messages`
-  - `POST /external/chat/messages`
-- Control-plane endpoints:
+- OpenCode upstream APIs (via SDK/server):
+  - `session.list()`
+  - `session.get({ path: { id } })`
+  - `session.messages({ path: { id } })`
+  - `session.prompt({ path: { id }, body })`
+  - `session.create({ body })`
+  - optional: `session.status()` for degraded indicators
+- Control-plane BFF endpoints:
   - `GET /api/chat/threads`
   - `GET /api/chat/threads/:id/messages`
-  - `POST /api/chat/messages`
+  - `POST /api/chat/threads/:id/messages`
+  - `POST /api/chat/threads`
+- Persisted session-id source:
+  - Otto state DB `session_bindings` (existing binding patterns remain source of truth for known threads)
 
 ## Non-Goals
 
-- Multi-user chat.
-- Advanced collaboration features.
-- In-UI workflow authoring.
+- Browser-direct OpenCode calls as default transport.
+- Streaming token rendering in MVP.
+- Multi-user chat or RBAC.
+- In-chat workflow authoring.
+- New runtime `/external/chat/*` endpoints for this ticket.
 
 ## Dependencies
 
-- `ticket_001`
-- `ticket_002`
-- Runtime chat/session capabilities from prior epics
+- `ticket_002` (control-plane process and BFF foundation).
+- Existing runtime session persistence and bindings already produced by Telegram/scheduler flows.
+- OpenCode server availability in runtime (`opencode` service state).
 
 ## Engineering Principles Applied
 
-- **TDD**: contract tests and message-flow tests before UI polish.
-- **DRY**: reuse shared runtime chat orchestration services and DTO mappers.
-- **SOLID**: keep send/read services separate from UI component state.
-- **KISS**: deliver reliable single-thread operator flow first.
+- **TDD**: add failing server contract tests first for threads/messages/send.
+- **DRY**: one shared OpenCode chat adapter and one session-index mapping layer.
+- **SOLID**: separate OpenCode transport, thread-index resolution, and UI state logic.
+- **KISS**: polling-based refresh and deterministic send flow before advanced streaming UX.
 
 ## Acceptance Criteria
 
-- Operator can open chat surface, load messages, and send a message end-to-end.
-- UI reflects delivery state and errors clearly.
-- Backend enforces token auth and preserves runtime as source of truth.
-- Docs updated with chat limitations and operational expectations.
+- Operator can open chat surface, load threads, inspect messages, and send a message end-to-end.
+- Thread list prioritizes persisted/bound sessions and remains usable even when some sessions are stale.
+- UI clearly reports runtime/OpenCode degradation and supports reconnect/retry.
+- Command palette Chat entry is enabled and navigates to chat surface.
+- Chat actions are auditable with consistent operational metadata.
 
 ## Verification
 
-- Endpoint tests for list/read/send contracts.
-- UI integration tests for compose and thread loading paths.
-- Manual smoke: send and observe message lifecycle through runtime logs.
-- `pnpm run check`
+- Control-plane server tests:
+  - OpenCode chat client adapter contract/parse/error behavior.
+  - `/api/chat/threads`, `/api/chat/threads/:id/messages`, `/api/chat/threads/:id/messages` (POST) route tests.
+- Control-plane route/state tests for loading/empty/error/degraded behavior.
+- Manual smoke: open existing bound session, send prompt, verify message appears in thread, verify degraded/reconnect behavior by stopping/restarting runtime.
+- Quality gates:
+  - `pnpm -C packages/otto-control-plane run check`
+  - `pnpm run check` (if cross-package changes are introduced)
 
 ## Deployability
 
-- Deployable chat slice meeting MVP priority #3.
+- Deployable operator chat slice meeting MVP priority #3 using direct OpenCode session/message integration.
+
+## Jobs Involvement
+
+- Jobs are not a core dependency for this ticket's primary chat send/read path.
+- Jobs are adjacent via stored session bindings (for example scheduler-originated session IDs) and may be surfaced as thread metadata/deep links only.
+- No jobs mutation or scheduler behavior changes are included in this ticket.
