@@ -11,8 +11,10 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 }
 
 const variantClassByType: Record<ButtonVariant, string> = {
-  default: "bg-[#1a1a1a] text-white hover:bg-black",
-  outline: "border-[rgba(26,26,26,0.14)] bg-white text-[#1a1a1a] hover:bg-[rgba(26,26,26,0.04)]",
+  default:
+    "border-[rgba(0,0,0,0.68)] bg-[#1a1a1a] text-white shadow-[0_1px_0_rgba(255,255,255,0.06)_inset] hover:bg-black",
+  outline:
+    "border-[rgba(26,26,26,0.34)] bg-white text-[#1a1a1a] shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:bg-[rgba(26,26,26,0.04)]",
 }
 
 const sizeClassByType: Record<ButtonSize, string> = {
@@ -21,7 +23,7 @@ const sizeClassByType: Record<ButtonSize, string> = {
 }
 
 const baseClasses =
-  "inline-flex items-center justify-center rounded-[10px] border border-transparent font-mono uppercase tracking-[0.09em] transition-[opacity,background-color,color,border-color] duration-150 disabled:cursor-default disabled:opacity-60"
+  "inline-flex items-center justify-center rounded-[10px] border font-mono uppercase tracking-[0.09em] transition-[opacity,background-color,color,border-color,box-shadow] duration-150 disabled:cursor-default disabled:opacity-60"
 
 /**
  * Provides a small shadcn-style button primitive so action controls remain consistent across

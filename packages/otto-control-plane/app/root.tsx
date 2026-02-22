@@ -1,6 +1,7 @@
 import type { LinksFunction } from "react-router"
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router"
 
+import { Toaster } from "./components/ui/sonner.js"
 import stylesheet from "./styles/control-plane.css?url"
 
 export const links: LinksFunction = () => {
@@ -28,6 +29,7 @@ export default function AppRoot() {
       </head>
       <body className="relative h-screen w-screen selection:bg-[rgba(26,26,26,0.1)] selection:text-[#1a1a1a]">
         <Outlet />
+        <Toaster />
         <ScrollRestoration />
         <Scripts />
       </body>
