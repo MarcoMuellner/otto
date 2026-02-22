@@ -38,7 +38,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Internal API token: persisted in `~/.otto/secrets/internal-api.token` and exported at runtime as `OTTO_INTERNAL_API_URL` + `OTTO_INTERNAL_API_TOKEN` for OpenCode tools
 - External API token: reuses `~/.otto/secrets/internal-api.token`; runtime exports `OTTO_EXTERNAL_API_URL`
 - API boundary: `/internal/*` is OpenCode-tool/internal runtime integration, `/external/*` is authenticated LAN-facing control-plane/app integration
-- External jobs read endpoints currently exposed: `GET /external/jobs?lane=scheduled`, `GET /external/jobs/:id`, `GET /external/jobs/:id/audit`
+- External jobs read endpoints currently exposed: `GET /external/jobs?lane=scheduled`, `GET /external/jobs/:id`, `GET /external/jobs/:id/audit`, `GET /external/jobs/:id/runs`, `GET /external/jobs/:id/runs/:runId`
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
 - Extension store root: `~/.otto/extensions/store/<id>/<version>`
 - Extension activation state file: `~/.otto/extensions/state.json`
@@ -48,6 +48,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - `ottoctl extension install/update` immediately activates extension tools and skills into `~/.otto/.opencode`
 - `ottoctl extension disable` removes the installed extension footprint (runtime + store)
 - `ottoctl update` prompts for Telegram credentials when missing and stores them at `~/.local/share/otto/secrets/telegram.env` (skip is allowed)
+- Control-plane service bind env (optional): `OTTO_CONTROL_PLANE_HOST` (default `0.0.0.0`), `OTTO_CONTROL_PLANE_PORT` (default `4173`)
 
 ## Install (Release Artifact)
 
@@ -96,6 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl update` (defaults to latest stable)
   - `ottoctl update --nightly` (latest nightly)
   - `ottoctl update --repo <owner>/<repo>` (optional override for custom repo)
+- `ottoctl start|restart|stop` manage both runtime (`otto`) and control-plane (`otto-control-plane`) services when control-plane artifact is present in the installed release.
 
 ## Scripts
 

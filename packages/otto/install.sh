@@ -187,8 +187,12 @@ main() {
   info "Installing and starting service..."
   "${BIN_DIR}/ottoctl" start
 
+  local control_plane_host="${OTTO_CONTROL_PLANE_HOST:-0.0.0.0}"
+  local control_plane_port="${OTTO_CONTROL_PLANE_PORT:-4173}"
+
   success "Otto installed successfully"
   success "Control command: ottoctl"
+  success "Control plane UI: http://${control_plane_host}:${control_plane_port}"
 
   if ! command -v ottoctl >/dev/null 2>&1; then
     local rc_file

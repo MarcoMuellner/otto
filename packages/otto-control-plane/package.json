@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@react-router/node": "^7.13.0",
+    "@react-router/serve": "^7.13.0",
     "isbot": "^5",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -24,7 +25,6 @@
   },
   "devDependencies": {
     "@react-router/dev": "^7.13.0",
-    "@react-router/serve": "^7.13.0",
     "@tailwindcss/vite": "^4.2.0",
     "@types/node": "^25.2.3",
     "@types/react": "^19.2.14",

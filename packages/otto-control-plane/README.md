@@ -24,6 +24,8 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
   - `GET /api/jobs`
   - `GET /api/jobs/:jobId`
   - `GET /api/jobs/:jobId/audit`
+  - `GET /api/jobs/:jobId/runs`
+  - `GET /api/jobs/:jobId/runs/:runId`
 
 ## Environment
 
@@ -43,6 +45,12 @@ Resolution order for these values:
 - `pnpm -C packages/otto-control-plane run build`
 - `pnpm -C packages/otto-control-plane run start`
 - `pnpm -C packages/otto-control-plane run check`
+
+## Deployable Service
+
+- Release artifacts ship this package as a separate deployable process under `control-plane/`.
+- `ottoctl start|restart|stop` manages the UI process independently from runtime.
+- Default network bind is `0.0.0.0:4173` (override with `OTTO_CONTROL_PLANE_HOST` / `OTTO_CONTROL_PLANE_PORT`).
 
 ## Local Run
 

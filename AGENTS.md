@@ -79,6 +79,12 @@ Use `pnpm -C <package> run <script>` for scoped work.
 - SDK tests: `packages/otto-extension-sdk/tests/**/*.test.ts`
 - Keep tests outside `src/` (repository convention).
 
+## CLI and Web Parity
+- Treat `ottoctl` as the primary feature surface and keep control-plane web UI parity with it.
+- When adding or changing `ottoctl` features, implement corresponding web UI/BFF support in the same delivery cycle unless explicitly deferred.
+- Web-only UX enhancements are allowed, but they do not require back-porting to `ottoctl` unless explicitly requested.
+- If parity is deferred, document the gap and follow-up plan in `pm/` before handoff.
+
 ## Code Style Rules
 
 ### Imports

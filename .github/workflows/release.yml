@@ -17,8 +17,10 @@ on:
       - "packages/otto/vitest.config.ts"
       - "packages/otto/.prettierrc.json"
       - "packages/otto/.oxlintrc.json"
+      - "packages/otto-control-plane/**"
       - "packages/otto-extension-sdk/**"
       - "install.sh"
+      - "pnpm-lock.yaml"
       - "scripts/resolve-release.mjs"
       - ".github/workflows/release.yml"
     tags:
@@ -89,7 +91,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          mkdir -p release/stage/bin release/stage/scripts
+          mkdir -p release/stage/bin release/stage/scripts release/stage/control-plane
           chmod +x packages/otto/bin/ottoctl packages/otto/install.sh packages/otto/scripts/install-parakeet-v3.sh packages/otto/scripts/parakeet-worker.py
           cp -R packages/otto/dist release/stage/dist
           cp packages/otto/bin/ottoctl release/stage/bin/ottoctl
@@ -99,6 +101,8 @@ jobs:
           cp packages/otto/install.sh release/stage/install.sh
           cp packages/otto/package.json release/stage/package.json
           cp packages/otto/README.md release/stage/README.md
+          pnpm --filter otto-control-plane --prod deploy --config.inject-workspace-packages=true --config.force-legacy-deploy=true release/stage/control-plane
+          rm -rf release/stage/control-plane/app release/stage/control-plane/tests release/stage/control-plane/scripts release/stage/control-plane/.react-router release/stage/control-plane/README.md
           tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" -C release/stage .
 
       - name: Validate release artifact layout
@@ -116,6 +120,9 @@ jobs:
             "./install.sh"
             "./package.json"
             "./README.md"
+            "./control-plane/build/server/index.js"
+            "./control-plane/build/client/assets/"
+            "./control-plane/node_modules/.bin/react-router-serve"
           )
 
           for required_path in "${required_paths[@]}"; do
