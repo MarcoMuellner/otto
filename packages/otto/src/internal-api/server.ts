@@ -5,6 +5,12 @@ import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
 import { listTasksForLane } from "../api-services/tasks-read.js"
+import {
+  createTaskMutation,
+  deleteTaskMutation,
+  TaskMutationError,
+  updateTaskMutation,
+} from "../api-services/tasks-mutations.js"
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
 import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbound-enqueue.js"
@@ -60,6 +66,7 @@ type InternalApiServerDependencies = {
       updatedAt?: number
     ) => void
     cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
+    runTaskNow: (jobId: string, scheduledFor: number, updatedAt?: number) => void
     listTasks: () => TaskListRecord[]
     listRecentFailedRuns: (sinceTimestamp: number, limit?: number) => FailedJobRunRecord[]
   }
@@ -274,6 +281,46 @@ const assertTaskMutationLane = (
     body: {
       error: "lane_forbidden",
       message: "Task mutation is only allowed in interactive lane",
+    },
+  }
+}
+
+const resolveTaskMutationErrorResponse = (error: TaskMutationError) => {
+  if (error.code === "invalid_request") {
+    return {
+      statusCode: 400,
+      body: {
+        error: "invalid_request",
+        message: error.message,
+      },
+    }
+  }
+
+  if (error.code === "not_found") {
+    return {
+      statusCode: 404,
+      body: {
+        error: "not_found",
+        message: error.message,
+      },
+    }
+  }
+
+  if (error.code === "forbidden_mutation") {
+    return {
+      statusCode: 403,
+      body: {
+        error: "forbidden_mutation",
+        message: error.message,
+      },
+    }
+  }
+
+  return {
+    statusCode: 409,
+    body: {
+      error: "state_conflict",
+      message: error.message,
     },
   }
 }
@@ -615,61 +662,35 @@ export const buildInternalApiServer = (
         return reply.code(laneDecision.statusCode).send(laneDecision.body)
       }
 
-      const now = Date.now()
-      const id = payload.id ?? randomUUID()
-      const runAt = payload.runAt ?? now
-      const nextRunAt = runAt
-
-      dependencies.jobsRepository.createTask({
-        id,
-        type: payload.type,
-        status: "idle",
-        scheduleType: payload.scheduleType,
-        profileId: payload.profileId ?? null,
-        runAt,
-        cadenceMinutes:
-          payload.scheduleType === "recurring" ? (payload.cadenceMinutes ?? null) : null,
-        payload: payload.payload ? JSON.stringify(payload.payload) : null,
-        lastRunAt: null,
-        nextRunAt,
-        terminalState: null,
-        terminalReason: null,
-        lockToken: null,
-        lockExpiresAt: null,
-        createdAt: now,
-        updatedAt: now,
-      })
-
-      dependencies.taskAuditRepository.insert({
-        id: randomUUID(),
-        taskId: id,
-        action: "create",
-        lane: payload.lane,
-        actor: "internal_tool",
-        beforeJson: null,
-        afterJson: JSON.stringify(
-          dependencies.jobsRepository.getById(id) ?? {
-            id,
-          }
-        ),
-        metadataJson: JSON.stringify({
-          command: "create_task",
-        }),
-        createdAt: now,
-      })
+      const result = createTaskMutation(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        {
+          id: payload.id,
+          type: payload.type,
+          scheduleType: payload.scheduleType,
+          runAt: payload.runAt,
+          cadenceMinutes: payload.cadenceMinutes,
+          payload: payload.payload,
+          profileId: payload.profileId,
+        },
+        {
+          lane: payload.lane,
+          actor: "internal_tool",
+          source: "internal_api",
+        }
+      )
 
       writeCommandAudit(dependencies, {
         command: "create_task",
         lane: payload.lane,
         status: "success",
-        metadataJson: JSON.stringify({ taskId: id }),
-        createdAt: now,
+        metadataJson: JSON.stringify({ taskId: result.id }),
       })
 
-      return reply.code(200).send({
-        id,
-        status: "created",
-      })
+      return reply.code(200).send(result)
     } catch (error) {
       if (error instanceof ZodError) {
         writeCommandAudit(dependencies, {
@@ -679,6 +700,17 @@ export const buildInternalApiServer = (
           errorMessage: "invalid_request",
         })
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "create_task",
+          lane: null,
+          status: error.code === "forbidden_mutation" ? "denied" : "failed",
+          errorMessage: error.message,
+        })
+        return reply.code(failure.statusCode).send(failure.body)
       }
 
       const err = error as Error
@@ -718,59 +750,35 @@ export const buildInternalApiServer = (
         return reply.code(laneDecision.statusCode).send(laneDecision.body)
       }
 
-      const existingTask = dependencies.jobsRepository.getById(payload.id)
-      if (!existingTask) {
-        return reply.code(404).send({ error: "not_found", message: "Task not found" })
-      }
-
-      const scheduleType = payload.scheduleType ?? existingTask.scheduleType
-      const runAt = payload.runAt === undefined ? existingTask.runAt : payload.runAt
-      const cadenceMinutes =
-        payload.cadenceMinutes === undefined ? existingTask.cadenceMinutes : payload.cadenceMinutes
-
-      dependencies.jobsRepository.updateTask(
+      const result = updateTaskMutation(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
         payload.id,
         {
-          type: payload.type ?? existingTask.type,
-          scheduleType,
-          profileId: payload.profileId === undefined ? existingTask.profileId : payload.profileId,
-          runAt,
-          cadenceMinutes,
-          payload:
-            payload.payload === undefined
-              ? existingTask.payload
-              : payload.payload === null
-                ? null
-                : JSON.stringify(payload.payload),
-          nextRunAt: runAt,
+          type: payload.type,
+          scheduleType: payload.scheduleType,
+          runAt: payload.runAt,
+          cadenceMinutes: payload.cadenceMinutes,
+          payload: payload.payload,
+          profileId: payload.profileId,
         },
-        Date.now()
+        {
+          lane: payload.lane,
+          actor: "internal_tool",
+          source: "internal_api",
+        }
       )
-
-      const updatedTask = dependencies.jobsRepository.getById(payload.id)
-      dependencies.taskAuditRepository.insert({
-        id: randomUUID(),
-        taskId: payload.id,
-        action: "update",
-        lane: payload.lane,
-        actor: "internal_tool",
-        beforeJson: JSON.stringify(existingTask),
-        afterJson: JSON.stringify(updatedTask),
-        metadataJson: JSON.stringify({ command: "update_task" }),
-        createdAt: Date.now(),
-      })
 
       writeCommandAudit(dependencies, {
         command: "update_task",
         lane: payload.lane,
         status: "success",
-        metadataJson: JSON.stringify({ taskId: payload.id }),
+        metadataJson: JSON.stringify({ taskId: result.id }),
       })
 
-      return reply.code(200).send({
-        id: payload.id,
-        status: "updated",
-      })
+      return reply.code(200).send(result)
     } catch (error) {
       if (error instanceof ZodError) {
         writeCommandAudit(dependencies, {
@@ -780,6 +788,17 @@ export const buildInternalApiServer = (
           errorMessage: "invalid_request",
         })
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "update_task",
+          lane: null,
+          status: error.code === "forbidden_mutation" ? "denied" : "failed",
+          errorMessage: error.message,
+        })
+        return reply.code(failure.statusCode).send(failure.body)
       }
 
       const err = error as Error
@@ -819,36 +838,29 @@ export const buildInternalApiServer = (
         return reply.code(laneDecision.statusCode).send(laneDecision.body)
       }
 
-      const existingTask = dependencies.jobsRepository.getById(payload.id)
-      if (!existingTask) {
-        return reply.code(404).send({ error: "not_found", message: "Task not found" })
-      }
-
-      dependencies.jobsRepository.cancelTask(payload.id, payload.reason ?? null, Date.now())
-
-      const updatedTask = dependencies.jobsRepository.getById(payload.id)
-      dependencies.taskAuditRepository.insert({
-        id: randomUUID(),
-        taskId: payload.id,
-        action: "delete",
-        lane: payload.lane,
-        actor: "internal_tool",
-        beforeJson: JSON.stringify(existingTask),
-        afterJson: JSON.stringify(updatedTask),
-        metadataJson: JSON.stringify({
-          command: "delete_task",
-          reason: payload.reason ?? null,
-        }),
-        createdAt: Date.now(),
-      })
+      const result = deleteTaskMutation(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        payload.id,
+        {
+          reason: payload.reason,
+        },
+        {
+          lane: payload.lane,
+          actor: "internal_tool",
+          source: "internal_api",
+        }
+      )
 
       writeCommandAudit(dependencies, {
         command: "delete_task",
         lane: payload.lane,
         status: "success",
-        metadataJson: JSON.stringify({ taskId: payload.id }),
+        metadataJson: JSON.stringify({ taskId: result.id }),
       })
-      return reply.code(200).send({ id: payload.id, status: "deleted" })
+      return reply.code(200).send(result)
     } catch (error) {
       if (error instanceof ZodError) {
         writeCommandAudit(dependencies, {
@@ -858,6 +870,17 @@ export const buildInternalApiServer = (
           errorMessage: "invalid_request",
         })
         return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "delete_task",
+          lane: null,
+          status: error.code === "forbidden_mutation" ? "denied" : "failed",
+          errorMessage: error.message,
+        })
+        return reply.code(failure.statusCode).send(failure.body)
       }
 
       const err = error as Error

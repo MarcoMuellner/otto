@@ -75,6 +75,20 @@ const createJobsRepositoryStub = () => {
         nextRunAt: null,
       })
     },
+    runTaskNow: (jobId: string, scheduledFor: number): void => {
+      const existing = tasks.get(jobId)
+      if (!existing) {
+        return
+      }
+
+      tasks.set(jobId, {
+        ...existing,
+        status: "idle",
+        nextRunAt: scheduledFor,
+        terminalState: null,
+        terminalReason: null,
+      })
+    },
     listTasks: (): TaskListRecord[] => {
       return Array.from(tasks.values()).map((task) => ({
         id: task.id,
@@ -502,6 +516,74 @@ describe("buildInternalApiServer", () => {
     // Assert
     expect(deniedCreate.statusCode).toBe(403)
     expect(allowedList.statusCode).toBe(200)
+
+    await app.close()
+  })
+
+  it("denies system-managed task mutations in interactive lane", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "system-heartbeat",
+      type: "heartbeat",
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: null,
+      runAt: 1_000,
+      cadenceMinutes: 5,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 1_000,
+      updatedAt: 1_000,
+    })
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/tasks/update",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        id: "system-heartbeat",
+        type: "attempted-system-mutation",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toMatchObject({
+      error: "forbidden_mutation",
+    })
 
     await app.close()
   })

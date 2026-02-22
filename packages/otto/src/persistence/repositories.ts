@@ -766,6 +766,18 @@ export const createJobsRepository = (database: DatabaseSync) => {
      WHERE id = ?`
   )
 
+  const runTaskNowStatement = database.prepare(
+    `UPDATE jobs
+     SET status = 'idle',
+         next_run_at = ?,
+         terminal_state = NULL,
+         terminal_reason = NULL,
+         lock_token = NULL,
+         lock_expires_at = NULL,
+         updated_at = ?
+     WHERE id = ?`
+  )
+
   const listTasksStatement = database.prepare(
     `SELECT
       id,
@@ -1099,6 +1111,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     cancelTask: (jobId: string, reason: string | null, updatedAt = Date.now()): void => {
       cancelTaskStatement.run(reason, updatedAt, jobId)
+    },
+    runTaskNow: (jobId: string, scheduledFor: number, updatedAt = Date.now()): void => {
+      runTaskNowStatement.run(scheduledFor, updatedAt, jobId)
     },
     listTasks: (): TaskListRecord[] => {
       return listTasksStatement.all() as TaskListRecord[]

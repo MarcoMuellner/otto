@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react"
-import { Link, useLoaderData, useNavigation } from "react-router"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
+import { Link, useLoaderData, useNavigate, useNavigation } from "react-router"
 
 import { JobsGroupCard } from "../components/jobs/jobs-group-card.js"
+import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js"
 import { Switch } from "../components/ui/switch.js"
 import type { ExternalJobListItem } from "../features/jobs/contracts.js"
@@ -24,6 +25,97 @@ type JobsRouteLoaderData =
       message: string
     }
 
+type CreateJobScheduleType = "recurring" | "oneshot"
+
+type CreateJobFormState = {
+  id: string
+  type: string
+  scheduleType: CreateJobScheduleType
+  cadenceMinutes: string
+  runAt: string
+  profileId: string
+  payloadText: string
+}
+
+type MutationFeedback = {
+  kind: "success" | "error"
+  message: string
+}
+
+const defaultCreateJobFormState: CreateJobFormState = {
+  id: "",
+  type: "operator-task",
+  scheduleType: "recurring",
+  cadenceMinutes: "5",
+  runAt: "",
+  profileId: "",
+  payloadText: "",
+}
+
+const systemReservedJobTypes = new Set(["heartbeat", "watchdog_failures"])
+
+const isSystemReservedJobType = (type: string): boolean => {
+  return systemReservedJobTypes.has(type.trim().toLowerCase())
+}
+
+const parseMutationResponse = async (
+  response: Response
+): Promise<{ message: string; body: unknown }> => {
+  let body: unknown = null
+  try {
+    body = (await response.json()) as unknown
+  } catch {
+    body = null
+  }
+
+  if (response.ok) {
+    return {
+      message: "ok",
+      body,
+    }
+  }
+
+  if (body && typeof body === "object") {
+    const candidate = body as {
+      message?: unknown
+      error?: unknown
+    }
+
+    if (typeof candidate.message === "string" && candidate.message.trim().length > 0) {
+      return {
+        message: candidate.message,
+        body,
+      }
+    }
+
+    if (typeof candidate.error === "string" && candidate.error.trim().length > 0) {
+      return {
+        message: candidate.error,
+        body,
+      }
+    }
+  }
+
+  return {
+    message: "Request failed",
+    body,
+  }
+}
+
+const parseDateTimeLocalToEpoch = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    return null
+  }
+
+  const parsed = new Date(trimmed)
+  const timestamp = parsed.getTime()
+  if (!Number.isFinite(timestamp)) {
+    return null
+  }
+
+  return Math.trunc(timestamp)
+}
 export const loader = async (): Promise<JobsRouteLoaderData> => {
   try {
     const client = await createOttoExternalApiClientFromEnvironment()
@@ -43,6 +135,7 @@ export const loader = async (): Promise<JobsRouteLoaderData> => {
 
 export default function JobsRoute() {
   const data = useLoaderData<typeof loader>()
+  const navigate = useNavigate()
   const navigation = useNavigation()
   const isLoading = navigation.state !== "idle"
   const loaderNow = data.status === "success" ? data.now : Date.now()
@@ -50,6 +143,11 @@ export default function JobsRoute() {
   const [searchQuery, setSearchQuery] = useState("")
   const [preferences, setPreferences] = useState<JobsViewPreferences | null>(null)
   const [referenceNow, setReferenceNow] = useState(loaderNow)
+  const [isCreatePanelOpen, setIsCreatePanelOpen] = useState(false)
+  const [createFormState, setCreateFormState] =
+    useState<CreateJobFormState>(defaultCreateJobFormState)
+  const [createFeedback, setCreateFeedback] = useState<MutationFeedback | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
 
   const preferencesStore = useMemo(() => {
     if (typeof window === "undefined") {
@@ -152,6 +250,131 @@ export default function JobsRoute() {
   const systemJobs = filteredJobs.filter((job) => job.managedBy === "system")
   const hasVisibleJobs = filteredJobs.length > 0
 
+  const handleCreateSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isCreating) {
+      return
+    }
+
+    const type = createFormState.type.trim()
+    if (type.length === 0) {
+      setCreateFeedback({
+        kind: "error",
+        message: "Type is required.",
+      })
+      return
+    }
+
+    if (isSystemReservedJobType(type)) {
+      setCreateFeedback({
+        kind: "error",
+        message: "This job type is system-reserved and cannot be created from control plane.",
+      })
+      return
+    }
+
+    const payload: Record<string, unknown> = {
+      type,
+      scheduleType: createFormState.scheduleType,
+    }
+
+    const id = createFormState.id.trim()
+    if (id.length > 0) {
+      payload.id = id
+    }
+
+    if (createFormState.scheduleType === "recurring") {
+      const cadence = Number(createFormState.cadenceMinutes)
+      if (!Number.isInteger(cadence) || cadence < 1) {
+        setCreateFeedback({
+          kind: "error",
+          message: "Cadence must be a positive whole number.",
+        })
+        return
+      }
+
+      payload.cadenceMinutes = cadence
+    } else {
+      const runAt = parseDateTimeLocalToEpoch(createFormState.runAt)
+      if (runAt === null) {
+        setCreateFeedback({
+          kind: "error",
+          message: "Run at is required for one-shot jobs.",
+        })
+        return
+      }
+
+      payload.runAt = runAt
+    }
+
+    const profileId = createFormState.profileId.trim()
+    if (profileId.length > 0) {
+      payload.profileId = profileId
+    }
+
+    const rawPayloadText = createFormState.payloadText.trim()
+    if (rawPayloadText.length > 0) {
+      try {
+        const parsed = JSON.parse(rawPayloadText) as unknown
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("payload-not-object")
+        }
+
+        payload.payload = parsed
+      } catch {
+        setCreateFeedback({
+          kind: "error",
+          message: "Payload must be a valid JSON object.",
+        })
+        return
+      }
+    }
+
+    setIsCreating(true)
+    setCreateFeedback(null)
+
+    try {
+      const response = await fetch("/api/jobs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const outcome = await parseMutationResponse(response)
+      if (!response.ok) {
+        setCreateFeedback({
+          kind: "error",
+          message: outcome.message,
+        })
+        return
+      }
+
+      const responseBody = outcome.body as { id?: unknown } | null
+      const createdId = typeof responseBody?.id === "string" ? responseBody.id : null
+
+      setCreateFeedback({
+        kind: "success",
+        message: "Job created.",
+      })
+
+      if (createdId) {
+        navigate(`/jobs/${encodeURIComponent(createdId)}`)
+        return
+      }
+
+      window.location.reload()
+    } catch {
+      setCreateFeedback({
+        kind: "error",
+        message: "Could not reach the control plane API.",
+      })
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
   return (
     <section className="mx-auto flex h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col px-2 pb-6 pt-16">
       <header className="mb-6 border-b border-[rgba(26,26,26,0.08)] pb-4">
@@ -168,6 +391,19 @@ export default function JobsRoute() {
           >
             ESC / Back
           </Link>
+        </div>
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCreateFeedback(null)
+              setIsCreatePanelOpen((current) => !current)
+            }}
+          >
+            {isCreatePanelOpen ? "Close Create" : "Create Job"}
+          </Button>
         </div>
       </header>
 
@@ -221,6 +457,186 @@ export default function JobsRoute() {
           className="min-h-[44px] gap-2 px-2"
         />
       </div>
+
+      {isCreatePanelOpen ? (
+        <Card className="mb-4">
+          <CardHeader>
+            <CardTitle>Create job</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form className="grid gap-3" onSubmit={handleCreateSubmit}>
+              <div className="grid gap-1">
+                <label htmlFor="create-type" className="text-xs font-mono text-[#666666] uppercase">
+                  Type
+                </label>
+                <input
+                  id="create-type"
+                  value={createFormState.type}
+                  onChange={(event) =>
+                    setCreateFormState((current) => ({ ...current, type: event.target.value }))
+                  }
+                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-1">
+                  <label
+                    htmlFor="create-schedule-type"
+                    className="text-xs font-mono text-[#666666] uppercase"
+                  >
+                    Schedule Type
+                  </label>
+                  <select
+                    id="create-schedule-type"
+                    value={createFormState.scheduleType}
+                    onChange={(event) =>
+                      setCreateFormState((current) => ({
+                        ...current,
+                        scheduleType: event.target.value as CreateJobScheduleType,
+                      }))
+                    }
+                    className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  >
+                    <option value="recurring">Recurring</option>
+                    <option value="oneshot">One-shot</option>
+                  </select>
+                </div>
+
+                {createFormState.scheduleType === "recurring" ? (
+                  <div className="grid gap-1">
+                    <label
+                      htmlFor="create-cadence"
+                      className="text-xs font-mono text-[#666666] uppercase"
+                    >
+                      Cadence Minutes
+                    </label>
+                    <input
+                      id="create-cadence"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={createFormState.cadenceMinutes}
+                      onChange={(event) =>
+                        setCreateFormState((current) => ({
+                          ...current,
+                          cadenceMinutes: event.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                    />
+                  </div>
+                ) : (
+                  <div className="grid gap-1">
+                    <label
+                      htmlFor="create-run-at"
+                      className="text-xs font-mono text-[#666666] uppercase"
+                    >
+                      Run At
+                    </label>
+                    <input
+                      id="create-run-at"
+                      type="datetime-local"
+                      value={createFormState.runAt}
+                      onChange={(event) =>
+                        setCreateFormState((current) => ({ ...current, runAt: event.target.value }))
+                      }
+                      className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-1">
+                  <label htmlFor="create-id" className="text-xs font-mono text-[#666666] uppercase">
+                    Job ID (Optional)
+                  </label>
+                  <input
+                    id="create-id"
+                    value={createFormState.id}
+                    onChange={(event) =>
+                      setCreateFormState((current) => ({ ...current, id: event.target.value }))
+                    }
+                    className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  />
+                </div>
+
+                <div className="grid gap-1">
+                  <label
+                    htmlFor="create-profile-id"
+                    className="text-xs font-mono text-[#666666] uppercase"
+                  >
+                    Profile ID (Optional)
+                  </label>
+                  <input
+                    id="create-profile-id"
+                    value={createFormState.profileId}
+                    onChange={(event) =>
+                      setCreateFormState((current) => ({
+                        ...current,
+                        profileId: event.target.value,
+                      }))
+                    }
+                    className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-1">
+                <label
+                  htmlFor="create-payload"
+                  className="text-xs font-mono text-[#666666] uppercase"
+                >
+                  Payload JSON (Optional)
+                </label>
+                <textarea
+                  id="create-payload"
+                  rows={5}
+                  value={createFormState.payloadText}
+                  onChange={(event) =>
+                    setCreateFormState((current) => ({
+                      ...current,
+                      payloadText: event.target.value,
+                    }))
+                  }
+                  placeholder='{"key":"value"}'
+                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 font-mono text-xs text-[#1a1a1a]"
+                />
+              </div>
+
+              {createFeedback ? (
+                <p
+                  className={
+                    createFeedback.kind === "success"
+                      ? "m-0 text-sm text-[#0f7b3a]"
+                      : "m-0 text-sm text-[#b42318]"
+                  }
+                >
+                  {createFeedback.message}
+                </p>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setCreateFeedback(null)
+                    setCreateFormState(defaultCreateJobFormState)
+                  }}
+                  disabled={isCreating}
+                >
+                  Reset
+                </Button>
+                <Button type="submit" disabled={isCreating}>
+                  {isCreating ? "Creating..." : "Create"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {isLoading ? <p className="mb-3 mt-0 text-xs text-[#888888]">Refreshing jobs...</p> : null}
 

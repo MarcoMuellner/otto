@@ -88,6 +88,78 @@ const createJobRunRecord = (jobId: string, runId = "run-1"): JobRunRecord => {
   }
 }
 
+type JobsRepositoryStub = {
+  listTasks: () => TaskListRecord[]
+  getById: (jobId: string) => JobRecord | null
+  listRunsByJobId: (
+    jobId: string,
+    options?: {
+      limit?: number
+      offset?: number
+    }
+  ) => JobRunRecord[]
+  countRunsByJobId: (jobId: string) => number
+  getRunById: (jobId: string, runId: string) => JobRunRecord | null
+  createTask: (record: JobRecord) => void
+  updateTask: (
+    jobId: string,
+    update: {
+      type: string
+      scheduleType: "recurring" | "oneshot"
+      profileId: string | null
+      runAt: number | null
+      cadenceMinutes: number | null
+      payload: string | null
+      nextRunAt: number | null
+    },
+    updatedAt?: number
+  ) => void
+  cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
+  runTaskNow: (jobId: string, scheduledFor: number, updatedAt?: number) => void
+}
+
+type TaskAuditRepositoryStub = {
+  listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
+  insert: (record: TaskAuditRecord) => void
+}
+
+const createJobsRepositoryStub = (
+  overrides: Partial<JobsRepositoryStub> = {}
+): JobsRepositoryStub => {
+  return {
+    listTasks: () => [],
+    getById: () => null,
+    listRunsByJobId: () => [],
+    countRunsByJobId: () => 0,
+    getRunById: () => null,
+    createTask: () => {
+      return
+    },
+    updateTask: () => {
+      return
+    },
+    cancelTask: () => {
+      return
+    },
+    runTaskNow: () => {
+      return
+    },
+    ...overrides,
+  }
+}
+
+const createTaskAuditRepositoryStub = (
+  overrides: Partial<TaskAuditRepositoryStub> = {}
+): TaskAuditRepositoryStub => {
+  return {
+    listByTaskId: () => [],
+    insert: () => {
+      return
+    },
+    ...overrides,
+  }
+}
+
 describe("resolveExternalApiConfig", () => {
   it("creates and reuses the persisted API token file", async () => {
     // Arrange
@@ -117,16 +189,8 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
-        getById: (): JobRecord | null => null,
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -152,16 +216,8 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
-        getById: (): JobRecord | null => null,
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -192,16 +248,10 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
+      jobsRepository: createJobsRepositoryStub({
         listTasks: (): TaskListRecord[] => tasks,
-        getById: (): JobRecord | null => null,
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -233,16 +283,8 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
-        getById: (): JobRecord | null => null,
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -272,18 +314,12 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
+      jobsRepository: createJobsRepositoryStub({
         getById: (jobId: string): JobRecord | null => {
           return jobId === job.id ? job : null
         },
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -321,16 +357,12 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
+      jobsRepository: createJobsRepositoryStub({
         getById: (): JobRecord | null => job,
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub({
         listByTaskId: (): TaskAuditRecord[] => [createTaskAuditRecord("job-audit")],
-      },
+      }),
     })
 
     // Act
@@ -370,8 +402,7 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
+      jobsRepository: createJobsRepositoryStub({
         getById: (): JobRecord | null => job,
         listRunsByJobId: (
           jobId: string,
@@ -385,11 +416,8 @@ describe("buildExternalApiServer", () => {
           return [createJobRunRecord("job-runs", "run-11")]
         },
         countRunsByJobId: (): number => 37,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -426,19 +454,14 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
+      jobsRepository: createJobsRepositoryStub({
         getById: (): JobRecord | null => job,
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
         getRunById: (jobId: string, runId: string): JobRunRecord | null => {
           expect(jobId).toBe("job-runs")
           return runId === "run-1" ? createJobRunRecord("job-runs", "run-1") : null
         },
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -476,16 +499,10 @@ describe("buildExternalApiServer", () => {
         tokenPath: "/tmp/token",
         baseUrl: "http://0.0.0.0:4190",
       },
-      jobsRepository: {
-        listTasks: (): TaskListRecord[] => [],
+      jobsRepository: createJobsRepositoryStub({
         getById: (): JobRecord | null => job,
-        listRunsByJobId: (): JobRunRecord[] => [],
-        countRunsByJobId: (): number => 0,
-        getRunById: (): JobRunRecord | null => null,
-      },
-      taskAuditRepository: {
-        listByTaskId: (): TaskAuditRecord[] => [],
-      },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
     })
 
     // Act
@@ -502,6 +519,191 @@ describe("buildExternalApiServer", () => {
     expect(response.json()).toMatchObject({
       error: "not_found",
       message: "Run not found",
+    })
+
+    await app.close()
+  })
+
+  it("creates operator-managed jobs via external mutation endpoint", async () => {
+    // Arrange
+    const tasks = new Map<string, JobRecord>()
+    const audit: TaskAuditRecord[] = []
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (jobId: string): JobRecord | null => {
+          return tasks.get(jobId) ?? null
+        },
+        createTask: (record: JobRecord): void => {
+          tasks.set(record.id, record)
+        },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub({
+        insert: (record: TaskAuditRecord): void => {
+          audit.push(record)
+        },
+      }),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/jobs",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        type: "operator-managed task",
+        scheduleType: "oneshot",
+        runAt: 4_000,
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(201)
+    const body = response.json() as {
+      id: string
+      status: string
+    }
+    expect(body.status).toBe("created")
+    expect(tasks.get(body.id)?.type).toBe("operator-managed task")
+    expect(audit[0]).toMatchObject({
+      action: "create",
+      lane: "scheduled",
+      actor: "control_plane",
+    })
+
+    await app.close()
+  })
+
+  it("rejects mutation attempts for system-managed jobs", async () => {
+    // Arrange
+    const systemJob = createJobRecord("system-heartbeat")
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (): JobRecord | null => systemJob,
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/external/jobs/system-heartbeat",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        type: "attempted override",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(403)
+    expect(response.json()).toMatchObject({
+      error: "forbidden_mutation",
+    })
+
+    await app.close()
+  })
+
+  it("schedules mutable job for immediate run", async () => {
+    // Arrange
+    const mutableJob: JobRecord = {
+      ...createJobRecord("job-operator-1"),
+      type: "operator-task",
+    }
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (): JobRecord | null => mutableJob,
+        runTaskNow: (_jobId: string, scheduledFor: number): void => {
+          mutableJob.nextRunAt = scheduledFor
+          mutableJob.status = "idle"
+          mutableJob.terminalState = null
+          mutableJob.terminalReason = null
+        },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/jobs/job-operator-1/run-now",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      id: "job-operator-1",
+      status: "run_now_scheduled",
+    })
+    expect(typeof mutableJob.nextRunAt).toBe("number")
+
+    await app.close()
+  })
+
+  it("returns conflict when run-now is requested for running job", async () => {
+    // Arrange
+    const runningJob: JobRecord = {
+      ...createJobRecord("job-operator-running"),
+      type: "operator-task",
+      status: "running",
+    }
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (): JobRecord | null => runningJob,
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/jobs/job-operator-running/run-now",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toMatchObject({
+      error: "state_conflict",
     })
 
     await app.close()

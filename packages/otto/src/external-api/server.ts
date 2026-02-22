@@ -3,6 +3,16 @@ import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
 import {
+  createTaskMutation,
+  deleteTaskMutation,
+  runTaskNowMutation,
+  taskCreateInputSchema,
+  taskDeleteInputSchema,
+  TaskMutationError,
+  taskUpdateInputSchema,
+  updateTaskMutation,
+} from "../api-services/tasks-mutations.js"
+import {
   getTaskById,
   listTasksForLane,
   mapTaskDetailsForExternal,
@@ -43,9 +53,26 @@ type ExternalApiServerDependencies = {
     ) => JobRunRecord[]
     countRunsByJobId: (jobId: string) => number
     getRunById: (jobId: string, runId: string) => JobRunRecord | null
+    createTask: (record: JobRecord) => void
+    updateTask: (
+      jobId: string,
+      update: {
+        type: string
+        scheduleType: "recurring" | "oneshot"
+        profileId: string | null
+        runAt: number | null
+        cadenceMinutes: number | null
+        payload: string | null
+        nextRunAt: number | null
+      },
+      updatedAt?: number
+    ) => void
+    cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
+    runTaskNow: (jobId: string, scheduledFor: number, updatedAt?: number) => void
   }
   taskAuditRepository: {
     listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
+    insert: (record: TaskAuditRecord) => void
   }
 }
 
@@ -69,6 +96,10 @@ const listRunsQuerySchema = z.object({
 const getRunParamsSchema = z.object({
   id: z.string().trim().min(1),
   runId: z.string().trim().min(1),
+})
+
+const mutateJobParamsSchema = z.object({
+  id: z.string().trim().min(1),
 })
 
 const taskListRecordSchema = z.object({
@@ -161,6 +192,12 @@ const jobRunDetailResponseSchema = z.object({
   run: jobRunEntrySchema,
 })
 
+const taskMutationResponseSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["created", "updated", "deleted", "run_now_scheduled"]),
+  scheduledFor: z.number().int().optional(),
+})
+
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
   const host = environment.OTTO_EXTERNAL_API_HOST?.trim() || DEFAULT_HOST
 
@@ -180,6 +217,46 @@ const resolveApiPort = (environment: NodeJS.ProcessEnv): number => {
   }
 
   return port
+}
+
+const resolveTaskMutationErrorResponse = (error: TaskMutationError) => {
+  if (error.code === "invalid_request") {
+    return {
+      statusCode: 400,
+      body: {
+        error: "invalid_request",
+        message: error.message,
+      },
+    }
+  }
+
+  if (error.code === "not_found") {
+    return {
+      statusCode: 404,
+      body: {
+        error: "not_found",
+        message: error.message,
+      },
+    }
+  }
+
+  if (error.code === "forbidden_mutation") {
+    return {
+      statusCode: 403,
+      body: {
+        error: "forbidden_mutation",
+        message: error.message,
+      },
+    }
+  }
+
+  return {
+    statusCode: 409,
+    body: {
+      error: "state_conflict",
+      message: error.message,
+    },
+  }
 }
 
 /**
@@ -257,6 +334,144 @@ export const buildExternalApiServer = (
 
       const err = error as Error
       dependencies.logger.error({ error: err.message }, "External API job list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/external/jobs", async (request, reply) => {
+    try {
+      const payload = taskCreateInputSchema.parse(request.body)
+      const mutation = createTaskMutation(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        payload,
+        {
+          lane: "scheduled",
+          actor: "control_plane",
+          source: "external_api",
+        }
+      )
+
+      return reply.code(201).send(taskMutationResponseSchema.parse(mutation))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API job create failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.patch("/external/jobs/:id", async (request, reply) => {
+    try {
+      const params = mutateJobParamsSchema.parse(request.params)
+      const payload = taskUpdateInputSchema.parse(request.body)
+
+      const mutation = updateTaskMutation(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        params.id,
+        payload,
+        {
+          lane: "scheduled",
+          actor: "control_plane",
+          source: "external_api",
+        }
+      )
+
+      return reply.code(200).send(taskMutationResponseSchema.parse(mutation))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API job update failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.delete("/external/jobs/:id", async (request, reply) => {
+    try {
+      const params = mutateJobParamsSchema.parse(request.params)
+      const payload = taskDeleteInputSchema.parse(request.body ?? {})
+
+      const mutation = deleteTaskMutation(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        params.id,
+        payload,
+        {
+          lane: "scheduled",
+          actor: "control_plane",
+          source: "external_api",
+        }
+      )
+
+      return reply.code(200).send(taskMutationResponseSchema.parse(mutation))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API job delete failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/external/jobs/:id/run-now", async (request, reply) => {
+    try {
+      const params = mutateJobParamsSchema.parse(request.params)
+      const mutation = runTaskNowMutation(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        params.id,
+        {
+          lane: "scheduled",
+          actor: "control_plane",
+          source: "external_api",
+        }
+      )
+
+      return reply.code(200).send(taskMutationResponseSchema.parse(mutation))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API job run-now failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

@@ -4,6 +4,9 @@ import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 
 import {
+  createJobMutationRequestSchema,
+  deleteJobMutationRequestSchema,
+  externalJobMutationResponseSchema,
   externalJobAuditResponseSchema,
   externalJobRunDetailResponseSchema,
   externalJobRunsResponseSchema,
@@ -11,11 +14,16 @@ import {
   externalJobsResponseSchema,
   healthResponseSchema,
   type ExternalJobAuditResponse,
+  type CreateJobMutationRequest,
+  type DeleteJobMutationRequest,
+  type ExternalJobMutationResponse,
   type ExternalJobRunDetailResponse,
   type ExternalJobRunsResponse,
   type ExternalJobResponse,
   type ExternalJobsResponse,
   type HealthResponse,
+  type UpdateJobMutationRequest,
+  updateJobMutationRequestSchema,
 } from "../features/jobs/contracts.js"
 import { resolveCachedControlPlaneServerConfig, type ControlPlaneServerConfig } from "./env.js"
 
@@ -25,6 +33,7 @@ export type OttoExternalJobResponse = ExternalJobResponse
 export type OttoExternalJobAuditResponse = ExternalJobAuditResponse
 export type OttoExternalJobRunsResponse = ExternalJobRunsResponse
 export type OttoExternalJobRunDetailResponse = ExternalJobRunDetailResponse
+export type OttoExternalJobMutationResponse = ExternalJobMutationResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -37,7 +46,16 @@ export class OttoExternalApiError extends Error {
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-type RequestLike = (url: URL, headers: Record<string, string>) => Promise<RawHttpResponse>
+type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE"
+
+type RequestLike = (
+  url: URL,
+  options: {
+    method: HttpMethod
+    headers: Record<string, string>
+    bodyText?: string
+  }
+) => Promise<RawHttpResponse>
 
 type RawHttpResponse = {
   statusCode: number
@@ -50,9 +68,14 @@ type OttoExternalApiClientInput = {
   requestImpl?: RequestLike
 }
 
-const buildAuthHeaders = (token: string): Record<string, string> => {
+const buildRequestHeaders = (token: string, includeJsonBody: boolean): Record<string, string> => {
   return {
     authorization: `Bearer ${token}`,
+    ...(includeJsonBody
+      ? {
+          "content-type": "application/json",
+        }
+      : {}),
   }
 }
 
@@ -105,15 +128,15 @@ const parseRawResponse = <T>(
   return parsed.data
 }
 
-const requestViaNodeHttp: RequestLike = async (url, headers) => {
+const requestViaNodeHttp: RequestLike = async (url, options) => {
   const requestFn = url.protocol === "https:" ? httpsRequest : httpRequest
 
   return await new Promise<RawHttpResponse>((resolve, reject) => {
     const request = requestFn(
       url,
       {
-        method: "GET",
-        headers,
+        method: options.method,
+        headers: options.headers,
       },
       (response) => {
         let bodyText = ""
@@ -131,6 +154,11 @@ const requestViaNodeHttp: RequestLike = async (url, headers) => {
     )
 
     request.on("error", reject)
+
+    if (options.bodyText) {
+      request.write(options.bodyText)
+    }
+
     request.end()
   })
 }
@@ -147,18 +175,34 @@ export const createOttoExternalApiClient = ({
   fetchImpl,
   requestImpl = requestViaNodeHttp,
 }: OttoExternalApiClientInput) => {
-  const request = async <T>(endpoint: string, schema: z.ZodType<T>): Promise<T> => {
+  const request = async <T>(
+    endpoint: string,
+    schema: z.ZodType<T>,
+    options?: {
+      method?: HttpMethod
+      body?: unknown
+    }
+  ): Promise<T> => {
+    const method = options?.method ?? "GET"
+    const hasBody = options?.body !== undefined
+    const bodyText = hasBody ? JSON.stringify(options.body) : undefined
     const url = new URL(endpoint, config.externalApiBaseUrl)
+
     if (fetchImpl) {
       const response = await fetchImpl(url, {
-        method: "GET",
-        headers: buildAuthHeaders(config.externalApiToken),
+        method,
+        headers: buildRequestHeaders(config.externalApiToken, hasBody),
+        body: bodyText,
       })
 
       return parseResponse(response, schema, endpoint)
     }
 
-    const response = await requestImpl(url, buildAuthHeaders(config.externalApiToken))
+    const response = await requestImpl(url, {
+      method,
+      headers: buildRequestHeaders(config.externalApiToken, hasBody),
+      bodyText,
+    })
 
     return parseRawResponse(response, schema, endpoint)
   }
@@ -206,6 +250,52 @@ export const createOttoExternalApiClient = ({
       return request(
         `/external/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}`,
         externalJobRunDetailResponseSchema
+      )
+    },
+    createJob: async (
+      input: CreateJobMutationRequest
+    ): Promise<OttoExternalJobMutationResponse> => {
+      const payload = createJobMutationRequestSchema.parse(input)
+      return request("/external/jobs", externalJobMutationResponseSchema, {
+        method: "POST",
+        body: payload,
+      })
+    },
+    updateJob: async (
+      jobId: string,
+      input: UpdateJobMutationRequest
+    ): Promise<OttoExternalJobMutationResponse> => {
+      const payload = updateJobMutationRequestSchema.parse(input)
+      return request(
+        `/external/jobs/${encodeURIComponent(jobId)}`,
+        externalJobMutationResponseSchema,
+        {
+          method: "PATCH",
+          body: payload,
+        }
+      )
+    },
+    deleteJob: async (
+      jobId: string,
+      input?: DeleteJobMutationRequest
+    ): Promise<OttoExternalJobMutationResponse> => {
+      const payload = deleteJobMutationRequestSchema.parse(input ?? {})
+      return request(
+        `/external/jobs/${encodeURIComponent(jobId)}`,
+        externalJobMutationResponseSchema,
+        {
+          method: "DELETE",
+          body: payload,
+        }
+      )
+    },
+    runJobNow: async (jobId: string): Promise<OttoExternalJobMutationResponse> => {
+      return request(
+        `/external/jobs/${encodeURIComponent(jobId)}/run-now`,
+        externalJobMutationResponseSchema,
+        {
+          method: "POST",
+        }
       )
     },
   }

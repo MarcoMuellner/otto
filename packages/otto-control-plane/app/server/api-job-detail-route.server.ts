@@ -2,9 +2,26 @@ import {
   createOttoExternalApiClientFromEnvironment,
   OttoExternalApiError,
 } from "./otto-external-api.server.js"
+import {
+  deleteJobMutationRequestSchema,
+  type ExternalJobMutationResponse,
+  type ExternalJobResponse,
+  type UpdateJobMutationRequest,
+  updateJobMutationRequestSchema,
+} from "../features/jobs/contracts.js"
+import {
+  isSystemReservedTaskType,
+  mapJobsMutationErrorToResponse,
+  readJsonActionBody,
+} from "./api-jobs-mutations.server.js"
 
-type ApiJobDetailLoaderDependencies = {
-  loadJob: (jobId: string) => Promise<{ job: unknown }>
+type ApiJobDetailRouteDependencies = {
+  loadJob: (jobId: string) => Promise<ExternalJobResponse>
+  updateJob: (
+    jobId: string,
+    input: UpdateJobMutationRequest
+  ) => Promise<ExternalJobMutationResponse>
+  deleteJob: (jobId: string, reason?: string) => Promise<ExternalJobMutationResponse>
 }
 
 type ApiJobDetailLoaderArgs = {
@@ -13,10 +30,21 @@ type ApiJobDetailLoaderArgs = {
   }
 }
 
-const defaultDependencies: ApiJobDetailLoaderDependencies = {
-  loadJob: async (jobId: string): Promise<{ job: unknown }> => {
+const defaultDependencies: ApiJobDetailRouteDependencies = {
+  loadJob: async (jobId: string): Promise<ExternalJobResponse> => {
     const client = await createOttoExternalApiClientFromEnvironment()
     return client.getJob(jobId)
+  },
+  updateJob: async (
+    jobId: string,
+    input: UpdateJobMutationRequest
+  ): Promise<ExternalJobMutationResponse> => {
+    const client = await createOttoExternalApiClientFromEnvironment()
+    return client.updateJob(jobId, input)
+  },
+  deleteJob: async (jobId: string, reason?: string): Promise<ExternalJobMutationResponse> => {
+    const client = await createOttoExternalApiClientFromEnvironment()
+    return client.deleteJob(jobId, reason ? { reason } : undefined)
   },
 }
 
@@ -28,7 +56,7 @@ const defaultDependencies: ApiJobDetailLoaderDependencies = {
  * @returns React Router loader for `/api/jobs/:jobId`.
  */
 export const createApiJobDetailLoader = (
-  dependencies: ApiJobDetailLoaderDependencies = defaultDependencies
+  dependencies: ApiJobDetailRouteDependencies = defaultDependencies
 ) => {
   return async ({ params }: ApiJobDetailLoaderArgs): Promise<Response> => {
     const jobId = params.jobId?.trim()
@@ -68,4 +96,63 @@ export const createApiJobDetailLoader = (
   }
 }
 
+/**
+ * Creates a job detail mutation action handler so edit/cancel controls can submit through
+ * `/api/jobs/:jobId` with method-based routing.
+ */
+export const createApiJobDetailAction = (
+  dependencies: ApiJobDetailRouteDependencies = defaultDependencies
+) => {
+  return async ({ params, request }: { params: { jobId?: string }; request: Request }) => {
+    const jobId = params.jobId?.trim()
+    if (!jobId) {
+      return Response.json(
+        { error: "invalid_request", message: "jobId is required" },
+        { status: 400 }
+      )
+    }
+
+    const method = request.method.toUpperCase()
+    if (method !== "PATCH" && method !== "DELETE") {
+      return Response.json(
+        {
+          error: "method_not_allowed",
+          message: "Only PATCH and DELETE are supported for /api/jobs/:jobId",
+        },
+        { status: 405 }
+      )
+    }
+
+    const bodyResult = await readJsonActionBody(request)
+    if (!bodyResult.ok) {
+      return bodyResult.response
+    }
+
+    try {
+      if (method === "PATCH") {
+        const payload = updateJobMutationRequestSchema.parse(bodyResult.body)
+        if (payload.type && isSystemReservedTaskType(payload.type)) {
+          return Response.json(
+            {
+              error: "forbidden_mutation",
+              message: "System-reserved job types cannot be set from control plane",
+            },
+            { status: 403 }
+          )
+        }
+
+        const result = await dependencies.updateJob(jobId, payload)
+        return Response.json(result, { status: 200 })
+      }
+
+      const payload = deleteJobMutationRequestSchema.parse(bodyResult.body)
+      const result = await dependencies.deleteJob(jobId, payload.reason)
+      return Response.json(result, { status: 200 })
+    } catch (error) {
+      return mapJobsMutationErrorToResponse(error)
+    }
+  }
+}
+
 export const apiJobDetailLoader = createApiJobDetailLoader()
+export const apiJobDetailAction = createApiJobDetailAction()

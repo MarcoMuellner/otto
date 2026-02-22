@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createApiJobsLoader } from "../../app/server/api-jobs-route.server.js"
+import { createApiJobsAction, createApiJobsLoader } from "../../app/server/api-jobs-route.server.js"
 import { OttoExternalApiError } from "../../app/server/otto-external-api.server.js"
 
 describe("api.jobs loader", () => {
@@ -28,6 +28,9 @@ describe("api.jobs loader", () => {
           ],
         }
       },
+      createJob: async () => {
+        throw new Error("unused in loader test")
+      },
     })
 
     // Act
@@ -45,6 +48,9 @@ describe("api.jobs loader", () => {
       loadJobs: async () => {
         throw new OttoExternalApiError("Runtime unavailable", 503)
       },
+      createJob: async () => {
+        throw new Error("unused in loader test")
+      },
     })
 
     // Act
@@ -56,5 +62,135 @@ describe("api.jobs loader", () => {
     expect(body).toMatchObject({
       error: "runtime_unavailable",
     })
+  })
+})
+
+describe("api.jobs action", () => {
+  it("creates a job with validated payload", async () => {
+    // Arrange
+    const action = createApiJobsAction({
+      loadJobs: async () => {
+        throw new Error("unused in action test")
+      },
+      createJob: async (input) => {
+        expect(input).toMatchObject({
+          type: "operator-task",
+          scheduleType: "recurring",
+          cadenceMinutes: 10,
+        })
+
+        return {
+          id: "operator-job-1",
+          status: "created",
+        }
+      },
+    })
+
+    // Act
+    const response = await action({
+      request: new Request("http://localhost/api/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "operator-task",
+          scheduleType: "recurring",
+          cadenceMinutes: 10,
+        }),
+      }),
+    })
+    const body = await response.json()
+
+    // Assert
+    expect(response.status).toBe(201)
+    expect(body).toEqual({
+      id: "operator-job-1",
+      status: "created",
+    })
+  })
+
+  it("rejects non-post methods", async () => {
+    // Arrange
+    const action = createApiJobsAction({
+      loadJobs: async () => {
+        throw new Error("unused in action test")
+      },
+      createJob: async () => {
+        throw new Error("should not run")
+      },
+    })
+
+    // Act
+    const response = await action({
+      request: new Request("http://localhost/api/jobs", {
+        method: "GET",
+      }),
+    })
+
+    // Assert
+    expect(response.status).toBe(405)
+  })
+
+  it("maps forbidden mutation errors", async () => {
+    // Arrange
+    const action = createApiJobsAction({
+      loadJobs: async () => {
+        throw new Error("unused in action test")
+      },
+      createJob: async () => {
+        throw new OttoExternalApiError("forbidden", 403)
+      },
+    })
+
+    // Act
+    const response = await action({
+      request: new Request("http://localhost/api/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "operator-task",
+          scheduleType: "recurring",
+          cadenceMinutes: 10,
+        }),
+      }),
+    })
+    const body = await response.json()
+
+    // Assert
+    expect(response.status).toBe(403)
+    expect(body).toMatchObject({
+      error: "forbidden_mutation",
+    })
+  })
+
+  it("rejects system-reserved type creation before upstream call", async () => {
+    // Arrange
+    let createCallCount = 0
+    const action = createApiJobsAction({
+      loadJobs: async () => {
+        throw new Error("unused in action test")
+      },
+      createJob: async () => {
+        createCallCount += 1
+        throw new Error("should not run")
+      },
+    })
+
+    // Act
+    const response = await action({
+      request: new Request("http://localhost/api/jobs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "heartbeat",
+          scheduleType: "recurring",
+          cadenceMinutes: 10,
+        }),
+      }),
+    })
+    const body = await response.json()
+
+    // Assert
+    expect(response.status).toBe(403)
+    expect(body).toMatchObject({
+      error: "forbidden_mutation",
+    })
+    expect(createCallCount).toBe(0)
   })
 })

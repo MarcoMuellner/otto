@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { Link, useLoaderData, useNavigation } from "react-router"
+import { useEffect, useState, type FormEvent } from "react"
+import { Link, useLoaderData, useNavigate, useNavigation } from "react-router"
 
 import { JobAuditList } from "../components/jobs/job-audit-list.js"
 import { JobDetailCard } from "../components/jobs/job-detail-card.js"
@@ -23,6 +23,28 @@ type JobDetailLoaderArgs = {
   request: Request
 }
 
+type JobScheduleType = "recurring" | "oneshot"
+
+type JobEditFormState = {
+  type: string
+  scheduleType: JobScheduleType
+  cadenceMinutes: string
+  runAt: string
+  profileId: string
+  payloadText: string
+}
+
+type MutationFeedback = {
+  kind: "success" | "error"
+  message: string
+}
+
+const systemReservedJobTypes = new Set(["heartbeat", "watchdog_failures"])
+
+const isSystemReservedJobType = (type: string): boolean => {
+  return systemReservedJobTypes.has(type.trim().toLowerCase())
+}
+
 const RUN_PAGE_SIZE = 12
 
 const parseRunsOffset = (request: Request): number => {
@@ -43,6 +65,98 @@ const parseSelectedRunId = (request: Request): string | null => {
   const rawRunId = new URL(request.url).searchParams.get("runId")
   const runId = rawRunId?.trim()
   return runId && runId.length > 0 ? runId : null
+}
+
+const formatEpochToDateTimeLocal = (value: number | null): string => {
+  if (value == null) {
+    return ""
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return ""
+  }
+
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+const parseDateTimeLocalToEpoch = (value: string): number | null => {
+  const trimmed = value.trim()
+  if (trimmed.length === 0) {
+    return null
+  }
+
+  const timestamp = new Date(trimmed).getTime()
+  if (!Number.isFinite(timestamp)) {
+    return null
+  }
+
+  return Math.trunc(timestamp)
+}
+
+const buildEditFormStateFromJob = (job: ExternalJobDetail): JobEditFormState => {
+  let payloadText = ""
+  if (job.payload) {
+    try {
+      payloadText = JSON.stringify(JSON.parse(job.payload) as unknown, null, 2)
+    } catch {
+      payloadText = job.payload
+    }
+  }
+
+  return {
+    type: job.type,
+    scheduleType: job.scheduleType,
+    cadenceMinutes: job.cadenceMinutes == null ? "" : String(job.cadenceMinutes),
+    runAt: formatEpochToDateTimeLocal(job.runAt),
+    profileId: job.profileId ?? "",
+    payloadText,
+  }
+}
+
+const parseMutationResponse = async (
+  response: Response
+): Promise<{ message: string; body: unknown }> => {
+  let body: unknown = null
+  try {
+    body = (await response.json()) as unknown
+  } catch {
+    body = null
+  }
+
+  if (response.ok) {
+    return {
+      message: "ok",
+      body,
+    }
+  }
+
+  if (body && typeof body === "object") {
+    const candidate = body as {
+      message?: unknown
+      error?: unknown
+    }
+
+    if (typeof candidate.message === "string" && candidate.message.trim().length > 0) {
+      return {
+        message: candidate.message,
+        body,
+      }
+    }
+
+    if (typeof candidate.error === "string" && candidate.error.trim().length > 0) {
+      return {
+        message: candidate.error,
+        body,
+      }
+    }
+  }
+
+  return {
+    message: "Request failed",
+    body,
+  }
 }
 
 type JobDetailLoaderData =
@@ -128,13 +242,27 @@ export const loader = async ({
 
 export default function JobDetailRoute() {
   const data = useLoaderData<typeof loader>()
+  const navigate = useNavigate()
   const navigation = useNavigation()
   const isLoading = navigation.state !== "idle"
   const loaderNow = data.status === "success" ? data.now : Date.now()
   const [referenceNow, setReferenceNow] = useState(loaderNow)
   const [isInfoPanelOpen, setIsInfoPanelOpen] = useState(false)
+  const [isEditOpen, setIsEditOpen] = useState(false)
+  const [editFormState, setEditFormState] = useState<JobEditFormState | null>(null)
+  const [cancelReason, setCancelReason] = useState("")
+  const [isMutating, setIsMutating] = useState(false)
+  const [mutationFeedback, setMutationFeedback] = useState<MutationFeedback | null>(null)
   const displayTitle =
     data.status === "success" ? getJobDisplayTitle(data.job.type) : "Task inspection"
+
+  useEffect(() => {
+    if (data.status !== "success") {
+      return
+    }
+
+    setEditFormState(buildEditFormStateFromJob(data.job))
+  }, [data])
 
   useEffect(() => {
     setReferenceNow(loaderNow)
@@ -175,6 +303,194 @@ export default function JobDetailRoute() {
       window.removeEventListener("keydown", handleEscape, { capture: true })
     }
   }, [isInfoPanelOpen])
+
+  const submitRunNow = async () => {
+    if (data.status !== "success" || isMutating || !data.job.isMutable) {
+      return
+    }
+
+    setIsMutating(true)
+    setMutationFeedback(null)
+
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(data.job.id)}/run-now`, {
+        method: "POST",
+      })
+      const outcome = await parseMutationResponse(response)
+
+      if (!response.ok) {
+        setMutationFeedback({
+          kind: "error",
+          message: outcome.message,
+        })
+        return
+      }
+
+      setMutationFeedback({
+        kind: "success",
+        message: "Run-now accepted. Scheduler will pick it up immediately.",
+      })
+      window.location.reload()
+    } catch {
+      setMutationFeedback({
+        kind: "error",
+        message: "Could not reach the control plane API.",
+      })
+    } finally {
+      setIsMutating(false)
+    }
+  }
+
+  const submitUpdate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (data.status !== "success" || isMutating || !data.job.isMutable || !editFormState) {
+      return
+    }
+
+    const type = editFormState.type.trim()
+    if (type.length === 0) {
+      setMutationFeedback({
+        kind: "error",
+        message: "Type is required.",
+      })
+      return
+    }
+
+    if (isSystemReservedJobType(type)) {
+      setMutationFeedback({
+        kind: "error",
+        message: "This job type is system-reserved and cannot be set from control plane.",
+      })
+      return
+    }
+
+    const payload: Record<string, unknown> = {
+      type,
+      scheduleType: editFormState.scheduleType,
+    }
+
+    if (editFormState.scheduleType === "recurring") {
+      const cadence = Number(editFormState.cadenceMinutes)
+      if (!Number.isInteger(cadence) || cadence < 1) {
+        setMutationFeedback({
+          kind: "error",
+          message: "Cadence must be a positive whole number.",
+        })
+        return
+      }
+
+      payload.cadenceMinutes = cadence
+    } else {
+      const runAt = parseDateTimeLocalToEpoch(editFormState.runAt)
+      if (runAt === null) {
+        setMutationFeedback({
+          kind: "error",
+          message: "Run at is required for one-shot jobs.",
+        })
+        return
+      }
+
+      payload.runAt = runAt
+      payload.cadenceMinutes = null
+    }
+
+    const trimmedProfileId = editFormState.profileId.trim()
+    payload.profileId = trimmedProfileId.length === 0 ? null : trimmedProfileId
+
+    const payloadText = editFormState.payloadText.trim()
+    if (payloadText.length === 0) {
+      payload.payload = null
+    } else {
+      try {
+        const parsed = JSON.parse(payloadText) as unknown
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("payload-not-object")
+        }
+
+        payload.payload = parsed
+      } catch {
+        setMutationFeedback({
+          kind: "error",
+          message: "Payload must be a valid JSON object.",
+        })
+        return
+      }
+    }
+
+    setIsMutating(true)
+    setMutationFeedback(null)
+
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(data.job.id)}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+      const outcome = await parseMutationResponse(response)
+
+      if (!response.ok) {
+        setMutationFeedback({
+          kind: "error",
+          message: outcome.message,
+        })
+        return
+      }
+
+      setMutationFeedback({
+        kind: "success",
+        message: "Job updated.",
+      })
+      window.location.reload()
+    } catch {
+      setMutationFeedback({
+        kind: "error",
+        message: "Could not reach the control plane API.",
+      })
+    } finally {
+      setIsMutating(false)
+    }
+  }
+
+  const submitCancel = async () => {
+    if (data.status !== "success" || isMutating || !data.job.isMutable) {
+      return
+    }
+
+    setIsMutating(true)
+    setMutationFeedback(null)
+
+    try {
+      const response = await fetch(`/api/jobs/${encodeURIComponent(data.job.id)}`, {
+        method: "DELETE",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          reason: cancelReason.trim().length > 0 ? cancelReason.trim() : undefined,
+        }),
+      })
+      const outcome = await parseMutationResponse(response)
+
+      if (!response.ok) {
+        setMutationFeedback({
+          kind: "error",
+          message: outcome.message,
+        })
+        return
+      }
+
+      navigate("/jobs")
+    } catch {
+      setMutationFeedback({
+        kind: "error",
+        message: "Could not reach the control plane API.",
+      })
+    } finally {
+      setIsMutating(false)
+    }
+  }
 
   return (
     <section className="h-[calc(100dvh-4rem)] w-full overflow-hidden px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
@@ -223,7 +539,240 @@ export default function JobDetailRoute() {
           </Card>
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-3 xl:gap-5">
-            <div className="min-h-0 xl:col-span-2">
+            <div className="min-h-0 space-y-4 xl:col-span-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {!data.job.isMutable ? (
+                    <p className="m-0 text-sm text-[#888888]">
+                      This is a system-managed job and cannot be edited, cancelled, or run-now.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void submitRunNow()}
+                          disabled={isMutating}
+                        >
+                          {isMutating ? "Working..." : "Run Now"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setMutationFeedback(null)
+                            setIsEditOpen((current) => !current)
+                          }}
+                          disabled={isMutating}
+                        >
+                          {isEditOpen ? "Close Edit" : "Edit Job"}
+                        </Button>
+                      </div>
+
+                      {isEditOpen && editFormState ? (
+                        <form className="grid gap-3" onSubmit={submitUpdate}>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="grid gap-1">
+                              <label
+                                htmlFor="edit-type"
+                                className="text-xs font-mono text-[#666666] uppercase"
+                              >
+                                Type
+                              </label>
+                              <input
+                                id="edit-type"
+                                value={editFormState.type}
+                                onChange={(event) =>
+                                  setEditFormState((current) =>
+                                    current ? { ...current, type: event.target.value } : current
+                                  )
+                                }
+                                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                              />
+                            </div>
+
+                            <div className="grid gap-1">
+                              <label
+                                htmlFor="edit-profile-id"
+                                className="text-xs font-mono text-[#666666] uppercase"
+                              >
+                                Profile ID
+                              </label>
+                              <input
+                                id="edit-profile-id"
+                                value={editFormState.profileId}
+                                onChange={(event) =>
+                                  setEditFormState((current) =>
+                                    current
+                                      ? { ...current, profileId: event.target.value }
+                                      : current
+                                  )
+                                }
+                                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <div className="grid gap-1">
+                              <label
+                                htmlFor="edit-schedule-type"
+                                className="text-xs font-mono text-[#666666] uppercase"
+                              >
+                                Schedule Type
+                              </label>
+                              <select
+                                id="edit-schedule-type"
+                                value={editFormState.scheduleType}
+                                onChange={(event) =>
+                                  setEditFormState((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          scheduleType: event.target.value as JobScheduleType,
+                                        }
+                                      : current
+                                  )
+                                }
+                                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                              >
+                                <option value="recurring">Recurring</option>
+                                <option value="oneshot">One-shot</option>
+                              </select>
+                            </div>
+
+                            {editFormState.scheduleType === "recurring" ? (
+                              <div className="grid gap-1">
+                                <label
+                                  htmlFor="edit-cadence"
+                                  className="text-xs font-mono text-[#666666] uppercase"
+                                >
+                                  Cadence Minutes
+                                </label>
+                                <input
+                                  id="edit-cadence"
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  value={editFormState.cadenceMinutes}
+                                  onChange={(event) =>
+                                    setEditFormState((current) =>
+                                      current
+                                        ? {
+                                            ...current,
+                                            cadenceMinutes: event.target.value,
+                                          }
+                                        : current
+                                    )
+                                  }
+                                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                                />
+                              </div>
+                            ) : (
+                              <div className="grid gap-1">
+                                <label
+                                  htmlFor="edit-run-at"
+                                  className="text-xs font-mono text-[#666666] uppercase"
+                                >
+                                  Run At
+                                </label>
+                                <input
+                                  id="edit-run-at"
+                                  type="datetime-local"
+                                  value={editFormState.runAt}
+                                  onChange={(event) =>
+                                    setEditFormState((current) =>
+                                      current
+                                        ? {
+                                            ...current,
+                                            runAt: event.target.value,
+                                          }
+                                        : current
+                                    )
+                                  }
+                                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid gap-1">
+                            <label
+                              htmlFor="edit-payload"
+                              className="text-xs font-mono text-[#666666] uppercase"
+                            >
+                              Payload JSON
+                            </label>
+                            <textarea
+                              id="edit-payload"
+                              rows={4}
+                              value={editFormState.payloadText}
+                              onChange={(event) =>
+                                setEditFormState((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        payloadText: event.target.value,
+                                      }
+                                    : current
+                                )
+                              }
+                              className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 font-mono text-xs text-[#1a1a1a]"
+                            />
+                          </div>
+
+                          <div className="flex justify-end">
+                            <Button type="submit" disabled={isMutating}>
+                              {isMutating ? "Saving..." : "Save Changes"}
+                            </Button>
+                          </div>
+                        </form>
+                      ) : null}
+
+                      <div className="grid gap-2 rounded-xl border border-[rgba(180,35,24,0.2)] bg-[rgba(180,35,24,0.05)] p-3">
+                        <p className="m-0 text-sm text-[#7a271a]">Cancel job</p>
+                        <input
+                          id="cancel-reason"
+                          value={cancelReason}
+                          onChange={(event) => setCancelReason(event.target.value)}
+                          placeholder="Optional reason"
+                          className="rounded-lg border border-[rgba(180,35,24,0.28)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                        />
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void submitCancel()}
+                            disabled={isMutating}
+                          >
+                            {isMutating ? "Cancelling..." : "Cancel Job"}
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {mutationFeedback ? (
+                    <p
+                      className={
+                        mutationFeedback.kind === "success"
+                          ? "m-0 text-sm text-[#0f7b3a]"
+                          : "m-0 text-sm text-[#b42318]"
+                      }
+                    >
+                      {mutationFeedback.message}
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+
               <JobRunsPanel
                 jobId={data.job.id}
                 runs={data.runs}

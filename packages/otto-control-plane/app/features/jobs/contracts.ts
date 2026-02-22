@@ -92,6 +92,67 @@ export const externalJobRunDetailResponseSchema = z.object({
   run: externalJobRunSchema,
 })
 
+export const createJobMutationRequestSchema = z
+  .object({
+    id: z.string().trim().min(1).optional(),
+    type: z.string().trim().min(1),
+    scheduleType: z.enum(["recurring", "oneshot"]),
+    runAt: z.number().int().optional(),
+    cadenceMinutes: z.number().int().min(1).optional(),
+    payload: z.record(z.string(), z.unknown()).optional(),
+    profileId: z.string().trim().min(1).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.scheduleType === "oneshot" && input.runAt == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "runAt is required for oneshot tasks",
+      })
+    }
+
+    if (input.scheduleType === "recurring" && input.cadenceMinutes == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "cadenceMinutes is required for recurring tasks",
+      })
+    }
+  })
+
+export const updateJobMutationRequestSchema = z
+  .object({
+    type: z.string().trim().min(1).optional(),
+    scheduleType: z.enum(["recurring", "oneshot"]).optional(),
+    runAt: z.number().int().nullable().optional(),
+    cadenceMinutes: z.number().int().min(1).nullable().optional(),
+    payload: z.record(z.string(), z.unknown()).nullable().optional(),
+    profileId: z.string().trim().min(1).nullable().optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.scheduleType === "recurring" && input.cadenceMinutes === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "cadenceMinutes cannot be null for recurring tasks",
+      })
+    }
+
+    if (input.scheduleType === "oneshot" && input.runAt === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "runAt cannot be null for oneshot tasks",
+      })
+    }
+  })
+
+export const deleteJobMutationRequestSchema = z.object({
+  reason: z.string().trim().min(1).optional(),
+})
+
+export const externalJobMutationResponseSchema = z.object({
+  id: z.string().min(1),
+  status: z.enum(["created", "updated", "deleted", "run_now_scheduled"]),
+  scheduledFor: z.number().int().optional(),
+})
+
 export type ExternalJobListItem = z.infer<typeof externalJobListItemSchema>
 export type ExternalJobDetail = z.infer<typeof externalJobDetailSchema>
 export type ExternalJobAuditEntry = z.infer<typeof externalJobAuditEntrySchema>
@@ -102,3 +163,7 @@ export type ExternalJobAuditResponse = z.infer<typeof externalJobAuditResponseSc
 export type ExternalJobRunsResponse = z.infer<typeof externalJobRunsResponseSchema>
 export type ExternalJobRunDetailResponse = z.infer<typeof externalJobRunDetailResponseSchema>
 export type HealthResponse = z.infer<typeof healthResponseSchema>
+export type CreateJobMutationRequest = z.infer<typeof createJobMutationRequestSchema>
+export type UpdateJobMutationRequest = z.infer<typeof updateJobMutationRequestSchema>
+export type DeleteJobMutationRequest = z.infer<typeof deleteJobMutationRequestSchema>
+export type ExternalJobMutationResponse = z.infer<typeof externalJobMutationResponseSchema>

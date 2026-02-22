@@ -243,4 +243,98 @@ describe("createOttoExternalApiClient", () => {
     expect(runs.runs[0]?.id).toBe("run-21")
     expect(run.run.id).toBe("run-21")
   })
+
+  it("sends mutation requests with method, auth, and json body", async () => {
+    // Arrange
+    const seenRequests: Array<{
+      url: string
+      method: string
+      authorization: string | null
+      contentType: string | null
+      bodyText: string | null
+    }> = []
+
+    const successBody = {
+      id: "job-1",
+      status: "updated",
+    }
+
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        seenRequests.push({
+          url: typeof input === "string" ? input : input.toString(),
+          method: init?.method ?? "GET",
+          authorization: resolveAuthorizationHeader(init?.headers),
+          contentType: (() => {
+            if (!init?.headers) {
+              return null
+            }
+
+            if (init.headers instanceof Headers) {
+              return init.headers.get("content-type")
+            }
+
+            if (Array.isArray(init.headers)) {
+              const found = init.headers.find(([key]) => key.toLowerCase() === "content-type")
+              return found ? found[1] : null
+            }
+
+            const headerRecord = init.headers as Record<string, string | undefined>
+            return headerRecord["content-type"] ?? headerRecord["Content-Type"] ?? null
+          })(),
+          bodyText: typeof init?.body === "string" ? init.body : null,
+        })
+
+        return Response.json(successBody, { status: 200 })
+      },
+    })
+
+    // Act
+    await client.createJob({
+      type: "operator task",
+      scheduleType: "oneshot",
+      runAt: 1_000,
+    })
+
+    await client.updateJob("job-1", {
+      type: "updated",
+    })
+
+    await client.deleteJob("job-1", {
+      reason: "no longer needed",
+    })
+
+    await client.runJobNow("job-1")
+
+    // Assert
+    expect(seenRequests).toHaveLength(4)
+    expect(seenRequests[0]).toMatchObject({
+      url: "http://127.0.0.1:4190/external/jobs",
+      method: "POST",
+      authorization: "Bearer secret-token",
+      contentType: "application/json",
+    })
+    expect(seenRequests[1]).toMatchObject({
+      url: "http://127.0.0.1:4190/external/jobs/job-1",
+      method: "PATCH",
+      authorization: "Bearer secret-token",
+      contentType: "application/json",
+    })
+    expect(seenRequests[2]).toMatchObject({
+      url: "http://127.0.0.1:4190/external/jobs/job-1",
+      method: "DELETE",
+      authorization: "Bearer secret-token",
+      contentType: "application/json",
+    })
+    expect(seenRequests[3]).toMatchObject({
+      url: "http://127.0.0.1:4190/external/jobs/job-1/run-now",
+      method: "POST",
+      authorization: "Bearer secret-token",
+      contentType: null,
+    })
+  })
 })

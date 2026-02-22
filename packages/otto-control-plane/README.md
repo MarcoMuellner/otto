@@ -17,12 +17,16 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
 
 - UI routes:
   - `/` health/home shell
-  - `/jobs` scheduled jobs list with system/operator grouping
-  - `/jobs/:jobId` job detail + recent audit evidence
+  - `/jobs` scheduled jobs list with system/operator grouping and create form
+  - `/jobs/:jobId` job detail + recent audit evidence + edit/cancel/run-now actions
 - BFF routes:
   - `GET /api/health`
   - `GET /api/jobs`
+  - `POST /api/jobs`
   - `GET /api/jobs/:jobId`
+  - `PATCH /api/jobs/:jobId`
+  - `DELETE /api/jobs/:jobId`
+  - `POST /api/jobs/:jobId/run-now`
   - `GET /api/jobs/:jobId/audit`
   - `GET /api/jobs/:jobId/runs`
   - `GET /api/jobs/:jobId/runs/:runId`
