@@ -1,3 +1,5 @@
+import { createServer } from "node:http"
+
 import { describe, expect, it } from "vitest"
 
 import { runModelCliCommand } from "../../src/model-cli.js"
@@ -358,5 +360,58 @@ describe("runModelCliCommand", () => {
     expect(code).toBe(1)
     expect(errors[0]).toContain("Cannot reach Otto external API")
     expect(errors[0]).toContain("http://127.0.0.1:4190")
+  })
+
+  it("falls back to node:http for bad-port fetch restrictions", async () => {
+    // Arrange
+    const { errors, streams } = createStreams()
+    const server = createServer((request, response) => {
+      if (request.url === "/external/models/catalog") {
+        response.writeHead(200, { "content-type": "application/json" })
+        response.end(
+          JSON.stringify({
+            models: ["openai/gpt-5.3-codex"],
+            updatedAt: 1_000,
+            source: "network",
+          })
+        )
+        return
+      }
+
+      response.writeHead(404, { "content-type": "application/json" })
+      response.end(JSON.stringify({ error: "not_found" }))
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject)
+      server.listen(10080, "127.0.0.1", () => {
+        server.off("error", reject)
+        resolve()
+      })
+    })
+
+    try {
+      const environment = {
+        ...testEnv,
+        OTTO_EXTERNAL_API_URL: "http://127.0.0.1:10080",
+      }
+
+      // Act
+      const code = await runModelCliCommand(["model", "list"], streams, environment, fetch)
+
+      // Assert
+      expect(code).toBe(0)
+      expect(errors).toEqual([])
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error)
+            return
+          }
+
+          resolve()
+        })
+      })
+    }
   })
 })

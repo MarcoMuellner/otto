@@ -1,3 +1,5 @@
+import { request as requestHttp } from "node:http"
+import { request as requestHttps } from "node:https"
 import { readFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -25,6 +27,11 @@ type ModelCliContext = {
   baseUrl: string
   token: string
   fetchImpl: FetchLike
+}
+
+type HttpResponseSnapshot = {
+  statusCode: number
+  bodyText: string
 }
 
 const updateTaskModelResponseSchema = z.object({
@@ -96,6 +103,58 @@ const resolveExternalApiToken = async (
   return token
 }
 
+const requestExternalApiViaNodeHttp = async (
+  context: ModelCliContext,
+  endpoint: string,
+  options: {
+    method: "GET" | "POST" | "PUT" | "PATCH"
+    bodyText?: string
+  }
+): Promise<HttpResponseSnapshot> => {
+  const target = new URL(endpoint, context.baseUrl)
+  const requestImpl = target.protocol === "https:" ? requestHttps : requestHttp
+  const requestBody = options.bodyText ?? ""
+
+  return await new Promise((resolve, reject) => {
+    const request = requestImpl(
+      {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port,
+        path: `${target.pathname}${target.search}`,
+        method: options.method,
+        headers: {
+          authorization: `Bearer ${context.token}`,
+          ...(requestBody.length > 0
+            ? {
+                "content-type": "application/json",
+                "content-length": Buffer.byteLength(requestBody),
+              }
+            : {}),
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = []
+        response.on("data", (chunk: Buffer) => {
+          chunks.push(chunk)
+        })
+        response.on("end", () => {
+          resolve({
+            statusCode: response.statusCode ?? 500,
+            bodyText: Buffer.concat(chunks).toString("utf8"),
+          })
+        })
+      }
+    )
+
+    request.on("error", reject)
+    if (requestBody.length > 0) {
+      request.write(requestBody)
+    }
+    request.end()
+  })
+}
+
 const requestExternalApi = async <T>(
   context: ModelCliContext,
   endpoint: string,
@@ -107,9 +166,12 @@ const requestExternalApi = async <T>(
 ): Promise<T> => {
   const method = options?.method ?? "GET"
   const hasBody = options?.body !== undefined
-  let response: Response
+  const requestBodyText = hasBody ? JSON.stringify(options?.body) : undefined
+  let statusCode = 500
+  let text = ""
+
   try {
-    response = await context.fetchImpl(new URL(endpoint, context.baseUrl), {
+    const response = await context.fetchImpl(new URL(endpoint, context.baseUrl), {
       method,
       headers: {
         authorization: `Bearer ${context.token}`,
@@ -119,17 +181,37 @@ const requestExternalApi = async <T>(
             }
           : {}),
       },
-      body: hasBody ? JSON.stringify(options?.body) : undefined,
+      body: requestBodyText,
     })
+
+    statusCode = response.status
+    text = await response.text()
   } catch (error) {
-    const err = error as Error
-    throw new Error(
-      `Cannot reach Otto external API at ${context.baseUrl} (${err.message}). ` +
-        `Ensure otto serve is running and the URL/token are correct.`
-    )
+    const err = error as Error & { cause?: { message?: string } }
+
+    if (err.cause?.message?.includes("bad port")) {
+      try {
+        const fallback = await requestExternalApiViaNodeHttp(context, endpoint, {
+          method,
+          bodyText: requestBodyText,
+        })
+        statusCode = fallback.statusCode
+        text = fallback.bodyText
+      } catch (fallbackError) {
+        const fallbackErr = fallbackError as Error
+        throw new Error(
+          `Cannot reach Otto external API at ${context.baseUrl} (${fallbackErr.message}). ` +
+            `Ensure otto serve is running and the URL/token are correct.`
+        )
+      }
+    } else {
+      throw new Error(
+        `Cannot reach Otto external API at ${context.baseUrl} (${err.message}). ` +
+          `Ensure otto serve is running and the URL/token are correct.`
+      )
+    }
   }
 
-  const text = await response.text()
   let body: unknown = {}
   if (text.length > 0) {
     try {
@@ -139,7 +221,7 @@ const requestExternalApi = async <T>(
     }
   }
 
-  if (!response.ok) {
+  if (statusCode < 200 || statusCode >= 300) {
     const parsedError = z
       .object({
         error: z.string().optional(),
@@ -152,7 +234,7 @@ const requestExternalApi = async <T>(
       : "request failed"
 
     throw new Error(
-      `Otto external API ${method} ${endpoint} failed (${response.status}): ${suffix}`
+      `Otto external API ${method} ${endpoint} failed (${statusCode}): ${suffix}`
     )
   }
 
