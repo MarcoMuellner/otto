@@ -274,7 +274,6 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     throw error
   }
 
-  
   try {
     logger.info(
       {

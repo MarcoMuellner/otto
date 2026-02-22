@@ -35,13 +35,10 @@ const resolveFlowDefaultModelRef = (config: OttoConfig, flow: RuntimeModelFlow):
 export const createRuntimeModelResolver = (dependencies: RuntimeModelResolverDependencies) => {
   const resolveCandidate = async (
     input: ResolutionInput
-  ): Promise<
-    | {
-        modelRef: string
-        source: Exclude<ModelSelectionSource, "fallback_global_default" | "global_default">
-      }
-    | null
-  > => {
+  ): Promise<{
+    modelRef: string
+    source: Exclude<ModelSelectionSource, "fallback_global_default" | "global_default">
+  } | null> => {
     if (input.jobModelRef) {
       return {
         modelRef: input.jobModelRef,
