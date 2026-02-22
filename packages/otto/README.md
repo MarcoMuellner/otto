@@ -39,9 +39,11 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - External API token: reuses `~/.otto/secrets/internal-api.token`; runtime exports `OTTO_EXTERNAL_API_URL`
 - API boundary: `/internal/*` is OpenCode-tool/internal runtime integration, `/external/*` is authenticated LAN-facing control-plane/app integration
 - External jobs endpoints currently exposed:
+  - System: `GET /external/system/status`, `POST /external/system/restart`
   - Read: `GET /external/jobs?lane=scheduled`, `GET /external/jobs/:id`, `GET /external/jobs/:id/audit`, `GET /external/jobs/:id/runs`, `GET /external/jobs/:id/runs/:runId`
   - Mutations: `POST /external/jobs`, `PATCH /external/jobs/:id`, `DELETE /external/jobs/:id`, `POST /external/jobs/:id/run-now`
   - Guardrail: system-managed jobs are read-only; mutation attempts return `403 forbidden_mutation`
+  - Restart caveat: `/external/system/restart` requests runtime process recycle only; control-plane stays online as a separate service.
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
 - Extension store root: `~/.otto/extensions/store/<id>/<version>`
 - Extension activation state file: `~/.otto/extensions/state.json`
@@ -67,6 +69,12 @@ curl -fsSL https://raw.githubusercontent.com/MarcoMuellner/otto/main/install.sh 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MarcoMuellner/otto/main/install.sh | bash -s -- --nightly
+```
+
+- Pull request nightly install (install artifact published for a PR):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MarcoMuellner/otto/main/install.sh | bash -s -- --pr <number>
 ```
 
 - Installing from a fork/other repository (optional):
@@ -99,6 +107,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl extension remove <id>[@version]`
   - `ottoctl update` (defaults to latest stable)
   - `ottoctl update --nightly` (latest nightly)
+  - `ottoctl update --pr <number>` (nightly artifact for a specific pull request)
   - `ottoctl update --repo <owner>/<repo>` (optional override for custom repo)
 - `ottoctl start|restart|stop` manage both runtime (`otto`) and control-plane (`otto-control-plane`) services when control-plane artifact is present in the installed release.
 

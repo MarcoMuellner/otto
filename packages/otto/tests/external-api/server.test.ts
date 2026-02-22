@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { buildExternalApiServer, resolveExternalApiConfig } from "../../src/external-api/server.js"
 import type {
+  CommandAuditRecord,
   JobRecord,
   JobRunRecord,
   TaskAuditRecord,
@@ -123,6 +124,10 @@ type TaskAuditRepositoryStub = {
   insert: (record: TaskAuditRecord) => void
 }
 
+type CommandAuditRepositoryStub = {
+  insert: (record: CommandAuditRecord) => void
+}
+
 const createJobsRepositoryStub = (
   overrides: Partial<JobsRepositoryStub> = {}
 ): JobsRepositoryStub => {
@@ -153,6 +158,17 @@ const createTaskAuditRepositoryStub = (
 ): TaskAuditRepositoryStub => {
   return {
     listByTaskId: () => [],
+    insert: () => {
+      return
+    },
+    ...overrides,
+  }
+}
+
+const createCommandAuditRepositoryStub = (
+  overrides: Partial<CommandAuditRepositoryStub> = {}
+): CommandAuditRepositoryStub => {
+  return {
     insert: () => {
       return
     },
@@ -232,6 +248,116 @@ describe("buildExternalApiServer", () => {
     // Assert
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({ status: "ok" })
+
+    await app.close()
+  })
+
+  it("returns system status snapshot when authorized", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      systemStatusProvider: () => {
+        return {
+          status: "degraded",
+          checkedAt: 1_700_000_000_000,
+          runtime: {
+            version: "0.1.0-test",
+            pid: 1234,
+            startedAt: 1_699_999_999_000,
+            uptimeSec: 12.5,
+          },
+          services: [
+            {
+              id: "runtime",
+              label: "Otto Runtime",
+              status: "ok",
+              message: "Runtime process is active",
+            },
+            {
+              id: "telegram_worker",
+              label: "Telegram Worker",
+              status: "degraded",
+              message: "Telegram worker unavailable",
+            },
+          ],
+        }
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/system/status",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      status: "degraded",
+      runtime: { version: "0.1.0-test" },
+      services: [
+        { id: "runtime", status: "ok" },
+        { id: "telegram_worker", status: "degraded" },
+      ],
+    })
+
+    await app.close()
+  })
+
+  it("accepts runtime restart and writes command audit", async () => {
+    // Arrange
+    let restartCallCount = 0
+    const auditRecords: CommandAuditRecord[] = []
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      restartRuntime: async () => {
+        restartCallCount += 1
+      },
+      commandAuditRepository: createCommandAuditRepositoryStub({
+        insert: (record: CommandAuditRecord): void => {
+          auditRecords.push(record)
+        },
+      }),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/system/restart",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(202)
+    expect(response.json()).toMatchObject({ status: "accepted" })
+    expect(restartCallCount).toBe(1)
+    expect(auditRecords[0]).toMatchObject({
+      command: "external_system_restart",
+      status: "success",
+    })
 
     await app.close()
   })

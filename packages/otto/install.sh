@@ -138,6 +138,7 @@ EOF
 main() {
   local channel="stable"
   local repo=""
+  local pr_number=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -147,6 +148,15 @@ main() {
         ;;
       --repo)
         repo="${2:-}"
+        shift 2
+        ;;
+      --pr)
+        pr_number="${2:-}"
+        if [[ ! "${pr_number}" =~ ^[0-9]+$ ]]; then
+          error "--pr expects a pull request number"
+          exit 1
+        fi
+        channel="pr-${pr_number}"
         shift 2
         ;;
       *)

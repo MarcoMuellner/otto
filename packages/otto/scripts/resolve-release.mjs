@@ -1,14 +1,22 @@
 import process from "node:process"
 
-const [repo, channel = "stable"] = process.argv.slice(2)
+const [repo, channelInput = "stable"] = process.argv.slice(2)
 
 if (!repo) {
   console.error("Missing repo argument")
   process.exit(1)
 }
 
+const isPrChannel = /^pr-[0-9]+$/u.test(channelInput)
+const channel = isPrChannel ? "pr" : channelInput
+
+if (!(channel === "stable" || channel === "nightly" || channel === "pr")) {
+  console.error(`Unsupported release channel: ${channelInput}`)
+  process.exit(1)
+}
+
 const endpoint =
-  channel === "nightly"
+  channel === "nightly" || channel === "pr"
     ? `https://api.github.com/repos/${repo}/releases?per_page=50`
     : `https://api.github.com/repos/${repo}/releases/latest`
 
@@ -46,7 +54,29 @@ const resolveNightly = () => {
   const releases = Array.isArray(payload) ? payload : []
 
   for (const release of releases) {
-    if (!release?.prerelease) {
+    if (!release?.prerelease || !String(release?.tag_name ?? "").startsWith("nightly-")) {
+      continue
+    }
+
+    const selected = pickAsset(release)
+    if (selected) {
+      return selected
+    }
+  }
+
+  return null
+}
+
+const resolvePr = () => {
+  if (!isPrChannel) {
+    return null
+  }
+
+  const releases = Array.isArray(payload) ? payload : []
+  const targetTag = `${channelInput}-nightly`
+
+  for (const release of releases) {
+    if (!release?.prerelease || release?.tag_name !== targetTag) {
       continue
     }
 
@@ -67,7 +97,8 @@ const resolveStable = () => {
   return pickAsset(payload)
 }
 
-const selected = channel === "nightly" ? resolveNightly() : resolveStable()
+const selected =
+  channel === "nightly" ? resolveNightly() : channel === "pr" ? resolvePr() : resolveStable()
 
 if (!selected?.tag || !selected?.url || !selected?.name) {
   console.error(`No ${channel} release artifact found`)

@@ -97,6 +97,87 @@ describe("createOttoExternalApiClient", () => {
     expect(payload).toEqual({ jobs: [createListItem()] })
   })
 
+  it("returns system status payload", async () => {
+    // Arrange
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (): Promise<Response> => {
+        return Response.json(
+          {
+            status: "ok",
+            checkedAt: 1_700_000_000_000,
+            runtime: {
+              version: "0.1.0-dev",
+              pid: 1234,
+              startedAt: 1_699_999_999_000,
+              uptimeSec: 42,
+            },
+            services: [
+              {
+                id: "runtime",
+                label: "Otto Runtime",
+                status: "ok",
+                message: "Runtime process is active",
+              },
+            ],
+          },
+          { status: 200 }
+        )
+      },
+    })
+
+    // Act
+    const payload = await client.getSystemStatus()
+
+    // Assert
+    expect(payload).toMatchObject({
+      status: "ok",
+      runtime: { version: "0.1.0-dev" },
+    })
+  })
+
+  it("posts restart system request", async () => {
+    // Arrange
+    const seenRequests: Array<{ url: string; method: string }> = []
+
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        seenRequests.push({
+          url: typeof input === "string" ? input : input.toString(),
+          method: init?.method ?? "GET",
+        })
+
+        return Response.json(
+          {
+            status: "accepted",
+            requestedAt: 1_700_000_000_000,
+            message: "Runtime restart requested",
+          },
+          { status: 202 }
+        )
+      },
+    })
+
+    // Act
+    const payload = await client.restartSystem()
+
+    // Assert
+    expect(payload.status).toBe("accepted")
+    expect(seenRequests).toEqual([
+      {
+        url: "http://127.0.0.1:4190/external/system/restart",
+        method: "POST",
+      },
+    ])
+  })
+
   it("throws OttoExternalApiError on non-2xx responses", async () => {
     // Arrange
     const client = createOttoExternalApiClient({

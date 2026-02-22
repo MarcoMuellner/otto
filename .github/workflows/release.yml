@@ -25,6 +25,31 @@ on:
       - ".github/workflows/release.yml"
     tags:
       - "v*"
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - closed
+    paths:
+      - "packages/otto/src/**"
+      - "packages/otto/tests/**"
+      - "packages/otto/scripts/**"
+      - "packages/otto/bin/ottoctl"
+      - "packages/otto/install.sh"
+      - "packages/otto/package.json"
+      - "packages/otto/README.md"
+      - "packages/otto/tsconfig.json"
+      - "packages/otto/tsdown.config.ts"
+      - "packages/otto/vitest.config.ts"
+      - "packages/otto/.prettierrc.json"
+      - "packages/otto/.oxlintrc.json"
+      - "packages/otto-control-plane/**"
+      - "packages/otto-extension-sdk/**"
+      - "install.sh"
+      - "pnpm-lock.yaml"
+      - "scripts/resolve-release.mjs"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: write
@@ -33,6 +58,12 @@ jobs:
   build-and-release:
     name: Build and publish release
     runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'pull_request' ||
+      (
+        github.event.action != 'closed' &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
 
     steps:
       - name: Checkout
@@ -64,6 +95,13 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
             RELEASE_NAME="Otto ${GITHUB_REF_NAME}"
             PRERELEASE="false"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            TAG_NAME="pr-${PR_NUMBER}-nightly"
+            PACKAGE_VERSION="$(node -p "require('./packages/otto/package.json').version")"
+            VERSION="${PACKAGE_VERSION}-pr.${PR_NUMBER}+${SHORT_SHA}"
+            RELEASE_NAME="Otto PR #${PR_NUMBER} Nightly (${SHORT_SHA})"
+            PRERELEASE="true"
           else
             TIMESTAMP="$(date -u +%Y%m%d%H%M%S)"
             TAG_NAME="nightly-${TIMESTAMP}-${SHORT_SHA}"
@@ -77,6 +115,14 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
           echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Remove previous PR nightly release
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "${{ steps.meta.outputs.tag_name }}" --yes --cleanup-tag || true
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/${{ steps.meta.outputs.tag_name }}" || true
 
       - name: Quality checks
         run: pnpm run check
@@ -139,3 +185,19 @@ jobs:
           name: ${{ steps.meta.outputs.release_name }}
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
           files: release/*.tgz
+
+  cleanup-pr-release:
+    name: Cleanup PR nightly release
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Delete PR release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: pr-${{ github.event.pull_request.number }}-nightly
+        run: |
+          gh release delete "${TAG_NAME}" --yes --cleanup-tag || true
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/${TAG_NAME}" || true
