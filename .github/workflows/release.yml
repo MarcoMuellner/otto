@@ -122,7 +122,7 @@ jobs:
             "./README.md"
             "./control-plane/build/server/index.js"
             "./control-plane/build/client/assets/"
-            "./control-plane/node_modules/.bin/react-router-serve"
+            "./control-plane/node_modules/@react-router/serve/dist/cli.js"
           )
 
           for required_path in "${required_paths[@]}"; do

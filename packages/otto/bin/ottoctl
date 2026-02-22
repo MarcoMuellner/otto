@@ -152,17 +152,17 @@ control_plane_server_path() {
   echo "${CURRENT_LINK}/control-plane/build/server/index.js"
 }
 
-control_plane_serve_bin_path() {
-  echo "${CURRENT_LINK}/control-plane/node_modules/.bin/react-router-serve"
+control_plane_serve_cli_path() {
+  echo "${CURRENT_LINK}/control-plane/node_modules/@react-router/serve/dist/cli.js"
 }
 
 has_control_plane_release() {
   local server_path
   server_path="$(control_plane_server_path)"
-  local serve_bin
-  serve_bin="$(control_plane_serve_bin_path)"
+  local serve_cli
+  serve_cli="$(control_plane_serve_cli_path)"
 
-  [[ -f "${server_path}" ]] && [[ -x "${serve_bin}" ]]
+  [[ -f "${server_path}" ]] && [[ -f "${serve_cli}" ]]
 }
 
 ensure_runtime_env_file() {
@@ -1330,8 +1330,8 @@ EOF
     control_plane_port="$(resolve_control_plane_port)"
     local control_plane_server
     control_plane_server="$(control_plane_server_path)"
-    local control_plane_serve_bin
-    control_plane_serve_bin="$(control_plane_serve_bin_path)"
+    local control_plane_serve_cli
+    control_plane_serve_cli="$(control_plane_serve_cli_path)"
 
     cat > "${control_plane_service_file}" <<EOF
 [Unit]
@@ -1340,7 +1340,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${control_plane_serve_bin} ${control_plane_server} --host ${control_plane_host} --port ${control_plane_port}
+ExecStart=${node_path} ${control_plane_serve_cli} ${control_plane_server} --host ${control_plane_host} --port ${control_plane_port}
 WorkingDirectory=${CURRENT_LINK}/control-plane
 Restart=on-failure
 RestartSec=5
@@ -1425,8 +1425,8 @@ EOF
     control_plane_port="$(resolve_control_plane_port)"
     local control_plane_server
     control_plane_server="$(control_plane_server_path)"
-    local control_plane_serve_bin
-    control_plane_serve_bin="$(control_plane_serve_bin_path)"
+    local control_plane_serve_cli
+    control_plane_serve_cli="$(control_plane_serve_cli_path)"
 
     cat > "${CONTROL_PLANE_PLIST_FILE}" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1437,7 +1437,8 @@ EOF
   <string>${CONTROL_PLANE_PLIST_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${control_plane_serve_bin}</string>
+    <string>${node_path}</string>
+    <string>${control_plane_serve_cli}</string>
     <string>${control_plane_server}</string>
     <string>--host</string>
     <string>${control_plane_host}</string>
