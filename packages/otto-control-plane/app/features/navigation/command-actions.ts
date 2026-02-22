@@ -53,7 +53,7 @@ export const commandActions: CommandAction[] = [
     group: "quick",
     icon: "system",
     tone: "success",
-    disabled: true,
+    to: "/system",
   },
   {
     id: "quick-settings",

@@ -6,6 +6,33 @@ export const healthResponseSchema = z.object({
   status: z.literal("ok"),
 })
 
+export const systemServiceStatusSchema = z.enum(["ok", "degraded", "disabled"])
+
+export const externalSystemServiceSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  status: systemServiceStatusSchema,
+  message: z.string().trim().min(1),
+})
+
+export const externalSystemStatusResponseSchema = z.object({
+  status: z.enum(["ok", "degraded"]),
+  checkedAt: z.number().int(),
+  runtime: z.object({
+    version: z.string().trim().min(1),
+    pid: z.number().int().min(1),
+    startedAt: z.number().int(),
+    uptimeSec: z.number().min(0),
+  }),
+  services: z.array(externalSystemServiceSchema),
+})
+
+export const externalSystemRestartResponseSchema = z.object({
+  status: z.literal("accepted"),
+  requestedAt: z.number().int(),
+  message: z.string().trim().min(1),
+})
+
 export const externalJobListItemSchema = z.object({
   id: z.string().min(1),
   type: z.string().min(1),
@@ -163,6 +190,9 @@ export type ExternalJobAuditResponse = z.infer<typeof externalJobAuditResponseSc
 export type ExternalJobRunsResponse = z.infer<typeof externalJobRunsResponseSchema>
 export type ExternalJobRunDetailResponse = z.infer<typeof externalJobRunDetailResponseSchema>
 export type HealthResponse = z.infer<typeof healthResponseSchema>
+export type ExternalSystemService = z.infer<typeof externalSystemServiceSchema>
+export type ExternalSystemStatusResponse = z.infer<typeof externalSystemStatusResponseSchema>
+export type ExternalSystemRestartResponse = z.infer<typeof externalSystemRestartResponseSchema>
 export type CreateJobMutationRequest = z.infer<typeof createJobMutationRequestSchema>
 export type UpdateJobMutationRequest = z.infer<typeof updateJobMutationRequestSchema>
 export type DeleteJobMutationRequest = z.infer<typeof deleteJobMutationRequestSchema>

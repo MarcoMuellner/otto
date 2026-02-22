@@ -5,7 +5,11 @@ import { constants } from "node:fs"
 import type { Logger } from "pino"
 
 import { ensureOttoConfigFile } from "../config/otto-config.js"
-import { resolveExternalApiConfig, startExternalApiServer } from "../external-api/server.js"
+import {
+  buildExternalSystemStatusSnapshot,
+  resolveExternalApiConfig,
+  startExternalApiServer,
+} from "../external-api/server.js"
 import { resolveInternalApiConfig, startInternalApiServer } from "../internal-api/server.js"
 import { startOpencodeServer } from "../opencode/server.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
@@ -59,6 +63,7 @@ const waitForShutdownSignal = async (): Promise<NodeJS.Signals> => {
  * @param homeDirectory Optional home override used by tests and embedding.
  */
 export const runServe = async (logger: Logger, homeDirectory?: string): Promise<void> => {
+  const runtimeStartedAt = Date.now()
   const { config, configPath, created } = await ensureOttoConfigFile(homeDirectory)
 
   if (created) {
@@ -100,6 +105,45 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   const internalApiConfig = await resolveInternalApiConfig(config.ottoHome)
   const externalApiConfig = await resolveExternalApiConfig(config.ottoHome)
   const schedulerConfig = resolveSchedulerConfig()
+  const systemServiceStates: Record<
+    "runtime" | "opencode" | "internal_api" | "external_api" | "scheduler" | "telegram_worker",
+    {
+      label: string
+      status: "ok" | "degraded" | "disabled"
+      message: string
+    }
+  > = {
+    runtime: {
+      label: "Otto Runtime",
+      status: "ok",
+      message: "Runtime process is active",
+    },
+    opencode: {
+      label: "OpenCode Server",
+      status: "degraded",
+      message: "OpenCode server is starting",
+    },
+    internal_api: {
+      label: "Internal API",
+      status: "degraded",
+      message: "Internal API is starting",
+    },
+    external_api: {
+      label: "External API",
+      status: "degraded",
+      message: "External API is starting",
+    },
+    scheduler: {
+      label: "Scheduler",
+      status: "degraded",
+      message: "Scheduler is starting",
+    },
+    telegram_worker: {
+      label: "Telegram Worker",
+      status: "degraded",
+      message: "Telegram worker is starting",
+    },
+  }
 
   process.env.OTTO_INTERNAL_API_URL = internalApiConfig.baseUrl
   process.env.OTTO_INTERNAL_API_TOKEN = internalApiConfig.token
@@ -120,6 +164,11 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       taskAuditRepository,
       commandAuditRepository,
     })
+    systemServiceStates.internal_api = {
+      ...systemServiceStates.internal_api,
+      status: "ok",
+      message: "Internal API is reachable",
+    }
   } catch (error) {
     persistenceDatabase.close()
     throw error
@@ -134,9 +183,57 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     externalApiServer = await startExternalApiServer({
       logger,
       config: externalApiConfig,
+      systemStatusProvider: () => {
+        return buildExternalSystemStatusSnapshot({
+          startedAt: runtimeStartedAt,
+          services: [
+            {
+              id: "runtime",
+              ...systemServiceStates.runtime,
+            },
+            {
+              id: "opencode",
+              ...systemServiceStates.opencode,
+            },
+            {
+              id: "internal_api",
+              ...systemServiceStates.internal_api,
+            },
+            {
+              id: "external_api",
+              ...systemServiceStates.external_api,
+            },
+            {
+              id: "scheduler",
+              ...systemServiceStates.scheduler,
+            },
+            {
+              id: "telegram_worker",
+              ...systemServiceStates.telegram_worker,
+            },
+          ],
+        })
+      },
+      restartRuntime: async () => {
+        logger.warn({ source: "external_api" }, "Runtime restart requested")
+        setTimeout(() => {
+          try {
+            process.kill(process.pid, "SIGTERM")
+          } catch (error) {
+            const err = error as Error
+            logger.error({ error: err.message }, "Failed to send runtime restart signal")
+          }
+        }, 150)
+      },
       jobsRepository,
       taskAuditRepository,
+      commandAuditRepository,
     })
+    systemServiceStates.external_api = {
+      ...systemServiceStates.external_api,
+      status: "ok",
+      message: "External API is reachable",
+    }
   } catch (error) {
     await internalApiServer.close()
     persistenceDatabase.close()
@@ -159,6 +256,11 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       port: config.opencode.port,
       configPath: opencodeConfigPath,
     })
+    systemServiceStates.opencode = {
+      ...systemServiceStates.opencode,
+      status: "ok",
+      message: "OpenCode server is reachable",
+    }
   } catch (error) {
     await externalApiServer.close()
     await internalApiServer.close()
@@ -238,13 +340,30 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     config: schedulerConfig,
     executeClaimedJob: taskExecutionEngine.executeClaimedJob,
   })
+  systemServiceStates.scheduler = {
+    ...systemServiceStates.scheduler,
+    status: "ok",
+    message: "Scheduler kernel is active",
+  }
 
   try {
     const telegramConfig = resolveTelegramWorkerConfig(config.telegram)
     telegramWorker = await startTelegramWorker(logger, telegramConfig)
+    systemServiceStates.telegram_worker = {
+      ...systemServiceStates.telegram_worker,
+      status: telegramConfig.enabled ? "ok" : "disabled",
+      message: telegramConfig.enabled
+        ? "Telegram worker is active"
+        : "Telegram worker disabled in configuration",
+    }
     logger.info({ enabled: telegramConfig.enabled }, "Telegram worker startup completed")
   } catch (error) {
     const err = error as Error
+    systemServiceStates.telegram_worker = {
+      ...systemServiceStates.telegram_worker,
+      status: "degraded",
+      message: `Telegram worker unavailable: ${err.message}`,
+    }
     logger.warn(
       { error: err.message },
       "Telegram worker did not start; continuing serve mode without Telegram"

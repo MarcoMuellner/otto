@@ -7,6 +7,8 @@ import {
   createJobMutationRequestSchema,
   deleteJobMutationRequestSchema,
   externalJobMutationResponseSchema,
+  externalSystemRestartResponseSchema,
+  externalSystemStatusResponseSchema,
   externalJobAuditResponseSchema,
   externalJobRunDetailResponseSchema,
   externalJobRunsResponseSchema,
@@ -17,6 +19,8 @@ import {
   type CreateJobMutationRequest,
   type DeleteJobMutationRequest,
   type ExternalJobMutationResponse,
+  type ExternalSystemRestartResponse,
+  type ExternalSystemStatusResponse,
   type ExternalJobRunDetailResponse,
   type ExternalJobRunsResponse,
   type ExternalJobResponse,
@@ -34,6 +38,8 @@ export type OttoExternalJobAuditResponse = ExternalJobAuditResponse
 export type OttoExternalJobRunsResponse = ExternalJobRunsResponse
 export type OttoExternalJobRunDetailResponse = ExternalJobRunDetailResponse
 export type OttoExternalJobMutationResponse = ExternalJobMutationResponse
+export type OttoExternalSystemStatusResponse = ExternalSystemStatusResponse
+export type OttoExternalSystemRestartResponse = ExternalSystemRestartResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -210,6 +216,14 @@ export const createOttoExternalApiClient = ({
   return {
     getHealth: async (): Promise<OttoExternalHealthResponse> => {
       return request("/external/health", healthResponseSchema)
+    },
+    getSystemStatus: async (): Promise<OttoExternalSystemStatusResponse> => {
+      return request("/external/system/status", externalSystemStatusResponseSchema)
+    },
+    restartSystem: async (): Promise<OttoExternalSystemRestartResponse> => {
+      return request("/external/system/restart", externalSystemRestartResponseSchema, {
+        method: "POST",
+      })
     },
     listJobs: async (): Promise<OttoExternalJobsResponse> => {
       return request("/external/jobs?lane=scheduled", externalJobsResponseSchema)
