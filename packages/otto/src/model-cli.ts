@@ -49,16 +49,29 @@ Commands:
   task set-model <task-id> <provider/model|inherit>
 `
 
+const normalizeExternalApiBaseUrl = (baseUrl: string): string => {
+  try {
+    const parsed = new URL(baseUrl)
+    if (parsed.hostname === "0.0.0.0") {
+      parsed.hostname = "127.0.0.1"
+    }
+
+    return parsed.toString().replace(/\/$/, "")
+  } catch {
+    return baseUrl
+  }
+}
+
 const resolveExternalApiBaseUrl = (environment: ModelCliEnvironment): string => {
   const explicitBaseUrl = environment.OTTO_EXTERNAL_API_URL?.trim()
   if (explicitBaseUrl) {
-    return explicitBaseUrl
+    return normalizeExternalApiBaseUrl(explicitBaseUrl)
   }
 
   const rawHost = environment.OTTO_EXTERNAL_API_HOST?.trim()
   const host = !rawHost || rawHost === "0.0.0.0" ? "127.0.0.1" : rawHost
   const port = environment.OTTO_EXTERNAL_API_PORT?.trim() || "4190"
-  return `http://${host}:${port}`
+  return normalizeExternalApiBaseUrl(`http://${host}:${port}`)
 }
 
 const resolveExternalApiToken = async (
@@ -94,18 +107,27 @@ const requestExternalApi = async <T>(
 ): Promise<T> => {
   const method = options?.method ?? "GET"
   const hasBody = options?.body !== undefined
-  const response = await context.fetchImpl(new URL(endpoint, context.baseUrl), {
-    method,
-    headers: {
-      authorization: `Bearer ${context.token}`,
-      ...(hasBody
-        ? {
-            "content-type": "application/json",
-          }
-        : {}),
-    },
-    body: hasBody ? JSON.stringify(options?.body) : undefined,
-  })
+  let response: Response
+  try {
+    response = await context.fetchImpl(new URL(endpoint, context.baseUrl), {
+      method,
+      headers: {
+        authorization: `Bearer ${context.token}`,
+        ...(hasBody
+          ? {
+              "content-type": "application/json",
+            }
+          : {}),
+      },
+      body: hasBody ? JSON.stringify(options?.body) : undefined,
+    })
+  } catch (error) {
+    const err = error as Error
+    throw new Error(
+      `Cannot reach Otto external API at ${context.baseUrl} (${err.message}). ` +
+        `Ensure otto serve is running and the URL/token are correct.`
+    )
+  }
 
   const text = await response.text()
   let body: unknown = {}

@@ -313,4 +313,50 @@ describe("runModelCliCommand", () => {
     expect(code).toBe(1)
     expect(errors[0]).toContain("interactiveAssistant")
   })
+
+  it("normalizes explicit 0.0.0.0 API URL to loopback", async () => {
+    // Arrange
+    const { errors, streams } = createStreams()
+    const seenUrls: string[] = []
+    const environment = {
+      ...testEnv,
+      OTTO_EXTERNAL_API_URL: "http://0.0.0.0:4190",
+    }
+
+    const fetchMock: typeof fetch = async (input) => {
+      seenUrls.push(resolveUrl(input))
+      return Response.json(
+        {
+          models: ["openai/gpt-5.3-codex"],
+          updatedAt: 1_000,
+          source: "network",
+        },
+        { status: 200 }
+      )
+    }
+
+    // Act
+    const code = await runModelCliCommand(["model", "list"], streams, environment, fetchMock)
+
+    // Assert
+    expect(code).toBe(0)
+    expect(errors).toEqual([])
+    expect(seenUrls[0]).toBe("http://127.0.0.1:4190/external/models/catalog")
+  })
+
+  it("prints actionable message when API is unreachable", async () => {
+    // Arrange
+    const { errors, streams } = createStreams()
+    const fetchMock: typeof fetch = async () => {
+      throw new TypeError("fetch failed")
+    }
+
+    // Act
+    const code = await runModelCliCommand(["model", "list"], streams, testEnv, fetchMock)
+
+    // Assert
+    expect(code).toBe(1)
+    expect(errors[0]).toContain("Cannot reach Otto external API")
+    expect(errors[0]).toContain("http://127.0.0.1:4190")
+  })
 })
