@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
-import { Link, useLoaderData, useNavigate, useNavigation } from "react-router"
+import { Link, useLoaderData, useNavigate, useNavigation, useRevalidator } from "react-router"
+import { toast } from "sonner"
 
 import { JobAuditList } from "../components/jobs/job-audit-list.js"
 import { JobDetailCard } from "../components/jobs/job-detail-card.js"
@@ -244,11 +245,13 @@ export default function JobDetailRoute() {
   const data = useLoaderData<typeof loader>()
   const navigate = useNavigate()
   const navigation = useNavigation()
+  const revalidator = useRevalidator()
   const isLoading = navigation.state !== "idle"
   const loaderNow = data.status === "success" ? data.now : Date.now()
   const [referenceNow, setReferenceNow] = useState(loaderNow)
   const [isInfoPanelOpen, setIsInfoPanelOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
+  const [isCancelOpen, setIsCancelOpen] = useState(false)
   const [editFormState, setEditFormState] = useState<JobEditFormState | null>(null)
   const [cancelReason, setCancelReason] = useState("")
   const [isMutating, setIsMutating] = useState(false)
@@ -319,23 +322,14 @@ export default function JobDetailRoute() {
       const outcome = await parseMutationResponse(response)
 
       if (!response.ok) {
-        setMutationFeedback({
-          kind: "error",
-          message: outcome.message,
-        })
+        toast.error(outcome.message)
         return
       }
 
-      setMutationFeedback({
-        kind: "success",
-        message: "Run-now accepted. Scheduler will pick it up immediately.",
-      })
-      window.location.reload()
+      toast.success("Run-now accepted. Scheduler will pick it up immediately.")
+      revalidator.revalidate()
     } catch {
-      setMutationFeedback({
-        kind: "error",
-        message: "Could not reach the control plane API.",
-      })
+      toast.error("Could not reach the control plane API.")
     } finally {
       setIsMutating(false)
     }
@@ -541,21 +535,22 @@ export default function JobDetailRoute() {
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-3 xl:gap-5">
             <div className="min-h-0 space-y-4 xl:col-span-2">
               <Card>
-                <CardHeader>
+                <CardHeader className="pb-1">
                   <CardTitle>Actions</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 pt-1 pb-3">
                   {!data.job.isMutable ? (
                     <p className="m-0 text-sm text-[#888888]">
                       This is a system-managed job and cannot be edited, cancelled, or run-now.
                     </p>
                   ) : (
                     <>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
+                          className="px-2 py-1.5 text-[10px] tracking-[0.06em] sm:px-3 sm:py-2 sm:text-xs sm:tracking-[0.09em]"
                           onClick={() => void submitRunNow()}
                           disabled={isMutating}
                         >
@@ -565,6 +560,7 @@ export default function JobDetailRoute() {
                           type="button"
                           variant="outline"
                           size="sm"
+                          className="px-2 py-1.5 text-[10px] tracking-[0.06em] sm:px-3 sm:py-2 sm:text-xs sm:tracking-[0.09em]"
                           onClick={() => {
                             setMutationFeedback(null)
                             setIsEditOpen((current) => !current)
@@ -572,6 +568,19 @@ export default function JobDetailRoute() {
                           disabled={isMutating}
                         >
                           {isEditOpen ? "Close Edit" : "Edit Job"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="px-2 py-1.5 text-[10px] tracking-[0.06em] sm:px-3 sm:py-2 sm:text-xs sm:tracking-[0.09em]"
+                          onClick={() => {
+                            setMutationFeedback(null)
+                            setIsCancelOpen((current) => !current)
+                          }}
+                          disabled={isMutating}
+                        >
+                          {isCancelOpen ? "Close Cancel" : "Cancel Job"}
                         </Button>
                       </div>
 
@@ -735,27 +744,43 @@ export default function JobDetailRoute() {
                         </form>
                       ) : null}
 
-                      <div className="grid gap-2 rounded-xl border border-[rgba(180,35,24,0.2)] bg-[rgba(180,35,24,0.05)] p-3">
-                        <p className="m-0 text-sm text-[#7a271a]">Cancel job</p>
-                        <input
-                          id="cancel-reason"
-                          value={cancelReason}
-                          onChange={(event) => setCancelReason(event.target.value)}
-                          placeholder="Optional reason"
-                          className="rounded-lg border border-[rgba(180,35,24,0.28)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
-                        />
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => void submitCancel()}
-                            disabled={isMutating}
-                          >
-                            {isMutating ? "Cancelling..." : "Cancel Job"}
-                          </Button>
+                      {isCancelOpen ? (
+                        <div className="grid gap-2 rounded-xl border border-[rgba(26,26,26,0.12)] bg-[rgba(26,26,26,0.02)] p-3">
+                          <p className="m-0 text-sm text-[#555555]">
+                            This will stop the job and mark it cancelled.
+                          </p>
+                          <input
+                            id="cancel-reason"
+                            value={cancelReason}
+                            onChange={(event) => setCancelReason(event.target.value)}
+                            placeholder="Optional reason"
+                            className="rounded-lg border border-[rgba(26,26,26,0.18)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setIsCancelOpen(false)
+                              }}
+                              disabled={isMutating}
+                            >
+                              Never Mind
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="border-[rgba(180,35,24,0.35)] text-[#7a271a] hover:bg-[rgba(180,35,24,0.08)]"
+                              onClick={() => void submitCancel()}
+                              disabled={isMutating}
+                            >
+                              {isMutating ? "Cancelling..." : "Confirm Cancel"}
+                            </Button>
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
                     </>
                   )}
 
