@@ -24,7 +24,10 @@ const isEditableTarget = (target: EventTarget | null): boolean => {
 
   const tagName = target.tagName
   return (
-    target.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT"
+    target.isContentEditable ||
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT"
   )
 }
 

@@ -113,7 +113,7 @@ describe("createOttoExternalApiClient", () => {
     await expect(client.getHealth()).rejects.toBeInstanceOf(OttoExternalApiError)
   })
 
-  it("fetches job details and audit payload", async () => {
+  it("fetches job details, audit, and run payloads", async () => {
     // Arrange
     const responses = new Map<string, Response>([
       [
@@ -164,6 +164,53 @@ describe("createOttoExternalApiClient", () => {
           { status: 200 }
         ),
       ],
+      [
+        "http://127.0.0.1:4190/external/jobs/job-1/runs?limit=10&offset=20",
+        Response.json(
+          {
+            taskId: "job-1",
+            total: 44,
+            limit: 10,
+            offset: 20,
+            runs: [
+              {
+                id: "run-21",
+                jobId: "job-1",
+                scheduledFor: 2_000,
+                startedAt: 2_001,
+                finishedAt: 2_010,
+                status: "success",
+                errorCode: null,
+                errorMessage: null,
+                resultJson: '{"status":"success","summary":"done","errors":[]}',
+                createdAt: 2_001,
+              },
+            ],
+          },
+          { status: 200 }
+        ),
+      ],
+      [
+        "http://127.0.0.1:4190/external/jobs/job-1/runs/run-21",
+        Response.json(
+          {
+            taskId: "job-1",
+            run: {
+              id: "run-21",
+              jobId: "job-1",
+              scheduledFor: 2_000,
+              startedAt: 2_001,
+              finishedAt: 2_010,
+              status: "success",
+              errorCode: null,
+              errorMessage: null,
+              resultJson: '{"status":"success","summary":"done","errors":[]}',
+              createdAt: 2_001,
+            },
+          },
+          { status: 200 }
+        ),
+      ],
     ])
 
     const client = createOttoExternalApiClient({
@@ -185,10 +232,15 @@ describe("createOttoExternalApiClient", () => {
     // Act
     const detail = await client.getJob("job-1")
     const audit = await client.getJobAudit("job-1", 25)
+    const runs = await client.getJobRuns("job-1", { limit: 10, offset: 20 })
+    const run = await client.getJobRun("job-1", "run-21")
 
     // Assert
     expect(detail.job.id).toBe("job-1")
     expect(audit.taskId).toBe("job-1")
     expect(audit.entries[0]?.id).toBe("audit-1")
+    expect(runs.total).toBe(44)
+    expect(runs.runs[0]?.id).toBe("run-21")
+    expect(run.run.id).toBe("run-21")
   })
 })

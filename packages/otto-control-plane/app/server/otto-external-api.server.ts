@@ -5,10 +5,14 @@ import { request as httpsRequest } from "node:https"
 
 import {
   externalJobAuditResponseSchema,
+  externalJobRunDetailResponseSchema,
+  externalJobRunsResponseSchema,
   externalJobResponseSchema,
   externalJobsResponseSchema,
   healthResponseSchema,
   type ExternalJobAuditResponse,
+  type ExternalJobRunDetailResponse,
+  type ExternalJobRunsResponse,
   type ExternalJobResponse,
   type ExternalJobsResponse,
   type HealthResponse,
@@ -19,6 +23,8 @@ export type OttoExternalHealthResponse = HealthResponse
 export type OttoExternalJobsResponse = ExternalJobsResponse
 export type OttoExternalJobResponse = ExternalJobResponse
 export type OttoExternalJobAuditResponse = ExternalJobAuditResponse
+export type OttoExternalJobRunsResponse = ExternalJobRunsResponse
+export type OttoExternalJobRunDetailResponse = ExternalJobRunDetailResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -172,6 +178,34 @@ export const createOttoExternalApiClient = ({
       return request(
         `/external/jobs/${encodeURIComponent(jobId)}/audit?limit=${sanitizedLimit}`,
         externalJobAuditResponseSchema
+      )
+    },
+    getJobRuns: async (
+      jobId: string,
+      options?: {
+        limit?: number
+        offset?: number
+      }
+    ): Promise<OttoExternalJobRunsResponse> => {
+      const rawLimit = options?.limit
+      const rawOffset = options?.offset
+
+      const sanitizedLimit =
+        typeof rawLimit === "number" && Number.isInteger(rawLimit)
+          ? Math.min(Math.max(rawLimit, 1), 200)
+          : 20
+      const sanitizedOffset =
+        typeof rawOffset === "number" && Number.isInteger(rawOffset) ? Math.max(rawOffset, 0) : 0
+
+      return request(
+        `/external/jobs/${encodeURIComponent(jobId)}/runs?limit=${sanitizedLimit}&offset=${sanitizedOffset}`,
+        externalJobRunsResponseSchema
+      )
+    },
+    getJobRun: async (jobId: string, runId: string): Promise<OttoExternalJobRunDetailResponse> => {
+      return request(
+        `/external/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(runId)}`,
+        externalJobRunDetailResponseSchema
       )
     },
   }

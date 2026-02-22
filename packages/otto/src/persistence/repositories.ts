@@ -840,9 +840,50 @@ export const createJobsRepository = (database: DatabaseSync) => {
       error_message as errorMessage,
       result_json as resultJson,
       created_at as createdAt
+      FROM job_runs
+      WHERE job_id = ?
+      ORDER BY started_at DESC`
+  )
+
+  const listRunsByJobIdPagedStatement = database.prepare(
+    `SELECT
+      id,
+      job_id as jobId,
+      scheduled_for as scheduledFor,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      error_code as errorCode,
+      error_message as errorMessage,
+      result_json as resultJson,
+      created_at as createdAt
      FROM job_runs
      WHERE job_id = ?
-     ORDER BY started_at DESC`
+     ORDER BY started_at DESC
+     LIMIT ? OFFSET ?`
+  )
+
+  const countRunsByJobIdStatement = database.prepare(
+    `SELECT COUNT(1) as total
+     FROM job_runs
+     WHERE job_id = ?`
+  )
+
+  const getRunByIdStatement = database.prepare(
+    `SELECT
+      id,
+      job_id as jobId,
+      scheduled_for as scheduledFor,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      error_code as errorCode,
+      error_message as errorMessage,
+      result_json as resultJson,
+      created_at as createdAt
+     FROM job_runs
+     WHERE job_id = ?
+       AND id = ?`
   )
 
   const listRecentFailedRunsStatement = database.prepare(
@@ -988,8 +1029,32 @@ export const createJobsRepository = (database: DatabaseSync) => {
         lockToken
       )
     },
-    listRunsByJobId: (jobId: string): JobRunRecord[] => {
+    listRunsByJobId: (
+      jobId: string,
+      options?: {
+        limit?: number
+        offset?: number
+      }
+    ): JobRunRecord[] => {
+      if (typeof options?.limit === "number") {
+        const limit = Number.isInteger(options.limit) ? Math.max(1, options.limit) : 50
+        const offset =
+          typeof options.offset === "number" && Number.isInteger(options.offset)
+            ? Math.max(0, options.offset)
+            : 0
+
+        return listRunsByJobIdPagedStatement.all(jobId, limit, offset) as JobRunRecord[]
+      }
+
       return listRunsByJobIdStatement.all(jobId) as JobRunRecord[]
+    },
+    countRunsByJobId: (jobId: string): number => {
+      const row = countRunsByJobIdStatement.get(jobId) as { total: number } | undefined
+      return row?.total ?? 0
+    },
+    getRunById: (jobId: string, runId: string): JobRunRecord | null => {
+      const row = getRunByIdStatement.get(jobId, runId) as JobRunRecord | undefined
+      return row ?? null
     },
     listRecentFailedRuns: (sinceTimestamp: number, limit = 50): FailedJobRunRecord[] => {
       return listRecentFailedRunsStatement.all(sinceTimestamp, limit) as FailedJobRunRecord[]

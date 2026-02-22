@@ -53,6 +53,19 @@ export const externalJobAuditEntrySchema = z.object({
   createdAt: z.number().int(),
 })
 
+export const externalJobRunSchema = z.object({
+  id: z.string().min(1),
+  jobId: z.string().min(1),
+  scheduledFor: z.number().int().nullable(),
+  startedAt: z.number().int(),
+  finishedAt: z.number().int().nullable(),
+  status: z.enum(["success", "failed", "skipped"]),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  resultJson: z.string().nullable(),
+  createdAt: z.number().int(),
+})
+
 export const externalJobsResponseSchema = z.object({
   jobs: z.array(externalJobListItemSchema),
 })
@@ -66,10 +79,26 @@ export const externalJobAuditResponseSchema = z.object({
   entries: z.array(externalJobAuditEntrySchema),
 })
 
+export const externalJobRunsResponseSchema = z.object({
+  taskId: z.string().min(1),
+  total: z.number().int().min(0),
+  limit: z.number().int().min(1).max(200),
+  offset: z.number().int().min(0),
+  runs: z.array(externalJobRunSchema),
+})
+
+export const externalJobRunDetailResponseSchema = z.object({
+  taskId: z.string().min(1),
+  run: externalJobRunSchema,
+})
+
 export type ExternalJobListItem = z.infer<typeof externalJobListItemSchema>
 export type ExternalJobDetail = z.infer<typeof externalJobDetailSchema>
 export type ExternalJobAuditEntry = z.infer<typeof externalJobAuditEntrySchema>
+export type ExternalJobRun = z.infer<typeof externalJobRunSchema>
 export type ExternalJobsResponse = z.infer<typeof externalJobsResponseSchema>
 export type ExternalJobResponse = z.infer<typeof externalJobResponseSchema>
 export type ExternalJobAuditResponse = z.infer<typeof externalJobAuditResponseSchema>
+export type ExternalJobRunsResponse = z.infer<typeof externalJobRunsResponseSchema>
+export type ExternalJobRunDetailResponse = z.infer<typeof externalJobRunDetailResponseSchema>
 export type HealthResponse = z.infer<typeof healthResponseSchema>

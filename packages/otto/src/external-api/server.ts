@@ -10,7 +10,12 @@ import {
 } from "../api-services/tasks-read.js"
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
-import type { JobRecord, TaskAuditRecord, TaskListRecord } from "../persistence/repositories.js"
+import type {
+  JobRecord,
+  JobRunRecord,
+  TaskAuditRecord,
+  TaskListRecord,
+} from "../persistence/repositories.js"
 
 const DEFAULT_HOST = "0.0.0.0"
 const DEFAULT_PORT = 4190
@@ -29,6 +34,15 @@ type ExternalApiServerDependencies = {
   jobsRepository: {
     listTasks: () => TaskListRecord[]
     getById: (jobId: string) => JobRecord | null
+    listRunsByJobId: (
+      jobId: string,
+      options?: {
+        limit?: number
+        offset?: number
+      }
+    ) => JobRunRecord[]
+    countRunsByJobId: (jobId: string) => number
+    getRunById: (jobId: string, runId: string) => JobRunRecord | null
   }
   taskAuditRepository: {
     listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
@@ -45,6 +59,16 @@ const getJobParamsSchema = z.object({
 
 const listAuditQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional().default(20),
+})
+
+const listRunsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+})
+
+const getRunParamsSchema = z.object({
+  id: z.string().trim().min(1),
+  runId: z.string().trim().min(1),
 })
 
 const taskListRecordSchema = z.object({
@@ -94,6 +118,19 @@ const taskAuditEntrySchema = z.object({
   createdAt: z.number().int(),
 })
 
+const jobRunEntrySchema = z.object({
+  id: z.string().min(1),
+  jobId: z.string().min(1),
+  scheduledFor: z.number().int().nullable(),
+  startedAt: z.number().int(),
+  finishedAt: z.number().int().nullable(),
+  status: z.enum(["success", "failed", "skipped"]),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  resultJson: z.string().nullable(),
+  createdAt: z.number().int(),
+})
+
 const healthResponseSchema = z.object({
   status: z.literal("ok"),
 })
@@ -109,6 +146,19 @@ const jobDetailsResponseSchema = z.object({
 const jobAuditResponseSchema = z.object({
   taskId: z.string().min(1),
   entries: z.array(taskAuditEntrySchema),
+})
+
+const jobRunsResponseSchema = z.object({
+  taskId: z.string().min(1),
+  total: z.number().int().min(0),
+  limit: z.number().int().min(1).max(200),
+  offset: z.number().int().min(0),
+  runs: z.array(jobRunEntrySchema),
+})
+
+const jobRunDetailResponseSchema = z.object({
+  taskId: z.string().min(1),
+  run: jobRunEntrySchema,
 })
 
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
@@ -269,6 +319,73 @@ export const buildExternalApiServer = (
 
       const err = error as Error
       dependencies.logger.error({ error: err.message }, "External API job audit failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/jobs/:id/runs", async (request, reply) => {
+    try {
+      const params = getJobParamsSchema.parse(request.params)
+      const query = listRunsQuerySchema.parse(request.query)
+      const job = getTaskById(dependencies.jobsRepository, params.id)
+
+      if (!job) {
+        return reply.code(404).send({ error: "not_found", message: "Task not found" })
+      }
+
+      const runs = dependencies.jobsRepository.listRunsByJobId(params.id, {
+        limit: query.limit,
+        offset: query.offset,
+      })
+      const total = dependencies.jobsRepository.countRunsByJobId(params.id)
+
+      return reply.code(200).send(
+        jobRunsResponseSchema.parse({
+          taskId: params.id,
+          total,
+          limit: query.limit,
+          offset: query.offset,
+          runs,
+        })
+      )
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API job runs failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/jobs/:id/runs/:runId", async (request, reply) => {
+    try {
+      const params = getRunParamsSchema.parse(request.params)
+      const job = getTaskById(dependencies.jobsRepository, params.id)
+
+      if (!job) {
+        return reply.code(404).send({ error: "not_found", message: "Task not found" })
+      }
+
+      const run = dependencies.jobsRepository.getRunById(params.id, params.runId)
+      if (!run) {
+        return reply.code(404).send({ error: "not_found", message: "Run not found" })
+      }
+
+      return reply.code(200).send(
+        jobRunDetailResponseSchema.parse({
+          taskId: params.id,
+          run,
+        })
+      )
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API job run detail failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })
