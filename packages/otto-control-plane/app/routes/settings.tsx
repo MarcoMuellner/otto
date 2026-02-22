@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { Link, useLoaderData } from "react-router"
+import { toast } from "sonner"
 
 import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js"
@@ -34,7 +35,7 @@ type SettingsFormState = {
 }
 
 type Feedback = {
-  kind: "success" | "error"
+  kind: "error"
   message: string
 }
 
@@ -225,7 +226,8 @@ export default function SettingsRoute() {
 
       const parsed = updateNotificationProfileResponseSchema.parse(body)
       setFormState(toFormState(parsed.profile))
-      setFeedback({ kind: "success", message: "Settings saved." })
+      setFeedback(null)
+      toast.success("Settings saved")
     } catch {
       setFeedback({ kind: "error", message: "Could not reach the control plane API." })
     } finally {
@@ -237,7 +239,8 @@ export default function SettingsRoute() {
     try {
       const profile = await readProfile()
       setFormState(toFormState(profile))
-      setFeedback({ kind: "success", message: "Settings refreshed." })
+      setFeedback(null)
+      toast.success("Settings refreshed")
     } catch (error) {
       setFeedback({
         kind: "error",
@@ -274,8 +277,8 @@ export default function SettingsRoute() {
           <CardDescription>Editable non-secret notification settings</CardDescription>
           <CardTitle>Delivery Preferences</CardTitle>
         </CardHeader>
-        <CardContent>
-          <form className="grid gap-3" onSubmit={onSubmit}>
+        <CardContent className="pb-4">
+          <form className="grid gap-4" onSubmit={onSubmit}>
             <div className="grid gap-1">
               <label
                 htmlFor="settings-timezone"
@@ -446,19 +449,9 @@ export default function SettingsRoute() {
               label="Only send heartbeat with signal"
             />
 
-            {feedback ? (
-              <p
-                className={
-                  feedback.kind === "success"
-                    ? "m-0 text-sm text-[#0f7b3a]"
-                    : "m-0 text-sm text-[#b42318]"
-                }
-              >
-                {feedback.message}
-              </p>
-            ) : null}
+            {feedback ? <p className="m-0 text-sm text-[#b42318]">{feedback.message}</p> : null}
 
-            <div className="flex justify-end">
+            <div className="flex justify-end pt-1">
               <Button type="submit" disabled={isSaving}>
                 {isSaving ? "Saving..." : "Save Settings"}
               </Button>
