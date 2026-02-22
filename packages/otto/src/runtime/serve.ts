@@ -239,6 +239,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       jobsRepository,
       taskAuditRepository,
       commandAuditRepository,
+      userProfileRepository,
       modelManagement: {
         getCatalogSnapshot: () => {
           if (!modelCatalogService) {

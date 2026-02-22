@@ -29,6 +29,14 @@ import {
   type UpdateJobMutationRequest,
   updateJobMutationRequestSchema,
 } from "../features/jobs/contracts.js"
+import {
+  notificationProfileResponseSchema,
+  type NotificationProfileResponse,
+  type UpdateNotificationProfileRequest,
+  type UpdateNotificationProfileResponse,
+  updateNotificationProfileRequestSchema,
+  updateNotificationProfileResponseSchema,
+} from "../features/settings/contracts.js"
 import { resolveCachedControlPlaneServerConfig, type ControlPlaneServerConfig } from "./env.js"
 
 export type OttoExternalHealthResponse = HealthResponse
@@ -40,6 +48,8 @@ export type OttoExternalJobRunDetailResponse = ExternalJobRunDetailResponse
 export type OttoExternalJobMutationResponse = ExternalJobMutationResponse
 export type OttoExternalSystemStatusResponse = ExternalSystemStatusResponse
 export type OttoExternalSystemRestartResponse = ExternalSystemRestartResponse
+export type OttoExternalNotificationProfileResponse = NotificationProfileResponse
+export type OttoExternalUpdateNotificationProfileResponse = UpdateNotificationProfileResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -52,7 +62,7 @@ export class OttoExternalApiError extends Error {
 }
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE"
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
 type RequestLike = (
   url: URL,
@@ -224,6 +234,22 @@ export const createOttoExternalApiClient = ({
       return request("/external/system/restart", externalSystemRestartResponseSchema, {
         method: "POST",
       })
+    },
+    getNotificationProfile: async (): Promise<OttoExternalNotificationProfileResponse> => {
+      return request("/external/settings/notification-profile", notificationProfileResponseSchema)
+    },
+    updateNotificationProfile: async (
+      input: UpdateNotificationProfileRequest
+    ): Promise<OttoExternalUpdateNotificationProfileResponse> => {
+      const payload = updateNotificationProfileRequestSchema.parse(input)
+      return request(
+        "/external/settings/notification-profile",
+        updateNotificationProfileResponseSchema,
+        {
+          method: "PUT",
+          body: payload,
+        }
+      )
     },
     listJobs: async (): Promise<OttoExternalJobsResponse> => {
       return request("/external/jobs?lane=scheduled", externalJobsResponseSchema)

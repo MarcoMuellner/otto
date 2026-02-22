@@ -178,6 +178,94 @@ describe("createOttoExternalApiClient", () => {
     ])
   })
 
+  it("gets and updates notification profile settings", async () => {
+    // Arrange
+    const seenRequests: Array<{ url: string; method: string; bodyText: string | null }> = []
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === "string" ? input : input.toString()
+        const method = init?.method ?? "GET"
+        seenRequests.push({
+          url,
+          method,
+          bodyText: typeof init?.body === "string" ? init.body : null,
+        })
+
+        if (method === "GET") {
+          return Response.json(
+            {
+              profile: {
+                timezone: "Europe/Vienna",
+                quietHoursStart: "21:00",
+                quietHoursEnd: "07:30",
+                quietMode: "critical_only",
+                muteUntil: null,
+                heartbeatMorning: "08:30",
+                heartbeatMidday: "12:30",
+                heartbeatEvening: "19:00",
+                heartbeatCadenceMinutes: 180,
+                heartbeatOnlyIfSignal: true,
+                onboardingCompletedAt: null,
+                lastDigestAt: null,
+                updatedAt: 1_000,
+              },
+            },
+            { status: 200 }
+          )
+        }
+
+        return Response.json(
+          {
+            profile: {
+              timezone: "Europe/Vienna",
+              quietHoursStart: "22:00",
+              quietHoursEnd: "07:00",
+              quietMode: "critical_only",
+              muteUntil: null,
+              heartbeatMorning: "08:30",
+              heartbeatMidday: "12:30",
+              heartbeatEvening: "19:00",
+              heartbeatCadenceMinutes: 180,
+              heartbeatOnlyIfSignal: true,
+              onboardingCompletedAt: null,
+              lastDigestAt: null,
+              updatedAt: 2_000,
+            },
+            changedFields: ["quietHoursStart", "quietHoursEnd", "updatedAt"],
+          },
+          { status: 200 }
+        )
+      },
+    })
+
+    // Act
+    const getResult = await client.getNotificationProfile()
+    const updateResult = await client.updateNotificationProfile({
+      timezone: "Europe/Vienna",
+      quietHoursStart: "22:00",
+      quietHoursEnd: "07:00",
+    })
+
+    // Assert
+    expect(getResult.profile.quietHoursStart).toBe("21:00")
+    expect(updateResult.profile.quietHoursStart).toBe("22:00")
+    expect(seenRequests).toMatchObject([
+      {
+        url: "http://127.0.0.1:4190/external/settings/notification-profile",
+        method: "GET",
+      },
+      {
+        url: "http://127.0.0.1:4190/external/settings/notification-profile",
+        method: "PUT",
+      },
+    ])
+    expect(seenRequests[1]?.bodyText).toContain("quietHoursStart")
+  })
+
   it("throws OttoExternalApiError on non-2xx responses", async () => {
     // Arrange
     const client = createOttoExternalApiClient({

@@ -1,167 +1,146 @@
 # AGENTS Guide for `otto`
 This file is the operating guide for coding agents working in this repository.
 
-## Repository Shape
-- Monorepo managed with `pnpm` workspaces.
-- Main packages:
-  - `packages/otto` (core runtime, CLI, bundled release artifact)
-  - `packages/otto-control-plane` (React Router control-plane web process + BFF)
-  - `packages/otto-extension-sdk` (shared extension validation library)
-  - `packages/otto-extensions` (extension catalog scaffolding)
-- Root scripts proxy to package scripts and are the preferred entrypoint.
+## Repository Overview
+- Monorepo managed with `pnpm` workspaces (`pnpm-workspace.yaml` includes root and `packages/*`).
+- Primary packages:
+  - `packages/otto` - core runtime, CLI, bundled release artifact.
+  - `packages/otto-control-plane` - React Router control-plane web process + BFF.
+  - `packages/otto-extension-sdk` - shared extension validation/contracts library.
+  - `packages/otto-extensions` - extension catalog + registry artifact generator.
+  - `packages/experiments` - ad-hoc integration experiments (outside root quality gate).
+- Root scripts are the preferred entrypoint for cross-package work.
 
-## Required Runtime/Tooling
+## Required Tooling
 - Node.js `>=22`
 - `pnpm@10`
-- TypeScript + ESM (`moduleResolution: NodeNext`)
+- TypeScript + ESM across packages
+  - `packages/otto`, `packages/otto-extension-sdk`: `moduleResolution: NodeNext`
+  - `packages/otto-control-plane`: `moduleResolution: Bundler`
 
-## Build, Lint, Typecheck, Test
-Run from repo root unless noted.
-
+## Workspace Commands (run from repo root)
 ### Install
 - `pnpm install`
-
-### Fast Quality Gate (all packages)
-- `pnpm run check`
-  - Runs typecheck, lint, format check, extension validation, and tests.
-
 ### Build
 - `pnpm run build`
-- `pnpm run build:local` (syncs local version first)
-
-### Lint
+- `pnpm run build:local` (sync local version first)
+### Lint / Typecheck / Format
 - `pnpm run lint`
-- `pnpm run lint:fix`
-
-### Typecheck
+- `pnpm run lint:fix` (only fixes `packages/otto`)
 - `pnpm run typecheck`
-
-### Format
 - `pnpm run format`
 - `pnpm run format:check`
-
-### Tests (workspace)
+### Test
 - `pnpm run test`
-- `pnpm run test:watch`
-- `pnpm run test:coverage`
+- `pnpm run test:watch` (watch mode only in `packages/otto`)
+- `pnpm run test:coverage` (coverage only in `packages/otto`)
+### Fast Quality Gate
+- `pnpm run check`
+  - Runs workspace `typecheck`, `lint`, `format:check`, extension validation, and tests.
+
+## Package-Scoped Commands
+Use `pnpm -C <package> run <script>`.
+- `packages/otto`: `dev`, `setup`, `serve`, `telegram-worker`, `start`, `build`, `build:local`, `version:sync`, `extensions:validate`, `check`
+- `packages/otto-control-plane`: `dev`, `build`, `start`, `check`
+- `packages/otto-extension-sdk`: `build` (informational only), `typecheck`, `lint`, `test`, `format:check`, `check`
+- `packages/otto-extensions`: `registry:generate`, `build`, `test` (placeholder script)
 
 ## Running a Single Test (Important)
-Preferred patterns:
-- Single test file in core package:
-  - `pnpm -C packages/otto exec vitest run tests/path/to/file.test.ts`
-- Single test by name in core package:
-  - `pnpm -C packages/otto exec vitest run tests/path/to/file.test.ts -t "test name"`
-- Single test file in extension SDK package:
-  - `pnpm -C packages/otto-extension-sdk exec vitest run tests/path/to/file.test.ts`
-- Watch mode for one file:
-  - `pnpm -C packages/otto exec vitest tests/path/to/file.test.ts`
-
-Notes:
-- `packages/otto-extensions` currently has no real tests (`test` prints a message).
-- Vitest include globs are `tests/**/*.test.ts`.
-
-## Package-Specific Commands
-Use `pnpm -C <package> run <script>` for scoped work.
-
+Use `vitest` directly via `pnpm exec` in the target package.
 - Core package (`packages/otto`):
-  - `dev`, `setup`, `serve`, `telegram-worker`, `start`
-  - `build`, `build:local`, `version:sync`
-  - `extensions:validate`
+  - `pnpm -C packages/otto exec vitest run tests/path/to/file.test.ts`
+  - `pnpm -C packages/otto exec vitest run tests/path/to/file.test.ts -t "test name"`
+  - `pnpm -C packages/otto exec vitest tests/path/to/file.test.ts`
+- Control-plane (`packages/otto-control-plane`):
+  - `pnpm -C packages/otto-control-plane exec vitest run tests/path/to/file.test.ts`
+  - `pnpm -C packages/otto-control-plane exec vitest run tests/path/to/file.test.ts -t "test name"`
+  - `pnpm -C packages/otto-control-plane exec vitest tests/path/to/file.test.ts`
 - Extension SDK (`packages/otto-extension-sdk`):
-  - `check`, `typecheck`, `lint`, `test`, `format:check`
-- Extensions catalog (`packages/otto-extensions`):
-  - `registry:generate`, `build`, `test`
+  - `pnpm -C packages/otto-extension-sdk exec vitest run tests/path/to/file.test.ts`
+  - `pnpm -C packages/otto-extension-sdk exec vitest run tests/path/to/file.test.ts -t "test name"`
+Notes:
+- Test include glob for active packages is `tests/**/*.test.ts`.
+- `packages/otto-extensions` currently has no real tests (`test` prints a message).
 
 ## Source Layout Conventions
-- Core source: `packages/otto/src/**/*.ts`
-- Core tests: `packages/otto/tests/**/*.test.ts`
-- SDK source: `packages/otto-extension-sdk/src/**/*.ts`
-- SDK tests: `packages/otto-extension-sdk/tests/**/*.test.ts`
-- Keep tests outside `src/` (repository convention).
+- `packages/otto/src/**/*.ts` and `packages/otto/tests/**/*.test.ts`
+- `packages/otto-control-plane/app/**/*.{ts,tsx,css}` and `packages/otto-control-plane/tests/**/*.test.ts`
+- `packages/otto-extension-sdk/src/**/*.ts` and `packages/otto-extension-sdk/tests/**/*.test.ts`
+- Keep tests outside `src/` in Node packages (`otto`, `otto-extension-sdk`).
 
-## CLI and Web Parity
-- Treat `ottoctl` as the primary feature surface and keep control-plane web UI parity with it.
-- When adding or changing `ottoctl` features, implement corresponding web UI/BFF support in the same delivery cycle unless explicitly deferred.
-- Web-only UX enhancements are allowed, but they do not require back-porting to `ottoctl` unless explicitly requested.
-- If parity is deferred, document the gap and follow-up plan in `pm/` before handoff.
+## CLI/Web Parity Rule
+- Treat `ottoctl` as the primary product surface.
+- When adding/changing `ottoctl` behavior, ship matching control-plane UI/BFF behavior in the same cycle unless explicitly deferred.
+- If parity is deferred, document the gap and follow-up plan in `pm/`.
 
-## Code Style Rules
-
+## Code Style Guidelines
 ### Imports
-- Group imports in this order:
+- Order import groups as:
   1. Node built-ins (`node:*`)
-  2. Third-party packages
-  3. Local project imports
+  2. Third-party dependencies
+  3. Local imports
 - Keep one blank line between groups.
 - Prefer `import type` for type-only imports.
-- In ESM TypeScript files, local import specifiers use `.js`.
-
+- Use explicit `.js` extensions for local ESM TypeScript imports.
 ### Formatting
-- Always use repo scripts for formatting and linting.
-- In `packages/otto`, Prettier settings are:
+- Run package/root scripts instead of ad-hoc formatter commands.
+- `packages/otto` and `packages/otto-control-plane` Prettier profile:
   - no semicolons
   - double quotes
   - trailing commas where valid in ES5
   - print width 100
-- In other packages, follow file-local style and pass `format:check`.
-
+- `packages/otto-extension-sdk` currently follows existing file-local style (semicolons present).
 ### TypeScript and Types
-- `strict` mode is enabled; keep code fully type-safe.
-- Avoid `any` unless absolutely unavoidable.
-- Prefer explicit types for exported APIs.
-- Use `zod` schemas for runtime validation and inferred types.
-- Keep `unknown` at boundaries; narrow before use.
-
+- `strict` mode is enabled; preserve full type safety.
+- Avoid `any`; use only when unavoidable.
+- Keep `unknown` at boundaries and narrow before use.
+- Prefer explicit exported API types.
+- Prefer `zod` for runtime validation + inferred types.
 ### Naming
-- File names: `kebab-case.ts`.
-- Functions and variables: `camelCase`.
+- File names: `kebab-case.ts` (except framework-driven route file patterns).
+- Variables/functions: `camelCase`.
 - Types/interfaces/type aliases: `PascalCase`.
-- Constants:
-  - `UPPER_SNAKE_CASE` for true module constants
-  - `camelCase` for derived locals
-- Prefer domain-specific names (`resolveOttoConfigPath`, `runTelegramWorker`).
-
+- Constants: `UPPER_SNAKE_CASE` for true constants, `camelCase` for derived locals.
+- Prefer domain-specific names over generic placeholders.
 ### Function Design
 - Keep functions focused and composable.
-- Prefer pure helpers for parsing and transformation.
+- Prefer pure helpers for parse/transform logic.
 - Inject side-effect dependencies when practical for testability.
-- Add JSDoc on exported functions and explain why they exist.
-
+- Add JSDoc on exported functions; describe why behavior exists.
 ### Error Handling
-- Throw actionable errors.
-- In `catch`, narrow error types before field access (for example `NodeJS.ErrnoException`).
-- Handle expected system errors explicitly (`ENOENT`) and rethrow unknown failures.
-- For CLI entrypoints, log structured context and set exit code deterministically.
-
+- Throw actionable, context-rich errors.
+- In `catch`, narrow error types before field access.
+- Handle expected system errors (`ENOENT`, permission errors) explicitly and rethrow unknown failures.
+- For CLI entrypoints, log context and set deterministic exit codes.
 ### Logging
-- Use structured logging (Pino in `packages/otto`).
-- Include contextual fields (`component`, `command`, identifiers, counts).
-- Keep human message text concise and details in structured fields.
+- Use structured logging (`pino` in core runtime).
+- Keep human message text concise; put detail in structured fields.
+- Include operational context (`component`, action/command, ids/counts).
 
 ## Testing Conventions
 - Framework: Vitest.
-- Structure non-trivial tests as AAA (Arrange, Act, Assert).
-- Test names should describe behavior, not implementation internals.
-- Prefer deterministic tests; avoid timing/network flakiness.
-- Use temp directories and cleanup hooks for filesystem tests.
+- Use AAA style (Arrange, Act, Assert) for non-trivial tests.
+- Name tests by behavior, not implementation.
+- Keep tests deterministic (avoid timing/network flakiness).
+- Use temp directories + cleanup hooks for filesystem tests.
 
-## Build/Release Awareness
-- Core runtime is bundled with `tsdown` for Node runtime distribution.
-- Core build output is `packages/otto/dist`.
-- Do not edit generated `dist/` artifacts manually.
+## Build and Generated Artifacts
+- Core runtime bundle is produced with `tsdown`.
+- Core build output lives in `packages/otto/dist`.
+- Do not edit generated artifacts (`dist/`, generated registry files) by hand.
 
-## Agent Execution Checklist
-Before handoff:
+## Agent Handoff Checklist
+Before finishing work:
 1. Run targeted tests for changed areas first.
 2. Run package-level checks for touched packages.
-3. Run `pnpm run check` when changes span packages/shared behavior.
-4. Ensure lint and format checks pass.
-5. Ensure generated artifacts were not edited by hand.
+3. Run `pnpm run check` when work spans packages/shared behavior.
+4. Ensure lint + format checks pass for touched packages.
+5. Confirm generated outputs were produced by scripts (not manual edits).
 
-## Cursor/Copilot Rules Status
-No repository-level Cursor or Copilot instruction files were found:
+## Cursor and Copilot Rules
+Repository scan results:
 - `.cursor/rules/` not present
 - `.cursorrules` not present
 - `.github/copilot-instructions.md` not present
 
-If these files are added later, update this AGENTS file and treat them as higher-priority agent instructions.
+If any of these files are added later, treat them as higher-priority agent instructions and update this guide.
