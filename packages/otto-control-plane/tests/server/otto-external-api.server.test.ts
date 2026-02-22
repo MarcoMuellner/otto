@@ -35,6 +35,7 @@ describe("createOttoExternalApiClient", () => {
       type: "heartbeat",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       status: "idle",
       runAt: null,
       cadenceMinutes: 5,
@@ -266,6 +267,97 @@ describe("createOttoExternalApiClient", () => {
     expect(seenRequests[1]?.bodyText).toContain("quietHoursStart")
   })
 
+  it("gets, refreshes, and updates model management endpoints", async () => {
+    // Arrange
+    const seenRequests: Array<{ url: string; method: string; bodyText: string | null }> = []
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === "string" ? input : input.toString()
+        const method = init?.method ?? "GET"
+        seenRequests.push({
+          url,
+          method,
+          bodyText: typeof init?.body === "string" ? init.body : null,
+        })
+
+        if (url.endsWith("/external/models/catalog")) {
+          return Response.json(
+            {
+              models: ["openai/gpt-5.3-codex", "anthropic/claude-sonnet-4"],
+              updatedAt: 1_700_000_000_000,
+              source: "network",
+            },
+            { status: 200 }
+          )
+        }
+
+        if (url.endsWith("/external/models/refresh")) {
+          return Response.json(
+            {
+              status: "ok",
+              updatedAt: 1_700_000_001_000,
+              count: 2,
+            },
+            { status: 200 }
+          )
+        }
+
+        if (url.endsWith("/external/models/defaults") && method === "GET") {
+          return Response.json(
+            {
+              flowDefaults: {
+                interactiveAssistant: "openai/gpt-5.3-codex",
+                scheduledTasks: null,
+                heartbeat: null,
+                watchdogFailures: null,
+              },
+            },
+            { status: 200 }
+          )
+        }
+
+        return Response.json(
+          {
+            flowDefaults: {
+              interactiveAssistant: "openai/gpt-5.3-codex",
+              scheduledTasks: "anthropic/claude-sonnet-4",
+              heartbeat: null,
+              watchdogFailures: null,
+            },
+          },
+          { status: 200 }
+        )
+      },
+    })
+
+    // Act
+    const catalog = await client.getModelCatalog()
+    const refresh = await client.refreshModelCatalog()
+    const defaults = await client.getModelDefaults()
+    const updated = await client.updateModelDefaults({
+      flowDefaults: {
+        ...defaults.flowDefaults,
+        scheduledTasks: "anthropic/claude-sonnet-4",
+      },
+    })
+
+    // Assert
+    expect(catalog.models).toContain("openai/gpt-5.3-codex")
+    expect(refresh).toMatchObject({ status: "ok", count: 2 })
+    expect(updated.flowDefaults.scheduledTasks).toBe("anthropic/claude-sonnet-4")
+    expect(seenRequests).toMatchObject([
+      { url: "http://127.0.0.1:4190/external/models/catalog", method: "GET" },
+      { url: "http://127.0.0.1:4190/external/models/refresh", method: "POST" },
+      { url: "http://127.0.0.1:4190/external/models/defaults", method: "GET" },
+      { url: "http://127.0.0.1:4190/external/models/defaults", method: "PUT" },
+    ])
+    expect(seenRequests[3]?.bodyText).toContain("scheduledTasks")
+  })
+
   it("throws OttoExternalApiError on non-2xx responses", async () => {
     // Arrange
     const client = createOttoExternalApiClient({
@@ -295,6 +387,7 @@ describe("createOttoExternalApiClient", () => {
               status: "idle",
               scheduleType: "recurring",
               profileId: null,
+              modelRef: null,
               runAt: null,
               cadenceMinutes: 5,
               payload: null,

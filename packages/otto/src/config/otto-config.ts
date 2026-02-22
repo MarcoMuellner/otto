@@ -2,6 +2,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { z } from "zod"
+import { parseJsonc } from "otto-extension-sdk"
 
 import {
   DEFAULT_MODEL_FLOW_DEFAULTS,
@@ -193,7 +194,61 @@ export const updateOttoModelFlowDefaults = async (
   await mkdir(path.dirname(configPath), { recursive: true })
   await writeFile(configPath, `${JSON.stringify(updated, null, 2)}\n`, "utf8")
 
+  await syncOpencodeGlobalDefaultModel(updated.ottoHome, flowDefaults.interactiveAssistant)
+
   return updated
+}
+
+/**
+ * Mirrors interactive-assistant default model into OpenCode config so freshly created UI sessions
+ * show and use the same global default the Otto model resolver falls back to.
+ *
+ * @param ottoHome Runtime Otto home path containing opencode.jsonc.
+ * @param modelRef Interactive assistant model reference or null for inherit mode.
+ */
+const syncOpencodeGlobalDefaultModel = async (
+  ottoHome: string,
+  modelRef: string | null
+): Promise<void> => {
+  if (modelRef === null) {
+    return
+  }
+
+  const opencodeConfigPath = path.join(ottoHome, "opencode.jsonc")
+
+  let source: string
+  try {
+    source = await readFile(opencodeConfigPath, "utf8")
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException
+    if (fileError.code === "ENOENT") {
+      return
+    }
+
+    throw error
+  }
+
+  const parsed = parseJsonc(source)
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`OpenCode config at ${opencodeConfigPath} must be an object`)
+  }
+
+  const config = { ...(parsed as Record<string, unknown>) }
+  config.model = modelRef
+
+  if (typeof config.agent === "object" && config.agent !== null && !Array.isArray(config.agent)) {
+    const agent = { ...(config.agent as Record<string, unknown>) }
+    const assistant = agent.assistant
+    if (typeof assistant === "object" && assistant !== null && !Array.isArray(assistant)) {
+      agent.assistant = {
+        ...(assistant as Record<string, unknown>),
+        model: modelRef,
+      }
+      config.agent = agent
+    }
+  }
+
+  await writeFile(opencodeConfigPath, `${JSON.stringify(config, null, 2)}\n`, "utf8")
 }
 
 /**
