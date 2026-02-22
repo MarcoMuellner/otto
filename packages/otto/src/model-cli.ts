@@ -233,9 +233,7 @@ const requestExternalApi = async <T>(
       ? (parsedError.data.message ?? parsedError.data.error ?? "request failed")
       : "request failed"
 
-    throw new Error(
-      `Otto external API ${method} ${endpoint} failed (${statusCode}): ${suffix}`
-    )
+    throw new Error(`Otto external API ${method} ${endpoint} failed (${statusCode}): ${suffix}`)
   }
 
   const parsed = schema.safeParse(body)
