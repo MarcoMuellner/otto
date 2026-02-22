@@ -12,6 +12,11 @@ import {
 } from "../external-api/server.js"
 import { resolveInternalApiConfig, startInternalApiServer } from "../internal-api/server.js"
 import { startOpencodeServer } from "../opencode/server.js"
+import {
+  createModelCatalogService,
+  createOpencodeModelClient,
+  createRuntimeModelResolver,
+} from "../model-management/index.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createJobsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
@@ -249,6 +254,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   let server: { url: string; close: () => void } | null = null
   let schedulerKernel: { stop: () => Promise<void> } | null = null
   let telegramWorker: TelegramWorkerHandle | null = null
+  let stopModelCatalogRefresh: (() => void) | null = null
 
   try {
     server = await startOpencodeServer({
@@ -268,122 +274,152 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     throw error
   }
 
-  logger.info(
-    {
-      command: "serve",
-      configPath,
-      opencodeConfigPath,
-      ottoHome: config.ottoHome,
-      hostname: config.opencode.hostname,
-      port: config.opencode.port,
-      url: server.url,
-      internalApiUrl: internalApiServer.url,
-      internalApiTokenPath: internalApiConfig.tokenPath,
-      externalApiUrl: externalApiServer.url,
-      externalApiTokenPath: externalApiConfig.tokenPath,
-    },
-    "OpenCode server started"
-  )
-
-  const watchdogChatId = resolveDefaultWatchdogChatId()
-  const watchdogEnsureResult = ensureWatchdogTask(
-    jobsRepository,
-    {
-      cadenceMinutes: WATCHDOG_DEFAULT_CADENCE_MINUTES,
-      chatId: watchdogChatId,
-    },
-    Date.now
-  )
-  logger.info(
-    {
-      taskId: watchdogEnsureResult.taskId,
-      created: watchdogEnsureResult.created,
-      cadenceMinutes: watchdogEnsureResult.cadenceMinutes,
-      hasChatId: Boolean(watchdogChatId),
-    },
-    "Watchdog task ensured"
-  )
-
-  const heartbeatEnsureResult = ensureHeartbeatTask(
-    jobsRepository,
-    {
-      cadenceMinutes: HEARTBEAT_DEFAULT_CADENCE_MINUTES,
-      chatId: watchdogChatId,
-    },
-    Date.now
-  )
-  logger.info(
-    {
-      taskId: heartbeatEnsureResult.taskId,
-      created: heartbeatEnsureResult.created,
-      cadenceMinutes: heartbeatEnsureResult.cadenceMinutes,
-      hasChatId: Boolean(watchdogChatId),
-    },
-    "Heartbeat task ensured"
-  )
-
-  const schedulerSessionGateway = createOpencodeSessionGateway(server.url, logger)
-  const taskExecutionEngine = createTaskExecutionEngine({
-    logger,
-    ottoHome: config.ottoHome,
-    jobsRepository,
-    sessionBindingsRepository,
-    outboundMessagesRepository,
-    userProfileRepository,
-    sessionGateway: schedulerSessionGateway,
-    defaultWatchdogChatId: watchdogChatId,
-  })
-
-  schedulerKernel = await startSchedulerKernel({
-    logger,
-    jobsRepository,
-    config: schedulerConfig,
-    executeClaimedJob: taskExecutionEngine.executeClaimedJob,
-  })
-  systemServiceStates.scheduler = {
-    ...systemServiceStates.scheduler,
-    status: "ok",
-    message: "Scheduler kernel is active",
-  }
-
+  
   try {
-    const telegramConfig = resolveTelegramWorkerConfig(config.telegram)
-    telegramWorker = await startTelegramWorker(logger, telegramConfig)
-    systemServiceStates.telegram_worker = {
-      ...systemServiceStates.telegram_worker,
-      status: telegramConfig.enabled ? "ok" : "disabled",
-      message: telegramConfig.enabled
-        ? "Telegram worker is active"
-        : "Telegram worker disabled in configuration",
-    }
-    logger.info({ enabled: telegramConfig.enabled }, "Telegram worker startup completed")
-  } catch (error) {
-    const err = error as Error
-    systemServiceStates.telegram_worker = {
-      ...systemServiceStates.telegram_worker,
-      status: "degraded",
-      message: `Telegram worker unavailable: ${err.message}`,
-    }
-    logger.warn(
-      { error: err.message },
-      "Telegram worker did not start; continuing serve mode without Telegram"
+    logger.info(
+      {
+        command: "serve",
+        configPath,
+        opencodeConfigPath,
+        ottoHome: config.ottoHome,
+        hostname: config.opencode.hostname,
+        port: config.opencode.port,
+        url: server.url,
+        internalApiUrl: internalApiServer.url,
+        internalApiTokenPath: internalApiConfig.tokenPath,
+        externalApiUrl: externalApiServer.url,
+        externalApiTokenPath: externalApiConfig.tokenPath,
+      },
+      "OpenCode server started"
     )
+
+    const opencodeModelClient = createOpencodeModelClient(server.url)
+    const modelCatalogService = createModelCatalogService({
+      logger,
+      ottoHome: config.ottoHome,
+      fetchCatalogRefs: opencodeModelClient.fetchCatalogRefs,
+    })
+    await modelCatalogService.ensureInitialFetch()
+    modelCatalogService.startPeriodicRefresh()
+    stopModelCatalogRefresh = modelCatalogService.stopPeriodicRefresh
+
+    const modelResolver = createRuntimeModelResolver({
+      logger,
+      getCatalogSnapshot: modelCatalogService.getSnapshot,
+      fetchGlobalDefaultModelRef: opencodeModelClient.fetchGlobalDefaultModelRef,
+      loadOttoConfig: async () => {
+        const resolved = await ensureOttoConfigFile(homeDirectory)
+        return resolved.config
+      },
+    })
+
+    const watchdogChatId = resolveDefaultWatchdogChatId()
+    const watchdogEnsureResult = ensureWatchdogTask(
+      jobsRepository,
+      {
+        cadenceMinutes: WATCHDOG_DEFAULT_CADENCE_MINUTES,
+        chatId: watchdogChatId,
+      },
+      Date.now
+    )
+    logger.info(
+      {
+        taskId: watchdogEnsureResult.taskId,
+        created: watchdogEnsureResult.created,
+        cadenceMinutes: watchdogEnsureResult.cadenceMinutes,
+        hasChatId: Boolean(watchdogChatId),
+      },
+      "Watchdog task ensured"
+    )
+
+    const heartbeatEnsureResult = ensureHeartbeatTask(
+      jobsRepository,
+      {
+        cadenceMinutes: HEARTBEAT_DEFAULT_CADENCE_MINUTES,
+        chatId: watchdogChatId,
+      },
+      Date.now
+    )
+    logger.info(
+      {
+        taskId: heartbeatEnsureResult.taskId,
+        created: heartbeatEnsureResult.created,
+        cadenceMinutes: heartbeatEnsureResult.cadenceMinutes,
+        hasChatId: Boolean(watchdogChatId),
+      },
+      "Heartbeat task ensured"
+    )
+
+    const schedulerSessionGateway = createOpencodeSessionGateway(server.url, logger, modelResolver)
+    const taskExecutionEngine = createTaskExecutionEngine({
+      logger,
+      ottoHome: config.ottoHome,
+      jobsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      userProfileRepository,
+      sessionGateway: schedulerSessionGateway,
+      defaultWatchdogChatId: watchdogChatId,
+    })
+
+    schedulerKernel = await startSchedulerKernel({
+      logger,
+      jobsRepository,
+      config: schedulerConfig,
+      executeClaimedJob: taskExecutionEngine.executeClaimedJob,
+    })
+    systemServiceStates.scheduler = {
+      ...systemServiceStates.scheduler,
+      status: "ok",
+      message: "Scheduler kernel is active",
+    }
+
+    try {
+      const telegramConfig = resolveTelegramWorkerConfig(config.telegram)
+      telegramWorker = await startTelegramWorker(logger, telegramConfig, {
+        createSessionGateway: async (baseUrl) => {
+          return createOpencodeSessionGateway(baseUrl, logger, modelResolver)
+        },
+      })
+      systemServiceStates.telegram_worker = {
+        ...systemServiceStates.telegram_worker,
+        status: telegramConfig.enabled ? "ok" : "disabled",
+        message: telegramConfig.enabled
+          ? "Telegram worker is active"
+          : "Telegram worker disabled in configuration",
+      }
+      logger.info({ enabled: telegramConfig.enabled }, "Telegram worker startup completed")
+    } catch (error) {
+      const err = error as Error
+      systemServiceStates.telegram_worker = {
+        ...systemServiceStates.telegram_worker,
+        status: "degraded",
+        message: `Telegram worker unavailable: ${err.message}`,
+      }
+      logger.warn(
+        { error: err.message },
+        "Telegram worker did not start; continuing serve mode without Telegram"
+      )
+    }
+
+    const signal = await waitForShutdownSignal()
+
+    logger.info({ signal }, "Shutdown signal received")
+  } finally {
+    if (telegramWorker) {
+      await telegramWorker.stop()
+    }
+    if (schedulerKernel) {
+      await schedulerKernel.stop()
+    }
+    if (stopModelCatalogRefresh) {
+      stopModelCatalogRefresh()
+    }
+    server.close()
+    await externalApiServer.close()
+    await internalApiServer.close()
+    persistenceDatabase.close()
+
+    logger.info("OpenCode server stopped")
   }
-
-  const signal = await waitForShutdownSignal()
-
-  logger.info({ signal }, "Shutdown signal received")
-
-  if (telegramWorker) {
-    await telegramWorker.stop()
-  }
-  if (schedulerKernel) {
-    await schedulerKernel.stop()
-  }
-  server.close()
-  await externalApiServer.close()
-  await internalApiServer.close()
-  persistenceDatabase.close()
-
-  logger.info("OpenCode server stopped")
 }

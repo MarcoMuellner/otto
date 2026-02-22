@@ -53,6 +53,14 @@ describe("ensureOttoConfigFile", () => {
         hostname: "127.0.0.1",
         port: 4999,
       },
+      modelManagement: {
+        flowDefaults: {
+          interactiveAssistant: "openai/gpt-5.3-codex",
+          scheduledTasks: null,
+          heartbeat: null,
+          watchdogFailures: null,
+        },
+      },
     }
 
     await mkdir(path.dirname(configPath), { recursive: true })
@@ -77,5 +85,64 @@ describe("ensureOttoConfigFile", () => {
     await writeFile(configPath, "not-json", "utf8")
 
     await expect(ensureOttoConfigFile(homeDirectory)).rejects.toThrow("Invalid JSON")
+  })
+
+  it("throws when flow default model ref is not provider/model", async () => {
+    // Arrange
+    const homeDirectory = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(homeDirectory)
+    const configPath = resolveOttoConfigPath(homeDirectory)
+
+    await mkdir(path.dirname(configPath), { recursive: true })
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        ...buildDefaultOttoConfig(homeDirectory),
+        modelManagement: {
+          flowDefaults: {
+            interactiveAssistant: "invalid",
+            scheduledTasks: null,
+            heartbeat: null,
+            watchdogFailures: null,
+          },
+        },
+      }),
+      "utf8"
+    )
+
+    // Act / Assert
+    await expect(ensureOttoConfigFile(homeDirectory)).rejects.toThrow("provider/model")
+  })
+
+  it("accepts namespaced model IDs in flow defaults", async () => {
+    // Arrange
+    const homeDirectory = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(homeDirectory)
+    const configPath = resolveOttoConfigPath(homeDirectory)
+
+    await mkdir(path.dirname(configPath), { recursive: true })
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        ...buildDefaultOttoConfig(homeDirectory),
+        modelManagement: {
+          flowDefaults: {
+            interactiveAssistant: "openrouter/openai/gpt-5.3-codex",
+            scheduledTasks: null,
+            heartbeat: null,
+            watchdogFailures: null,
+          },
+        },
+      }),
+      "utf8"
+    )
+
+    // Act
+    const result = await ensureOttoConfigFile(homeDirectory)
+
+    // Assert
+    expect(result.config.modelManagement.flowDefaults.interactiveAssistant).toBe(
+      "openrouter/openai/gpt-5.3-codex"
+    )
   })
 })

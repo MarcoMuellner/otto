@@ -47,9 +47,15 @@ describe("createInboundBridge", () => {
 
     // Assert
     expect(sessionGateway.ensureSession).toHaveBeenCalledWith("session-1")
-    expect(sessionGateway.promptSessionParts).toHaveBeenCalledWith("session-1", [
-      { type: "text", text: "hi" },
-    ])
+    expect(sessionGateway.promptSessionParts).toHaveBeenCalledWith(
+      "session-1",
+      [{ type: "text", text: "hi" }],
+      {
+        modelContext: {
+          flow: "interactiveAssistant",
+        },
+      }
+    )
     expect(sendMessage).toHaveBeenCalledWith(7, "Hello from Otto")
     expect(inboundMessagesRepository.insert).toHaveBeenCalledOnce()
     expect(outboundMessagesRepository.enqueue).toHaveBeenCalledOnce()

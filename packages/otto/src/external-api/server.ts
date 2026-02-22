@@ -91,6 +91,7 @@ type ExternalApiServerDependencies = {
         type: string
         scheduleType: "recurring" | "oneshot"
         profileId: string | null
+        modelRef: string | null
         runAt: number | null
         cadenceMinutes: number | null
         payload: string | null

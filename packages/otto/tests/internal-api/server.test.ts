@@ -47,6 +47,7 @@ const createJobsRepositoryStub = () => {
         type: string
         scheduleType: "recurring" | "oneshot"
         profileId: string | null
+        modelRef: string | null
         runAt: number | null
         cadenceMinutes: number | null
         payload: string | null
@@ -95,6 +96,7 @@ const createJobsRepositoryStub = () => {
         type: task.type,
         scheduleType: task.scheduleType,
         profileId: task.profileId,
+        modelRef: task.modelRef,
         status: task.status,
         runAt: task.runAt,
         cadenceMinutes: task.cadenceMinutes,
@@ -529,6 +531,7 @@ describe("buildInternalApiServer", () => {
       status: "idle",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       runAt: 1_000,
       cadenceMinutes: 5,
       payload: null,

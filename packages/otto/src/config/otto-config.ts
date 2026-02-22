@@ -63,6 +63,38 @@ const telegramSettingsSchema = z
     transcription: DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS,
   })
 
+const modelRefSchema = z
+  .string()
+  .trim()
+  .regex(/^[^\s/]+\/\S+$/, "model reference must be in provider/model format")
+
+const modelFlowDefaultsSchema = z
+  .object({
+    interactiveAssistant: modelRefSchema.nullable().default(null),
+    scheduledTasks: modelRefSchema.nullable().default(null),
+    heartbeat: modelRefSchema.nullable().default(null),
+    watchdogFailures: modelRefSchema.nullable().default(null),
+  })
+  .default({
+    interactiveAssistant: null,
+    scheduledTasks: null,
+    heartbeat: null,
+    watchdogFailures: null,
+  })
+
+const modelManagementSettingsSchema = z
+  .object({
+    flowDefaults: modelFlowDefaultsSchema,
+  })
+  .default({
+    flowDefaults: {
+      interactiveAssistant: null,
+      scheduledTasks: null,
+      heartbeat: null,
+      watchdogFailures: null,
+    },
+  })
+
 const ottoConfigSchema = z.object({
   version: z.literal(1),
   ottoHome: z.string().min(1, "ottoHome must be a non-empty string"),
@@ -75,6 +107,7 @@ const ottoConfigSchema = z.object({
       .max(65535, "opencode.port must be <= 65535"),
   }),
   telegram: telegramSettingsSchema,
+  modelManagement: modelManagementSettingsSchema,
 })
 
 export type OttoConfig = z.infer<typeof ottoConfigSchema>
@@ -119,6 +152,14 @@ export const buildDefaultOttoConfig = (homeDirectory = homedir()): OttoConfig =>
       transcription: {
         ...DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS,
         commandArgs: [...DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS.commandArgs],
+      },
+    },
+    modelManagement: {
+      flowDefaults: {
+        interactiveAssistant: null,
+        scheduledTasks: null,
+        heartbeat: null,
+        watchdogFailures: null,
       },
     },
   }

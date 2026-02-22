@@ -24,6 +24,7 @@ export type SchedulerClaimedJob = Pick<
   | "cadenceMinutes"
   | "nextRunAt"
   | "profileId"
+  | "modelRef"
   | "payload"
   | "lockToken"
 >

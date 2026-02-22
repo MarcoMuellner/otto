@@ -244,7 +244,11 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
 
     try {
       assistantText = await withTimeout(
-        dependencies.sessionGateway.promptSessionParts(resolvedSessionId, input.parts),
+        dependencies.sessionGateway.promptSessionParts(resolvedSessionId, input.parts, {
+          modelContext: {
+            flow: "interactiveAssistant",
+          },
+        }),
         dependencies.promptTimeoutMs
       )
     } catch (error) {

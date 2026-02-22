@@ -87,4 +87,19 @@ describe("openPersistenceDatabase", () => {
     // Assert
     expect(countRow.count).toBe(SQL_MIGRATIONS.length)
   })
+
+  it("adds model_ref column on jobs table", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const dbPath = path.join(tempRoot, "state.db")
+
+    // Act
+    const db = openPersistenceDatabase({ dbPath })
+    const columns = db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>
+    db.close()
+
+    // Assert
+    expect(columns.map((column) => column.name)).toContain("model_ref")
+  })
 })

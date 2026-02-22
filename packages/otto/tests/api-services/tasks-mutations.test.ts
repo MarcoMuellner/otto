@@ -16,6 +16,7 @@ const createJobRecord = (id: string, overrides: Partial<JobRecord> = {}): JobRec
     status: "idle",
     scheduleType: "recurring",
     profileId: null,
+    modelRef: null,
     runAt: 1_000,
     cadenceMinutes: 15,
     payload: null,
@@ -52,6 +53,7 @@ const createMutationHarness = (seed: JobRecord[] = []) => {
             type: string
             scheduleType: "recurring" | "oneshot"
             profileId: string | null
+            modelRef: string | null
             runAt: number | null
             cadenceMinutes: number | null
             payload: string | null

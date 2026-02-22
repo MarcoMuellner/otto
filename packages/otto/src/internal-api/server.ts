@@ -58,6 +58,7 @@ type InternalApiServerDependencies = {
         type: string
         scheduleType: JobScheduleType
         profileId: string | null
+        modelRef: string | null
         runAt: number | null
         cadenceMinutes: number | null
         payload: string | null

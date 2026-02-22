@@ -211,6 +211,7 @@ export const ensureWatchdogTask = (
     status: "idle",
     scheduleType: "recurring",
     profileId: null,
+    modelRef: null,
     runAt: firstRunAt,
     cadenceMinutes: parsedInput.cadenceMinutes,
     payload: JSON.stringify(payload),
