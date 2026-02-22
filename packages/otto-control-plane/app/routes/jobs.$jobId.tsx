@@ -1,10 +1,11 @@
+import { useEffect, useState } from "react"
 import { Link, useLoaderData, useNavigation } from "react-router"
 
-import { CommandBar } from "../components/command/command-bar.js"
 import { JobAuditList } from "../components/jobs/job-audit-list.js"
 import { JobDetailCard } from "../components/jobs/job-detail-card.js"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js"
 import type { ExternalJobAuditEntry, ExternalJobDetail } from "../features/jobs/contracts.js"
+import { getJobDisplayTitle } from "../features/jobs/presentation.js"
 import { createOttoExternalApiClientFromEnvironment } from "../server/otto-external-api.server.js"
 
 type JobDetailLoaderArgs = {
@@ -18,6 +19,7 @@ type JobDetailLoaderData =
       status: "success"
       job: ExternalJobDetail
       auditEntries: ExternalJobAuditEntry[]
+      now: number
     }
   | {
       status: "error"
@@ -41,6 +43,7 @@ export const loader = async ({ params }: JobDetailLoaderArgs): Promise<JobDetail
       status: "success",
       job: detail.job,
       auditEntries: audit.entries,
+      now: Date.now(),
     }
   } catch {
     return {
@@ -54,6 +57,28 @@ export default function JobDetailRoute() {
   const data = useLoaderData<typeof loader>()
   const navigation = useNavigation()
   const isLoading = navigation.state !== "idle"
+  const loaderNow = data.status === "success" ? data.now : Date.now()
+  const [referenceNow, setReferenceNow] = useState(loaderNow)
+  const displayTitle =
+    data.status === "success" ? getJobDisplayTitle(data.job.type) : "Task inspection"
+
+  useEffect(() => {
+    setReferenceNow(loaderNow)
+  }, [loaderNow])
+
+  useEffect(() => {
+    if (data.status !== "success") {
+      return
+    }
+
+    const handle = window.setInterval(() => {
+      setReferenceNow(Date.now())
+    }, 30_000)
+
+    return () => {
+      window.clearInterval(handle)
+    }
+  }, [data.status])
 
   return (
     <section className="relative min-h-[calc(100dvh-4rem)] w-full">
@@ -68,8 +93,8 @@ export default function JobDetailRoute() {
             <p className="mb-1 font-mono text-[11px] tracking-[0.12em] text-[#888888] uppercase">
               {data.status === "success" ? `Job ID: ${data.job.id}` : "Job detail"}
             </p>
-            <h1 className="m-0 text-3xl leading-none font-light text-[#1a1a1a]">
-              {data.status === "success" ? data.job.type : "Task inspection"}
+            <h1 className="m-0 max-w-[42rem] overflow-hidden text-3xl leading-tight font-light text-[#1a1a1a] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+              {displayTitle}
             </h1>
           </div>
           <Link
@@ -89,8 +114,6 @@ export default function JobDetailRoute() {
         </header>
 
         <div className="hide-scrollbar flex-1 space-y-4 overflow-y-auto px-6 py-6">
-          <CommandBar placeholder="Search actions or jump..." />
-
           {isLoading ? <p className="m-0 text-xs text-[#888888]">Refreshing detail...</p> : null}
 
           {data.status === "error" ? (
@@ -102,9 +125,9 @@ export default function JobDetailRoute() {
                 <p className="m-0 text-sm text-[#888888]">{data.message}</p>
               </CardContent>
             </Card>
-          ) : (
+            ) : (
             <>
-              <JobDetailCard job={data.job} />
+              <JobDetailCard job={data.job} referenceNow={referenceNow} />
               <JobAuditList entries={data.auditEntries} />
             </>
           )}

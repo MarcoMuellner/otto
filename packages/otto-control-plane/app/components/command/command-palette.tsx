@@ -248,6 +248,8 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
             </svg>
           </span>
           <input
+            id="command-palette-input"
+            name="command-palette"
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}

@@ -1,33 +1,30 @@
 import { Link } from "react-router"
 
 import type { ExternalJobListItem } from "../../features/jobs/contracts.js"
-
-const formatTimestamp = (timestamp: number | null): string => {
-  if (!timestamp) {
-    return "-"
-  }
-
-  return new Date(timestamp).toLocaleString()
-}
+import { getJobDisplayTitle } from "../../features/jobs/presentation.js"
+import { formatDateTime, formatNextRun } from "../../lib/date-time.js"
 
 const describeSchedule = (job: ExternalJobListItem): string => {
   if (job.scheduleType === "recurring") {
     return `Every ${job.cadenceMinutes ?? "?"} min`
   }
 
-  return `Runs at ${formatTimestamp(job.runAt)}`
+  return `Runs at ${formatDateTime(job.runAt)}`
 }
 
 type JobListItemProps = {
   job: ExternalJobListItem
+  referenceNow: number
 }
 
 /**
  * Renders one jobs-list row with compact status and schedule metadata so list sections can stay
  * scannable while preserving quick access to detail pages.
  */
-export const JobListItem = ({ job }: JobListItemProps) => {
+export const JobListItem = ({ job, referenceNow }: JobListItemProps) => {
   const isRunning = job.status === "running"
+  const displayTitle = getJobDisplayTitle(job.type)
+  const nextRunLabel = formatNextRun(job.nextRunAt, referenceNow)
 
   return (
     <Link
@@ -69,7 +66,9 @@ export const JobListItem = ({ job }: JobListItemProps) => {
             )}
           </div>
           <div>
-            <p className="m-0 text-lg font-light text-[#1a1a1a]">{job.type}</p>
+            <p className="m-0 overflow-hidden text-lg font-light text-[#1a1a1a] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+              {displayTitle}
+            </p>
             <p className="mt-1 mb-0 font-mono text-xs tracking-[0.08em] text-[#888888] uppercase">
               {isRunning ? "Running" : "Scheduled"} • {describeSchedule(job)}
             </p>
@@ -87,7 +86,7 @@ export const JobListItem = ({ job }: JobListItemProps) => {
         </span>
       </div>
 
-      <p className="m-0 text-xs text-[#888888]">Next run: {formatTimestamp(job.nextRunAt)}</p>
+      <p className="m-0 text-xs text-[#888888]">Next run: {nextRunLabel}</p>
     </Link>
   )
 }

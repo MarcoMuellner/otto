@@ -1,12 +1,6 @@
 import type { ExternalJobDetail } from "../../features/jobs/contracts.js"
-
-const formatTimestamp = (timestamp: number | null): string => {
-  if (!timestamp) {
-    return "-"
-  }
-
-  return new Date(timestamp).toLocaleString()
-}
+import { getJobDefinitionText, getJobDisplayTitle } from "../../features/jobs/presentation.js"
+import { formatDateTime, formatNextRun } from "../../lib/date-time.js"
 
 const formatPayload = (payload: string | null): string => {
   if (!payload) {
@@ -23,13 +17,18 @@ const formatPayload = (payload: string | null): string => {
 
 type JobDetailCardProps = {
   job: ExternalJobDetail
+  referenceNow: number
 }
 
 /**
  * Shows job detail in a panel-oriented layout aligned with the prototype, including status
  * blocks and payload preview for quick operator inspection.
  */
-export const JobDetailCard = ({ job }: JobDetailCardProps) => {
+export const JobDetailCard = ({ job, referenceNow }: JobDetailCardProps) => {
+  const displayTitle = getJobDisplayTitle(job.type)
+  const definitionText = getJobDefinitionText(job.type)
+  const nextRunLabel = formatNextRun(job.nextRunAt, referenceNow)
+
   return (
     <section className="space-y-6">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -62,7 +61,7 @@ export const JobDetailCard = ({ job }: JobDetailCardProps) => {
           <p className="m-0 font-mono text-sm text-[#1a1a1a]">
             {job.scheduleType === "recurring"
               ? `Every ${job.cadenceMinutes ?? "?"} minutes`
-              : formatTimestamp(job.runAt)}
+              : formatDateTime(job.runAt)}
           </p>
         </div>
       </div>
@@ -86,20 +85,28 @@ export const JobDetailCard = ({ job }: JobDetailCardProps) => {
             <dt className="font-mono text-xs tracking-[0.08em] text-[#888888] uppercase">
               Next run
             </dt>
-            <dd className="m-0 mt-1 text-[#1a1a1a]">{formatTimestamp(job.nextRunAt)}</dd>
+            <dd className="m-0 mt-1 text-[#1a1a1a]">{nextRunLabel}</dd>
           </div>
           <div>
             <dt className="font-mono text-xs tracking-[0.08em] text-[#888888] uppercase">
               Last run
             </dt>
-            <dd className="m-0 mt-1 text-[#1a1a1a]">{formatTimestamp(job.lastRunAt)}</dd>
+            <dd className="m-0 mt-1 text-[#1a1a1a]">{formatDateTime(job.lastRunAt)}</dd>
           </div>
         </dl>
       </div>
 
       <div className="rounded-lg border border-[rgba(26,26,26,0.08)] bg-white p-4">
+        <h3 className="mt-0 mb-2 text-sm font-medium text-[#1a1a1a]">Task Definition</h3>
+        <p className="m-0 mb-3 text-sm text-[#666666]">{displayTitle}</p>
+        <pre className="hide-scrollbar m-0 max-h-40 overflow-auto rounded-lg border border-[rgba(26,26,26,0.08)] bg-[rgba(248,248,248,0.8)] p-3 font-mono text-xs leading-relaxed text-[#666666] whitespace-pre-wrap">
+          {definitionText}
+        </pre>
+      </div>
+
+      <div className="rounded-lg border border-[rgba(26,26,26,0.08)] bg-white p-4">
         <h3 className="mt-0 mb-3 text-sm font-medium text-[#1a1a1a]">Configuration Payload</h3>
-        <pre className="m-0 overflow-x-auto rounded-lg border border-[rgba(26,26,26,0.08)] bg-[rgba(248,248,248,0.8)] p-3 font-mono text-xs text-[#666666]">
+        <pre className="hide-scrollbar m-0 max-h-40 overflow-auto rounded-lg border border-[rgba(26,26,26,0.08)] bg-[rgba(248,248,248,0.8)] p-3 font-mono text-xs text-[#666666]">
           {formatPayload(job.payload)}
         </pre>
       </div>

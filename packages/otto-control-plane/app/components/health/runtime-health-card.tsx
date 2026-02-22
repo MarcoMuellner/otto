@@ -1,4 +1,5 @@
 import type { RuntimeHealthSnapshot } from "../../server/health.server.js"
+import { formatDateTime } from "../../lib/date-time.js"
 import { Button } from "../ui/button.js"
 import {
   Card,
@@ -43,7 +44,7 @@ export const RuntimeHealthCard = ({ health, refreshState, onRefresh }: RuntimeHe
       </CardContent>
       <CardFooter className="flex flex-col gap-2">
         <p className="m-0 text-[0.83rem] text-[#888888]">
-          Last check: {new Date(health.checkedAt).toLocaleString()}
+          Last check: {formatDateTime(health.checkedAt)}
         </p>
         {refreshState === "error" ? (
           <p className="m-0 text-[0.83rem] text-[#eb3b3b]">

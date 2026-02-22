@@ -1,12 +1,37 @@
 import { useEffect, useState } from "react"
-import { Outlet } from "react-router"
+import { Outlet, useLocation, useNavigate } from "react-router"
 
 import { CommandPalette } from "../components/command/command-palette.js"
 import { OPEN_COMMAND_PALETTE_EVENT } from "../components/command/events.js"
 import { AmbientRings } from "../components/layout/ambient-rings.js"
 
+const resolveEscapeTarget = (pathname: string): string | null => {
+  if (pathname === "/") {
+    return null
+  }
+
+  if (pathname.startsWith("/jobs/")) {
+    return "/jobs"
+  }
+
+  return "/"
+}
+
+const isEditableTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  const tagName = target.tagName
+  return (
+    target.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT"
+  )
+}
+
 export default function LayoutRoute() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
+  const location = useLocation()
+  const navigate = useNavigate()
 
   useEffect(() => {
     const openPalette = (): void => {
@@ -25,7 +50,23 @@ export default function LayoutRoute() {
       }
 
       if (event.key === "Escape") {
-        closePalette()
+        if (isCommandPaletteOpen) {
+          event.preventDefault()
+          closePalette()
+          return
+        }
+
+        if (isEditableTarget(event.target)) {
+          return
+        }
+
+        const escapeTarget = resolveEscapeTarget(location.pathname)
+        if (!escapeTarget) {
+          return
+        }
+
+        event.preventDefault()
+        navigate(escapeTarget)
       }
     }
 
@@ -36,7 +77,7 @@ export default function LayoutRoute() {
       window.removeEventListener("keydown", handleKeyDown)
       window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, openPalette)
     }
-  }, [])
+  }, [isCommandPaletteOpen, location.pathname, navigate])
 
   return (
     <main className="relative flex min-h-dvh justify-center overflow-hidden px-5 py-8 max-[720px]:px-3.5 max-[720px]:py-[18px]">

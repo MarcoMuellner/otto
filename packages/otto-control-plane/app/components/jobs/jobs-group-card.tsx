@@ -7,13 +7,20 @@ type JobsGroupCardProps = {
   description: string
   emptyMessage: string
   jobs: ExternalJobListItem[]
+  referenceNow: number
 }
 
 /**
  * Displays one logical jobs group so system and operator tasks can stay visually separated
  * without duplicating section layout markup across route files.
  */
-export const JobsGroupCard = ({ title, description, emptyMessage, jobs }: JobsGroupCardProps) => {
+export const JobsGroupCard = ({
+  title,
+  description,
+  emptyMessage,
+  jobs,
+  referenceNow,
+}: JobsGroupCardProps) => {
   return (
     <Card className="rounded-xl border-[rgba(26,26,26,0.08)] shadow-sm">
       <CardHeader className="border-b border-[rgba(26,26,26,0.06)] pb-4">
@@ -27,7 +34,7 @@ export const JobsGroupCard = ({ title, description, emptyMessage, jobs }: JobsGr
         ) : (
           <div className="grid gap-2">
             {jobs.map((job) => (
-              <JobListItem key={job.id} job={job} />
+              <JobListItem key={job.id} job={job} referenceNow={referenceNow} />
             ))}
           </div>
         )}

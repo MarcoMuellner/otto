@@ -1,16 +1,8 @@
 import type { ExternalJobAuditEntry } from "../../features/jobs/contracts.js"
+import { formatTime } from "../../lib/date-time.js"
 
 type JobAuditListProps = {
   entries: ExternalJobAuditEntry[]
-}
-
-const formatTimestamp = (timestamp: number): string => {
-  return new Date(timestamp).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  })
 }
 
 /**
@@ -27,7 +19,7 @@ export const JobAuditList = ({ entries }: JobAuditListProps) => {
         ) : (
           entries.map((entry) => (
             <p key={entry.id} className="m-0">
-              <span className="text-[#888888]">[{formatTimestamp(entry.createdAt)}]</span>{" "}
+              <span className="text-[#888888]">[{formatTime(entry.createdAt)}]</span>{" "}
               <span className="text-[#1a1a1a]">{entry.action}</span> lane={entry.lane}
             </p>
           ))
