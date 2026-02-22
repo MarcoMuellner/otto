@@ -276,4 +276,8 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
        ON messages_in_media (status, updated_at DESC)`,
     ],
   },
+  {
+    id: "015_jobs_model_ref",
+    statements: [`ALTER TABLE jobs ADD COLUMN model_ref TEXT`],
+  },
 ]

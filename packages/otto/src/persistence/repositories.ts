@@ -96,6 +96,7 @@ export type JobRecord = {
   status: JobStatus
   scheduleType: JobScheduleType
   profileId: string | null
+  modelRef: string | null
   runAt: number | null
   cadenceMinutes: number | null
   payload: string | null
@@ -148,6 +149,7 @@ export type TaskListRecord = {
   type: string
   scheduleType: JobScheduleType
   profileId: string | null
+  modelRef: string | null
   status: JobStatus
   runAt: number | null
   cadenceMinutes: number | null
@@ -621,15 +623,16 @@ export const createOutboundMessagesRepository = (database: DatabaseSync) => {
 export const createJobsRepository = (database: DatabaseSync) => {
   const upsertStatement = database.prepare(
     `INSERT INTO jobs
-      (id, type, status, schedule_type, profile_id, run_at, cadence_minutes, payload, last_run_at, next_run_at, terminal_state, terminal_reason, lock_token, lock_expires_at, created_at, updated_at)
+      (id, type, status, schedule_type, profile_id, model_ref, run_at, cadence_minutes, payload, last_run_at, next_run_at, terminal_state, terminal_reason, lock_token, lock_expires_at, created_at, updated_at)
      VALUES
-      (@id, @type, @status, @scheduleType, @profileId, @runAt, @cadenceMinutes, @payload, @lastRunAt, @nextRunAt, @terminalState, @terminalReason, @lockToken, @lockExpiresAt, @createdAt, @updatedAt)
+      (@id, @type, @status, @scheduleType, @profileId, @modelRef, @runAt, @cadenceMinutes, @payload, @lastRunAt, @nextRunAt, @terminalState, @terminalReason, @lockToken, @lockExpiresAt, @createdAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
        type = excluded.type,
        status = excluded.status,
        schedule_type = excluded.schedule_type,
        profile_id = excluded.profile_id,
-       run_at = excluded.run_at,
+        model_ref = excluded.model_ref,
+        run_at = excluded.run_at,
        cadence_minutes = excluded.cadence_minutes,
        payload = excluded.payload,
        last_run_at = excluded.last_run_at,
@@ -648,6 +651,7 @@ export const createJobsRepository = (database: DatabaseSync) => {
       status,
       schedule_type as scheduleType,
       profile_id as profileId,
+      model_ref as modelRef,
       run_at as runAt,
       cadence_minutes as cadenceMinutes,
       payload,
@@ -702,6 +706,7 @@ export const createJobsRepository = (database: DatabaseSync) => {
       status,
       schedule_type as scheduleType,
       profile_id as profileId,
+      model_ref as modelRef,
       run_at as runAt,
       cadence_minutes as cadenceMinutes,
       payload,
@@ -736,9 +741,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
 
   const insertTaskStatement = database.prepare(
     `INSERT INTO jobs
-      (id, type, status, schedule_type, profile_id, run_at, cadence_minutes, payload, last_run_at, next_run_at, terminal_state, terminal_reason, lock_token, lock_expires_at, created_at, updated_at)
+      (id, type, status, schedule_type, profile_id, model_ref, run_at, cadence_minutes, payload, last_run_at, next_run_at, terminal_state, terminal_reason, lock_token, lock_expires_at, created_at, updated_at)
      VALUES
-      (@id, @type, @status, @scheduleType, @profileId, @runAt, @cadenceMinutes, @payload, @lastRunAt, @nextRunAt, @terminalState, @terminalReason, @lockToken, @lockExpiresAt, @createdAt, @updatedAt)`
+      (@id, @type, @status, @scheduleType, @profileId, @modelRef, @runAt, @cadenceMinutes, @payload, @lastRunAt, @nextRunAt, @terminalState, @terminalReason, @lockToken, @lockExpiresAt, @createdAt, @updatedAt)`
   )
 
   const updateTaskStatement = database.prepare(
@@ -746,6 +751,7 @@ export const createJobsRepository = (database: DatabaseSync) => {
      SET type = COALESCE(?, type),
          schedule_type = COALESCE(?, schedule_type),
          profile_id = ?,
+         model_ref = ?,
          run_at = ?,
          cadence_minutes = ?,
          payload = ?,
@@ -784,6 +790,7 @@ export const createJobsRepository = (database: DatabaseSync) => {
       type,
       schedule_type as scheduleType,
       profile_id as profileId,
+      model_ref as modelRef,
       status,
       run_at as runAt,
       cadence_minutes as cadenceMinutes,
@@ -1090,6 +1097,7 @@ export const createJobsRepository = (database: DatabaseSync) => {
         type: string
         scheduleType: JobScheduleType
         profileId: string | null
+        modelRef: string | null
         runAt: number | null
         cadenceMinutes: number | null
         payload: string | null
@@ -1101,6 +1109,7 @@ export const createJobsRepository = (database: DatabaseSync) => {
         update.type,
         update.scheduleType,
         update.profileId,
+        update.modelRef,
         update.runAt,
         update.cadenceMinutes,
         update.payload,

@@ -46,6 +46,7 @@ type ClaimedJobRecord = Pick<
   | "cadenceMinutes"
   | "nextRunAt"
   | "profileId"
+  | "modelRef"
   | "payload"
   | "lockToken"
 >
@@ -535,6 +536,10 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 systemPrompt,
                 tools,
                 agent: "assistant",
+                modelContext: {
+                  flow: "scheduledTasks",
+                  jobModelRef: job.modelRef,
+                },
               }
             )
 

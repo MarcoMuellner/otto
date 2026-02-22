@@ -1,6 +1,8 @@
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import type { Logger } from "pino"
 
+import type { ResolvedRuntimeModel, RuntimeModelFlow } from "../model-management/index.js"
+
 type SessionChatTextPart = {
   type?: string
   text?: string
@@ -13,6 +15,12 @@ type SessionChatResponsePayload = {
 type ModelSelection = {
   providerId: string
   modelId: string
+  source: string
+}
+
+type SessionModelContext = {
+  flow: RuntimeModelFlow
+  jobModelRef?: string | null
 }
 
 export type OpencodeSessionGateway = {
@@ -24,6 +32,7 @@ export type OpencodeSessionGateway = {
       systemPrompt?: string
       tools?: Record<string, boolean>
       agent?: string
+      modelContext?: SessionModelContext
     }
   ) => Promise<string>
   promptSession: (
@@ -33,6 +42,7 @@ export type OpencodeSessionGateway = {
       systemPrompt?: string
       tools?: Record<string, boolean>
       agent?: string
+      modelContext?: SessionModelContext
     }
   ) => Promise<string>
 }
@@ -85,7 +95,15 @@ const resolveModelSelection = async (
   return {
     providerId: model.slice(0, slashIndex),
     modelId: model.slice(slashIndex + 1),
+    source: "global_default",
   }
+}
+
+type ModelResolver = {
+  resolve: (input: {
+    flow: RuntimeModelFlow
+    jobModelRef: string | null
+  }) => Promise<ResolvedRuntimeModel>
 }
 
 /**
@@ -97,7 +115,8 @@ const resolveModelSelection = async (
  */
 export const createOpencodeSessionGateway = (
   baseUrl: string,
-  logger?: Logger
+  logger?: Logger,
+  modelResolver?: ModelResolver
 ): OpencodeSessionGateway => {
   const client = createOpencodeClient({ baseUrl, throwOnError: true })
   const sessionApi = client.session
@@ -110,10 +129,20 @@ export const createOpencodeSessionGateway = (
       systemPrompt?: string
       tools?: Record<string, boolean>
       agent?: string
+      modelContext?: SessionModelContext
     }
   ): Promise<string> => {
-    modelSelectionPromise ??= resolveModelSelection(client.config)
-    const modelSelection = await modelSelectionPromise
+    let modelSelection: ModelSelection
+
+    if (options?.modelContext && modelResolver) {
+      modelSelection = await modelResolver.resolve({
+        flow: options.modelContext.flow,
+        jobModelRef: options.modelContext.jobModelRef ?? null,
+      })
+    } else {
+      modelSelectionPromise ??= resolveModelSelection(client.config)
+      modelSelection = await modelSelectionPromise
+    }
 
     logger?.info(
       {
@@ -121,6 +150,7 @@ export const createOpencodeSessionGateway = (
         sessionId,
         providerId: modelSelection.providerId,
         modelId: modelSelection.modelId,
+        modelSource: modelSelection.source,
         partsCount: parts.length,
       },
       "Sending Telegram prompt to OpenCode session chat API"

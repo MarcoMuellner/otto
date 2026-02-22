@@ -97,6 +97,7 @@ type TaskMutationsRepository = {
       type: string
       scheduleType: JobScheduleType
       profileId: string | null
+      modelRef: string | null
       runAt: number | null
       cadenceMinutes: number | null
       payload: string | null
@@ -204,6 +205,7 @@ export const createTaskMutation = (
     status: "idle",
     scheduleType: input.scheduleType,
     profileId: input.profileId ?? null,
+    modelRef: null,
     runAt,
     cadenceMinutes: input.scheduleType === "recurring" ? (input.cadenceMinutes ?? null) : null,
     payload: input.payload ? JSON.stringify(input.payload) : null,
@@ -284,6 +286,7 @@ export const updateTaskMutation = (
       type: input.type ?? existing.type,
       scheduleType,
       profileId: input.profileId === undefined ? existing.profileId : input.profileId,
+      modelRef: existing.modelRef,
       runAt: normalizedRunAt,
       cadenceMinutes,
       payload:

@@ -228,6 +228,7 @@ describe("persistence repositories", () => {
       status: "idle",
       scheduleType: "oneshot",
       profileId: null,
+      modelRef: null,
       runAt: 1000,
       cadenceMinutes: null,
       payload: null,
@@ -247,6 +248,43 @@ describe("persistence repositories", () => {
     // Assert
     expect(due).toHaveLength(1)
     expect(due[0]?.id).toBe("job-1")
+    expect(due[0]?.modelRef).toBeNull()
+
+    db.close()
+  })
+
+  it("persists and returns nullable job modelRef", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createJobsRepository(db)
+
+    repository.createTask({
+      id: "job-model-ref-1",
+      type: "oneshot",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: "openai/gpt-5.3-codex",
+      runAt: 10,
+      cadenceMinutes: null,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 10,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    // Act
+    const stored = repository.getById("job-model-ref-1")
+
+    // Assert
+    expect(stored?.modelRef).toBe("openai/gpt-5.3-codex")
 
     db.close()
   })
@@ -264,6 +302,7 @@ describe("persistence repositories", () => {
       status: "idle",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       runAt: null,
       cadenceMinutes: 1,
       payload: null,
@@ -282,6 +321,7 @@ describe("persistence repositories", () => {
       status: "idle",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       runAt: null,
       cadenceMinutes: 1,
       payload: null,
@@ -300,6 +340,7 @@ describe("persistence repositories", () => {
       status: "paused",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       runAt: null,
       cadenceMinutes: 1,
       payload: null,
@@ -344,6 +385,7 @@ describe("persistence repositories", () => {
       status: "running",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       runAt: null,
       cadenceMinutes: 1,
       payload: null,
@@ -380,6 +422,7 @@ describe("persistence repositories", () => {
       status: "idle",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       runAt: null,
       cadenceMinutes: 30,
       payload: null,
@@ -398,6 +441,7 @@ describe("persistence repositories", () => {
       status: "idle",
       scheduleType: "oneshot",
       profileId: null,
+      modelRef: null,
       runAt: 2_000,
       cadenceMinutes: null,
       payload: null,
@@ -593,6 +637,7 @@ describe("persistence repositories", () => {
       status: "idle",
       scheduleType: "oneshot",
       profileId: null,
+      modelRef: null,
       runAt: 1_000,
       cadenceMinutes: null,
       payload: null,

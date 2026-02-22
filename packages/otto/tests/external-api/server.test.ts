@@ -29,6 +29,7 @@ const createTaskListRecord = (id: string): TaskListRecord => {
     type: "heartbeat",
     scheduleType: "recurring",
     profileId: null,
+    modelRef: null,
     status: "idle",
     runAt: null,
     cadenceMinutes: 5,
@@ -46,6 +47,7 @@ const createJobRecord = (id: string): JobRecord => {
     status: "idle",
     scheduleType: "recurring",
     profileId: null,
+    modelRef: null,
     runAt: null,
     cadenceMinutes: 5,
     payload: null,
@@ -108,6 +110,7 @@ type JobsRepositoryStub = {
       type: string
       scheduleType: "recurring" | "oneshot"
       profileId: string | null
+      modelRef: string | null
       runAt: number | null
       cadenceMinutes: number | null
       payload: string | null

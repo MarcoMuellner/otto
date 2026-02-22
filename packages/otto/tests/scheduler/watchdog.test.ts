@@ -92,6 +92,7 @@ describe("watchdog", () => {
       status: "paused",
       scheduleType: "recurring",
       profileId: null,
+      modelRef: null,
       runAt: null,
       cadenceMinutes: 30,
       payload: null,
