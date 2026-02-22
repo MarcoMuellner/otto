@@ -3,6 +3,11 @@ import path from "node:path"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { z } from "zod"
 
+import {
+  DEFAULT_MODEL_FLOW_DEFAULTS,
+  modelFlowDefaultsSchema as sharedModelFlowDefaultsSchema,
+} from "../model-management/contracts.js"
+
 const DEFAULT_TELEGRAM_VOICE_SETTINGS = {
   enabled: false,
   maxDurationSec: 180,
@@ -63,24 +68,9 @@ const telegramSettingsSchema = z
     transcription: DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS,
   })
 
-const modelRefSchema = z
-  .string()
-  .trim()
-  .regex(/^[^\s/]+\/\S+$/, "model reference must be in provider/model format")
-
-const modelFlowDefaultsSchema = z
-  .object({
-    interactiveAssistant: modelRefSchema.nullable().default(null),
-    scheduledTasks: modelRefSchema.nullable().default(null),
-    heartbeat: modelRefSchema.nullable().default(null),
-    watchdogFailures: modelRefSchema.nullable().default(null),
-  })
-  .default({
-    interactiveAssistant: null,
-    scheduledTasks: null,
-    heartbeat: null,
-    watchdogFailures: null,
-  })
+const modelFlowDefaultsSchema = sharedModelFlowDefaultsSchema.default({
+  ...DEFAULT_MODEL_FLOW_DEFAULTS,
+})
 
 const modelManagementSettingsSchema = z
   .object({
@@ -88,10 +78,7 @@ const modelManagementSettingsSchema = z
   })
   .default({
     flowDefaults: {
-      interactiveAssistant: null,
-      scheduledTasks: null,
-      heartbeat: null,
-      watchdogFailures: null,
+      ...DEFAULT_MODEL_FLOW_DEFAULTS,
     },
   })
 
@@ -112,6 +99,7 @@ const ottoConfigSchema = z.object({
 
 export type OttoConfig = z.infer<typeof ottoConfigSchema>
 export type OttoTelegramSettings = OttoConfig["telegram"]
+export type OttoModelFlowDefaults = OttoConfig["modelManagement"]["flowDefaults"]
 
 export type ResolvedOttoConfig = {
   config: OttoConfig
@@ -156,13 +144,56 @@ export const buildDefaultOttoConfig = (homeDirectory = homedir()): OttoConfig =>
     },
     modelManagement: {
       flowDefaults: {
-        interactiveAssistant: null,
-        scheduledTasks: null,
-        heartbeat: null,
-        watchdogFailures: null,
+        ...DEFAULT_MODEL_FLOW_DEFAULTS,
       },
     },
   }
+}
+
+/**
+ * Reads current runtime model flow defaults from persisted Otto config so API and operator
+ * surfaces can display effective defaults without reimplementing config resolution.
+ *
+ * @param homeDirectory Home directory override used by tests and embedding.
+ * @param configPath Optional explicit config path for advanced embedding scenarios.
+ * @returns Current persisted flow default mapping.
+ */
+export const readOttoModelFlowDefaults = async (
+  homeDirectory = homedir(),
+  configPath = resolveOttoConfigPath(homeDirectory)
+): Promise<OttoModelFlowDefaults> => {
+  const { config } = await ensureOttoConfigFile(homeDirectory, configPath)
+  return {
+    ...config.modelManagement.flowDefaults,
+  }
+}
+
+/**
+ * Persists new model flow defaults atomically through the same config schema used at startup
+ * so runtime config edits remain validated and immediately visible to active services.
+ *
+ * @param flowDefaults Flow defaults to persist.
+ * @param homeDirectory Home directory override used by tests and embedding.
+ * @param configPath Optional explicit config path for advanced embedding scenarios.
+ * @returns Updated persisted config.
+ */
+export const updateOttoModelFlowDefaults = async (
+  flowDefaults: OttoModelFlowDefaults,
+  homeDirectory = homedir(),
+  configPath = resolveOttoConfigPath(homeDirectory)
+): Promise<OttoConfig> => {
+  const { config: existing } = await ensureOttoConfigFile(homeDirectory, configPath)
+  const updated = ottoConfigSchema.parse({
+    ...existing,
+    modelManagement: {
+      flowDefaults,
+    },
+  })
+
+  await mkdir(path.dirname(configPath), { recursive: true })
+  await writeFile(configPath, `${JSON.stringify(updated, null, 2)}\n`, "utf8")
+
+  return updated
 }
 
 /**

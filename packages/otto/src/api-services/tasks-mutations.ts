@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { z } from "zod"
 
 import { resolveTaskManagedBy } from "./tasks-read.js"
+import { modelRefSchema } from "../model-management/contracts.js"
 import type { JobRecord, JobScheduleType, TaskAuditRecord } from "../persistence/repositories.js"
 
 export type TaskMutationResultStatus = "created" | "updated" | "deleted" | "run_now_scheduled"
@@ -38,6 +39,7 @@ export const taskCreateInputSchema = z
     cadenceMinutes: z.number().int().min(1).optional(),
     payload: z.record(z.string(), z.unknown()).optional(),
     profileId: z.string().trim().min(1).optional(),
+    modelRef: modelRefSchema.nullable().optional(),
   })
   .superRefine((input, ctx) => {
     if (input.scheduleType === "oneshot" && input.runAt == null) {
@@ -63,6 +65,7 @@ export const taskUpdateInputSchema = z
     cadenceMinutes: z.number().int().min(1).nullable().optional(),
     payload: z.record(z.string(), z.unknown()).nullable().optional(),
     profileId: z.string().trim().min(1).nullable().optional(),
+    modelRef: modelRefSchema.nullable().optional(),
   })
   .superRefine((input, ctx) => {
     if (input.scheduleType === "recurring" && input.cadenceMinutes === null) {
@@ -205,7 +208,7 @@ export const createTaskMutation = (
     status: "idle",
     scheduleType: input.scheduleType,
     profileId: input.profileId ?? null,
-    modelRef: null,
+    modelRef: input.modelRef ?? null,
     runAt,
     cadenceMinutes: input.scheduleType === "recurring" ? (input.cadenceMinutes ?? null) : null,
     payload: input.payload ? JSON.stringify(input.payload) : null,
@@ -286,7 +289,7 @@ export const updateTaskMutation = (
       type: input.type ?? existing.type,
       scheduleType,
       profileId: input.profileId === undefined ? existing.profileId : input.profileId,
-      modelRef: existing.modelRef,
+      modelRef: input.modelRef === undefined ? existing.modelRef : input.modelRef,
       runAt: normalizedRunAt,
       cadenceMinutes,
       payload:

@@ -4,7 +4,11 @@ import { constants } from "node:fs"
 
 import type { Logger } from "pino"
 
-import { ensureOttoConfigFile } from "../config/otto-config.js"
+import {
+  ensureOttoConfigFile,
+  readOttoModelFlowDefaults,
+  updateOttoModelFlowDefaults,
+} from "../config/otto-config.js"
 import {
   buildExternalSystemStatusSnapshot,
   resolveExternalApiConfig,
@@ -16,6 +20,7 @@ import {
   createModelCatalogService,
   createOpencodeModelClient,
   createRuntimeModelResolver,
+  type ModelCatalogService,
 } from "../model-management/index.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createJobsRepository } from "../persistence/repositories.js"
@@ -156,6 +161,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
 
   let internalApiServer: { url: string; close: () => Promise<void> } | null = null
   let externalApiServer: { url: string; close: () => Promise<void> } | null = null
+  let modelCatalogService: ModelCatalogService | null = null
 
   try {
     internalApiServer = await startInternalApiServer({
@@ -233,6 +239,29 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       jobsRepository,
       taskAuditRepository,
       commandAuditRepository,
+      modelManagement: {
+        getCatalogSnapshot: () => {
+          if (!modelCatalogService) {
+            throw new Error("Model catalog service is not ready")
+          }
+
+          return modelCatalogService.getSnapshot()
+        },
+        refreshCatalog: async () => {
+          if (!modelCatalogService) {
+            throw new Error("Model catalog service is not ready")
+          }
+
+          return await modelCatalogService.refreshNow()
+        },
+        getFlowDefaults: async () => {
+          return await readOttoModelFlowDefaults(homeDirectory)
+        },
+        updateFlowDefaults: async (flowDefaults) => {
+          const updated = await updateOttoModelFlowDefaults(flowDefaults, homeDirectory)
+          return updated.modelManagement.flowDefaults
+        },
+      },
     })
     systemServiceStates.external_api = {
       ...systemServiceStates.external_api,
@@ -293,7 +322,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     )
 
     const opencodeModelClient = createOpencodeModelClient(server.url)
-    const modelCatalogService = createModelCatalogService({
+    modelCatalogService = createModelCatalogService({
       logger,
       ottoHome: config.ottoHome,
       fetchCatalogRefs: opencodeModelClient.fetchCatalogRefs,

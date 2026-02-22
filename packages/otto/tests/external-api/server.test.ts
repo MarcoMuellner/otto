@@ -131,6 +131,36 @@ type CommandAuditRepositoryStub = {
   insert: (record: CommandAuditRecord) => void
 }
 
+type ModelManagementStub = {
+  getCatalogSnapshot: () => {
+    refs: string[]
+    updatedAt: number | null
+    source: "network" | "cache"
+  }
+  refreshCatalog: () => Promise<{
+    refs: string[]
+    updatedAt: number | null
+    source: "network" | "cache"
+  }>
+  getFlowDefaults: () => Promise<{
+    interactiveAssistant: string | null
+    scheduledTasks: string | null
+    heartbeat: string | null
+    watchdogFailures: string | null
+  }>
+  updateFlowDefaults: (flowDefaults: {
+    interactiveAssistant: string | null
+    scheduledTasks: string | null
+    heartbeat: string | null
+    watchdogFailures: string | null
+  }) => Promise<{
+    interactiveAssistant: string | null
+    scheduledTasks: string | null
+    heartbeat: string | null
+    watchdogFailures: string | null
+  }>
+}
+
 const createJobsRepositoryStub = (
   overrides: Partial<JobsRepositoryStub> = {}
 ): JobsRepositoryStub => {
@@ -175,6 +205,31 @@ const createCommandAuditRepositoryStub = (
     insert: () => {
       return
     },
+    ...overrides,
+  }
+}
+
+const createModelManagementStub = (
+  overrides: Partial<ModelManagementStub> = {}
+): ModelManagementStub => {
+  return {
+    getCatalogSnapshot: () => ({
+      refs: ["openai/gpt-5.3-codex"],
+      updatedAt: 1_000,
+      source: "cache",
+    }),
+    refreshCatalog: async () => ({
+      refs: ["openai/gpt-5.3-codex"],
+      updatedAt: 2_000,
+      source: "network",
+    }),
+    getFlowDefaults: async () => ({
+      interactiveAssistant: null,
+      scheduledTasks: "openai/gpt-5.3-codex",
+      heartbeat: null,
+      watchdogFailures: null,
+    }),
+    updateFlowDefaults: async (flowDefaults) => flowDefaults,
     ...overrides,
   }
 }
@@ -360,6 +415,229 @@ describe("buildExternalApiServer", () => {
     expect(auditRecords[0]).toMatchObject({
       command: "external_system_restart",
       status: "success",
+    })
+
+    await app.close()
+  })
+
+  it("returns model catalog snapshot when authorized", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      modelManagement: createModelManagementStub({
+        getCatalogSnapshot: () => ({
+          refs: ["anthropic/claude-sonnet-4", "openai/gpt-5.3-codex"],
+          updatedAt: 4_000,
+          source: "network",
+        }),
+      }),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/models/catalog",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      models: ["anthropic/claude-sonnet-4", "openai/gpt-5.3-codex"],
+      updatedAt: 4_000,
+      source: "network",
+    })
+
+    await app.close()
+  })
+
+  it("refreshes model catalog and records command audit", async () => {
+    // Arrange
+    const auditRecords: CommandAuditRecord[] = []
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub({
+        insert: (record: CommandAuditRecord): void => {
+          auditRecords.push(record)
+        },
+      }),
+      modelManagement: createModelManagementStub({
+        refreshCatalog: async () => ({
+          refs: ["openai/gpt-5.3-codex", "openai/o3"],
+          updatedAt: 9_000,
+          source: "network",
+        }),
+      }),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/models/refresh",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      status: "ok",
+      updatedAt: 9_000,
+      count: 2,
+    })
+    expect(auditRecords[0]).toMatchObject({
+      command: "external_models_refresh",
+      status: "success",
+    })
+
+    await app.close()
+  })
+
+  it("returns and updates model defaults via external API", async () => {
+    // Arrange
+    const auditRecords: CommandAuditRecord[] = []
+    let currentDefaults = {
+      interactiveAssistant: "openai/gpt-5.3-codex",
+      scheduledTasks: null,
+      heartbeat: null,
+      watchdogFailures: null,
+    }
+
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub({
+        insert: (record: CommandAuditRecord): void => {
+          auditRecords.push(record)
+        },
+      }),
+      modelManagement: createModelManagementStub({
+        getFlowDefaults: async () => currentDefaults,
+        updateFlowDefaults: async (flowDefaults) => {
+          currentDefaults = flowDefaults
+          return currentDefaults
+        },
+      }),
+    })
+
+    // Act
+    const before = await app.inject({
+      method: "GET",
+      url: "/external/models/defaults",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+    const update = await app.inject({
+      method: "PUT",
+      url: "/external/models/defaults",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        flowDefaults: {
+          interactiveAssistant: "anthropic/claude-sonnet-4",
+          scheduledTasks: "openai/gpt-5.3-codex",
+          heartbeat: null,
+          watchdogFailures: null,
+        },
+      },
+    })
+
+    // Assert
+    expect(before.statusCode).toBe(200)
+    expect(before.json()).toEqual({
+      flowDefaults: {
+        interactiveAssistant: "openai/gpt-5.3-codex",
+        scheduledTasks: null,
+        heartbeat: null,
+        watchdogFailures: null,
+      },
+    })
+
+    expect(update.statusCode).toBe(200)
+    expect(update.json()).toEqual({
+      flowDefaults: {
+        interactiveAssistant: "anthropic/claude-sonnet-4",
+        scheduledTasks: "openai/gpt-5.3-codex",
+        heartbeat: null,
+        watchdogFailures: null,
+      },
+    })
+    expect(auditRecords.at(-1)).toMatchObject({
+      command: "external_models_defaults_update",
+      status: "success",
+    })
+
+    await app.close()
+  })
+
+  it("returns validation errors for invalid model defaults payload", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      modelManagement: createModelManagementStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "PUT",
+      url: "/external/models/defaults",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        flowDefaults: {
+          interactiveAssistant: "invalid",
+          scheduledTasks: null,
+          heartbeat: null,
+          watchdogFailures: null,
+        },
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: "invalid_request",
     })
 
     await app.close()
@@ -692,6 +970,7 @@ describe("buildExternalApiServer", () => {
         type: "operator-managed task",
         scheduleType: "oneshot",
         runAt: 4_000,
+        modelRef: "openai/gpt-5.3-codex",
       },
     })
 
@@ -703,6 +982,7 @@ describe("buildExternalApiServer", () => {
     }
     expect(body.status).toBe("created")
     expect(tasks.get(body.id)?.type).toBe("operator-managed task")
+    expect(tasks.get(body.id)?.modelRef).toBe("openai/gpt-5.3-codex")
     expect(audit[0]).toMatchObject({
       action: "create",
       lane: "scheduled",
@@ -747,6 +1027,78 @@ describe("buildExternalApiServer", () => {
     expect(response.json()).toMatchObject({
       error: "forbidden_mutation",
     })
+
+    await app.close()
+  })
+
+  it("updates job modelRef through patch mutations", async () => {
+    // Arrange
+    const mutableJob = createJobRecord("job-model-update")
+    mutableJob.type = "operator-task"
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (): JobRecord | null => mutableJob,
+        updateTask: (
+          _jobId: string,
+          update: {
+            type: string
+            scheduleType: "recurring" | "oneshot"
+            profileId: string | null
+            modelRef: string | null
+            runAt: number | null
+            cadenceMinutes: number | null
+            payload: string | null
+            nextRunAt: number | null
+          }
+        ): void => {
+          mutableJob.type = update.type
+          mutableJob.scheduleType = update.scheduleType
+          mutableJob.profileId = update.profileId
+          mutableJob.modelRef = update.modelRef
+          mutableJob.runAt = update.runAt
+          mutableJob.cadenceMinutes = update.cadenceMinutes
+          mutableJob.payload = update.payload
+          mutableJob.nextRunAt = update.nextRunAt
+        },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const explicit = await app.inject({
+      method: "PATCH",
+      url: "/external/jobs/job-model-update",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        modelRef: "anthropic/claude-sonnet-4",
+      },
+    })
+
+    const inherit = await app.inject({
+      method: "PATCH",
+      url: "/external/jobs/job-model-update",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        modelRef: null,
+      },
+    })
+
+    // Assert
+    expect(explicit.statusCode).toBe(200)
+    expect(inherit.statusCode).toBe(200)
+    expect(mutableJob.modelRef).toBeNull()
 
     await app.close()
   })

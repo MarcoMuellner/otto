@@ -40,6 +40,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - API boundary: `/internal/*` is OpenCode-tool/internal runtime integration, `/external/*` is authenticated LAN-facing control-plane/app integration
 - External jobs endpoints currently exposed:
   - System: `GET /external/system/status`, `POST /external/system/restart`
+  - Models: `GET /external/models/catalog`, `POST /external/models/refresh`, `GET /external/models/defaults`, `PUT /external/models/defaults`
   - Read: `GET /external/jobs?lane=scheduled`, `GET /external/jobs/:id`, `GET /external/jobs/:id/audit`, `GET /external/jobs/:id/runs`, `GET /external/jobs/:id/runs/:runId`
   - Mutations: `POST /external/jobs`, `PATCH /external/jobs/:id`, `DELETE /external/jobs/:id`, `POST /external/jobs/:id/run-now`
   - Guardrail: system-managed jobs are read-only; mutation attempts return `403 forbidden_mutation`
@@ -95,8 +96,13 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl task profiles install <profile-file.jsonc>`
   - `ottoctl task list`
   - `ottoctl task bind-profile <task-id> <profile-id>`
+  - `ottoctl task set-model <task-id> <provider/model|inherit>`
   - `ottoctl task show <task-id>`
   - `ottoctl task audit [limit]`
+  - `ottoctl model list`
+  - `ottoctl model refresh`
+  - `ottoctl model defaults show`
+  - `ottoctl model defaults set <flow> <provider/model|inherit>`
   - `ottoctl heartbeat status` (show current heartbeat delivery mode)
   - `ottoctl heartbeat mode <observe|mute>` (observe = always compact updates, mute = suppress normal heartbeats)
   - `ottoctl extension list`
