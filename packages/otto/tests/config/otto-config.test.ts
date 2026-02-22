@@ -175,4 +175,95 @@ describe("ensureOttoConfigFile", () => {
       watchdogFailures: null,
     })
   })
+
+  it("syncs interactive assistant default into OpenCode global model", async () => {
+    // Arrange
+    const homeDirectory = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(homeDirectory)
+
+    const { config } = await ensureOttoConfigFile(homeDirectory)
+    const opencodeConfigPath = path.join(config.ottoHome, "opencode.jsonc")
+    await mkdir(path.dirname(opencodeConfigPath), { recursive: true })
+    await writeFile(
+      opencodeConfigPath,
+      `${JSON.stringify(
+        {
+          model: "openai/gpt-5.3-codex",
+          agent: {
+            assistant: {
+              model: "openai/gpt-5.3-codex",
+              description: "Otto",
+            },
+          },
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    )
+
+    // Act
+    await updateOttoModelFlowDefaults(
+      {
+        interactiveAssistant: "openai/gpt-5.2",
+        scheduledTasks: null,
+        heartbeat: null,
+        watchdogFailures: null,
+      },
+      homeDirectory
+    )
+
+    // Assert
+    const saved = JSON.parse(await readFile(opencodeConfigPath, "utf8")) as {
+      model: string
+      agent: { assistant: { model: string } }
+    }
+    expect(saved.model).toBe("openai/gpt-5.2")
+    expect(saved.agent.assistant.model).toBe("openai/gpt-5.2")
+  })
+
+  it("does not change OpenCode global model when interactive assistant is inherit", async () => {
+    // Arrange
+    const homeDirectory = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(homeDirectory)
+
+    const { config } = await ensureOttoConfigFile(homeDirectory)
+    const opencodeConfigPath = path.join(config.ottoHome, "opencode.jsonc")
+    await mkdir(path.dirname(opencodeConfigPath), { recursive: true })
+    await writeFile(
+      opencodeConfigPath,
+      `${JSON.stringify(
+        {
+          model: "openai/gpt-5.3-codex",
+          agent: {
+            assistant: {
+              model: "openai/gpt-5.3-codex",
+            },
+          },
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    )
+
+    // Act
+    await updateOttoModelFlowDefaults(
+      {
+        interactiveAssistant: null,
+        scheduledTasks: "openai/gpt-5.2",
+        heartbeat: null,
+        watchdogFailures: null,
+      },
+      homeDirectory
+    )
+
+    // Assert
+    const saved = JSON.parse(await readFile(opencodeConfigPath, "utf8")) as {
+      model: string
+      agent: { assistant: { model: string } }
+    }
+    expect(saved.model).toBe("openai/gpt-5.3-codex")
+    expect(saved.agent.assistant.model).toBe("openai/gpt-5.3-codex")
+  })
 })

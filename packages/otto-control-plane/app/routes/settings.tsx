@@ -5,11 +5,18 @@ import { toast } from "sonner"
 import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js"
 import { Switch } from "../components/ui/switch.js"
+import type { ModelCatalogResponse, ModelDefaultsResponse } from "../features/models/contracts.js"
+import {
+  modelCatalogResponseSchema,
+  modelDefaultsResponseSchema,
+  modelRefreshResponseSchema,
+} from "../features/models/contracts.js"
 import type { NotificationProfile } from "../features/settings/contracts.js"
 import {
   notificationProfileResponseSchema,
   updateNotificationProfileResponseSchema,
 } from "../features/settings/contracts.js"
+import { formatDateTime } from "../lib/date-time.js"
 import { createOttoExternalApiClientFromEnvironment } from "../server/otto-external-api.server.js"
 
 type SettingsLoaderData =
@@ -38,6 +45,20 @@ type Feedback = {
   kind: "error"
   message: string
 }
+
+type ModelFeedback = {
+  kind: "error" | "success"
+  message: string
+}
+
+type ModelDefaultsFormState = {
+  interactiveAssistant: string
+  scheduledTasks: string
+  heartbeat: string
+  watchdogFailures: string
+}
+
+const INHERIT_OPTION_VALUE = "inherit"
 
 const timePattern = /^(?:[01]?\d|2[0-3]):[0-5]\d$/
 
@@ -77,6 +98,31 @@ const toFormState = (profile: NotificationProfile): SettingsFormState => {
   }
 }
 
+const toModelDefaultsFormState = (defaults: ModelDefaultsResponse): ModelDefaultsFormState => {
+  return {
+    interactiveAssistant: defaults.flowDefaults.interactiveAssistant ?? INHERIT_OPTION_VALUE,
+    scheduledTasks: defaults.flowDefaults.scheduledTasks ?? INHERIT_OPTION_VALUE,
+    heartbeat: defaults.flowDefaults.heartbeat ?? INHERIT_OPTION_VALUE,
+    watchdogFailures: defaults.flowDefaults.watchdogFailures ?? INHERIT_OPTION_VALUE,
+  }
+}
+
+const toModelDefaultsPayload = (formState: ModelDefaultsFormState): ModelDefaultsResponse => {
+  return {
+    flowDefaults: {
+      interactiveAssistant:
+        formState.interactiveAssistant === INHERIT_OPTION_VALUE
+          ? null
+          : formState.interactiveAssistant,
+      scheduledTasks:
+        formState.scheduledTasks === INHERIT_OPTION_VALUE ? null : formState.scheduledTasks,
+      heartbeat: formState.heartbeat === INHERIT_OPTION_VALUE ? null : formState.heartbeat,
+      watchdogFailures:
+        formState.watchdogFailures === INHERIT_OPTION_VALUE ? null : formState.watchdogFailures,
+    },
+  }
+}
+
 const readProfile = async (): Promise<NotificationProfile> => {
   const response = await fetch("/api/settings/notification-profile", {
     method: "GET",
@@ -89,6 +135,35 @@ const readProfile = async (): Promise<NotificationProfile> => {
   }
 
   return notificationProfileResponseSchema.parse(body).profile
+}
+
+const readModelCatalog = async (): Promise<ModelCatalogResponse> => {
+  const response = await fetch("/api/models/catalog", {
+    method: "GET",
+  })
+  const body = await response.json()
+
+  if (!response.ok) {
+    const message =
+      typeof body?.message === "string" ? body.message : "Could not load model catalog"
+    throw new Error(message)
+  }
+
+  return modelCatalogResponseSchema.parse(body)
+}
+
+const readModelDefaults = async (): Promise<ModelDefaultsResponse> => {
+  const response = await fetch("/api/models/defaults", {
+    method: "GET",
+  })
+  const body = await response.json()
+
+  if (!response.ok) {
+    const message = typeof body?.message === "string" ? body.message : "Could not load defaults"
+    throw new Error(message)
+  }
+
+  return modelDefaultsResponseSchema.parse(body)
 }
 
 export const loader = async (): Promise<SettingsLoaderData> => {
@@ -122,6 +197,12 @@ export default function SettingsRoute() {
         }
       : null
   )
+  const [catalog, setCatalog] = useState<ModelCatalogResponse | null>(null)
+  const [defaultsFormState, setDefaultsFormState] = useState<ModelDefaultsFormState | null>(null)
+  const [modelFeedback, setModelFeedback] = useState<ModelFeedback | null>(null)
+  const [isLoadingModels, setIsLoadingModels] = useState(true)
+  const [isRefreshingCatalog, setIsRefreshingCatalog] = useState(false)
+  const [isSavingDefaults, setIsSavingDefaults] = useState(false)
 
   useEffect(() => {
     if (data.status !== "success") {
@@ -130,6 +211,54 @@ export default function SettingsRoute() {
 
     setFormState(toFormState(data.profile))
   }, [data])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setIsLoadingModels(true)
+      const [catalogResult, defaultsResult] = await Promise.allSettled([
+        readModelCatalog(),
+        readModelDefaults(),
+      ])
+
+      if (cancelled) {
+        return
+      }
+
+      if (catalogResult.status === "fulfilled") {
+        setCatalog(catalogResult.value)
+      }
+
+      if (defaultsResult.status === "fulfilled") {
+        setDefaultsFormState(toModelDefaultsFormState(defaultsResult.value))
+      }
+
+      if (catalogResult.status === "fulfilled" && defaultsResult.status === "fulfilled") {
+        setModelFeedback(null)
+      } else {
+        const errors = [catalogResult, defaultsResult]
+          .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+          .map((result) => {
+            return result.reason instanceof Error
+              ? result.reason.message
+              : "Could not load model management"
+          })
+
+        setModelFeedback({ kind: "error", message: errors.join(" ") })
+      }
+
+      if (!cancelled) {
+        setIsLoadingModels(false)
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   if (data.status === "error") {
     return (
@@ -269,6 +398,96 @@ export default function SettingsRoute() {
       })
     }
   }
+
+  const onRefreshCatalog = async () => {
+    if (isRefreshingCatalog) {
+      return
+    }
+
+    setIsRefreshingCatalog(true)
+    try {
+      const refreshResponse = await fetch("/api/models/refresh", {
+        method: "POST",
+      })
+      const refreshBody = await refreshResponse.json()
+      if (!refreshResponse.ok) {
+        const message =
+          typeof refreshBody?.message === "string"
+            ? refreshBody.message
+            : "Could not refresh model catalog"
+        throw new Error(message)
+      }
+
+      modelRefreshResponseSchema.parse(refreshBody)
+
+      const [nextCatalog, nextDefaults] = await Promise.all([
+        readModelCatalog(),
+        readModelDefaults(),
+      ])
+      setCatalog(nextCatalog)
+      setDefaultsFormState(toModelDefaultsFormState(nextDefaults))
+      setModelFeedback({ kind: "success", message: "Model catalog refreshed." })
+      toast.success("Model catalog refreshed")
+    } catch (error) {
+      setModelFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Could not refresh model catalog",
+      })
+    } finally {
+      setIsRefreshingCatalog(false)
+    }
+  }
+
+  const onSaveModelDefaults = async () => {
+    if (!defaultsFormState || isSavingDefaults) {
+      return
+    }
+
+    setIsSavingDefaults(true)
+    try {
+      const response = await fetch("/api/models/defaults", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(toModelDefaultsPayload(defaultsFormState)),
+      })
+      const body = await response.json()
+
+      if (!response.ok) {
+        const zodMessage =
+          Array.isArray(body?.details) && typeof body.details[0]?.message === "string"
+            ? body.details[0].message
+            : null
+        const message =
+          typeof body?.message === "string"
+            ? body.message
+            : (zodMessage ?? "Could not save defaults")
+        throw new Error(message)
+      }
+
+      const parsed = modelDefaultsResponseSchema.parse(body)
+      setDefaultsFormState(toModelDefaultsFormState(parsed))
+      setModelFeedback({ kind: "success", message: "Flow defaults saved." })
+      toast.success("Model defaults saved")
+    } catch (error) {
+      setModelFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Could not save defaults",
+      })
+    } finally {
+      setIsSavingDefaults(false)
+    }
+  }
+
+  const availableModels = catalog?.models ?? []
+  const defaultsState = defaultsFormState ?? {
+    interactiveAssistant: INHERIT_OPTION_VALUE,
+    scheduledTasks: INHERIT_OPTION_VALUE,
+    heartbeat: INHERIT_OPTION_VALUE,
+    watchdogFailures: INHERIT_OPTION_VALUE,
+  }
+  const lastUpdatedLabel = catalog?.updatedAt == null ? "Never" : formatDateTime(catalog.updatedAt)
 
   return (
     <section className="mx-auto w-full max-w-5xl px-2 pb-8">
@@ -478,6 +697,169 @@ export default function SettingsRoute() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <CardDescription>Runtime model catalog and flow defaults</CardDescription>
+          <CardTitle>Model Management</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 pb-4">
+          <div className="grid gap-3 rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(248,248,248,0.8)] p-3 md:grid-cols-3">
+            <p className="m-0 text-sm text-[#444444]">Catalog size: {availableModels.length}</p>
+            <p className="m-0 text-sm text-[#444444]">
+              Source: {catalog?.source ?? (isLoadingModels ? "Loading" : "Unknown")}
+            </p>
+            <p className="m-0 text-sm text-[#444444]">Updated: {lastUpdatedLabel}</p>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void onRefreshCatalog()}
+              disabled={isRefreshingCatalog || isLoadingModels}
+            >
+              {isRefreshingCatalog ? "Refreshing..." : "Refresh Catalog"}
+            </Button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-1">
+              <label
+                htmlFor="model-default-interactive"
+                className="text-xs font-mono text-[#666666] uppercase"
+              >
+                interactiveAssistant
+              </label>
+              <select
+                id="model-default-interactive"
+                value={defaultsState.interactiveAssistant}
+                onChange={(event) =>
+                  setDefaultsFormState((current) => ({
+                    ...(current ?? defaultsState),
+                    interactiveAssistant: event.target.value,
+                  }))
+                }
+                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                disabled={isLoadingModels}
+              >
+                <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
+                {availableModels.map((model) => (
+                  <option key={`interactive-${model}`} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-1">
+              <label
+                htmlFor="model-default-scheduled"
+                className="text-xs font-mono text-[#666666] uppercase"
+              >
+                scheduledTasks
+              </label>
+              <select
+                id="model-default-scheduled"
+                value={defaultsState.scheduledTasks}
+                onChange={(event) =>
+                  setDefaultsFormState((current) => ({
+                    ...(current ?? defaultsState),
+                    scheduledTasks: event.target.value,
+                  }))
+                }
+                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                disabled={isLoadingModels}
+              >
+                <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
+                {availableModels.map((model) => (
+                  <option key={`scheduled-${model}`} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-1">
+              <label
+                htmlFor="model-default-heartbeat"
+                className="text-xs font-mono text-[#666666] uppercase"
+              >
+                heartbeat
+              </label>
+              <select
+                id="model-default-heartbeat"
+                value={defaultsState.heartbeat}
+                onChange={(event) =>
+                  setDefaultsFormState((current) => ({
+                    ...(current ?? defaultsState),
+                    heartbeat: event.target.value,
+                  }))
+                }
+                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                disabled={isLoadingModels}
+              >
+                <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
+                {availableModels.map((model) => (
+                  <option key={`heartbeat-${model}`} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid gap-1">
+              <label
+                htmlFor="model-default-watchdog"
+                className="text-xs font-mono text-[#666666] uppercase"
+              >
+                watchdogFailures
+              </label>
+              <select
+                id="model-default-watchdog"
+                value={defaultsState.watchdogFailures}
+                onChange={(event) =>
+                  setDefaultsFormState((current) => ({
+                    ...(current ?? defaultsState),
+                    watchdogFailures: event.target.value,
+                  }))
+                }
+                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                disabled={isLoadingModels}
+              >
+                <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
+                {availableModels.map((model) => (
+                  <option key={`watchdog-${model}`} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {modelFeedback ? (
+            <p
+              className={
+                modelFeedback.kind === "success"
+                  ? "m-0 text-sm text-[#0f7b3a]"
+                  : "m-0 text-sm text-[#b42318]"
+              }
+            >
+              {modelFeedback.message}
+            </p>
+          ) : null}
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => void onSaveModelDefaults()}
+              disabled={isLoadingModels || isSavingDefaults || defaultsFormState === null}
+            >
+              {isSavingDefaults ? "Saving..." : "Save Model Defaults"}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </section>

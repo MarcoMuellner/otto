@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+import { modelRefSchema } from "../models/contracts.js"
+
 export const taskManagedBySchema = z.enum(["system", "operator"])
 
 export const healthResponseSchema = z.object({
@@ -38,6 +40,7 @@ export const externalJobListItemSchema = z.object({
   type: z.string().min(1),
   scheduleType: z.enum(["recurring", "oneshot"]),
   profileId: z.string().min(1).nullable(),
+  modelRef: modelRefSchema.nullable(),
   status: z.enum(["idle", "running", "paused"]),
   runAt: z.number().int().nullable(),
   cadenceMinutes: z.number().int().min(1).nullable(),
@@ -55,6 +58,7 @@ export const externalJobDetailSchema = z.object({
   status: z.enum(["idle", "running", "paused"]),
   scheduleType: z.enum(["recurring", "oneshot"]),
   profileId: z.string().min(1).nullable(),
+  modelRef: modelRefSchema.nullable(),
   runAt: z.number().int().nullable(),
   cadenceMinutes: z.number().int().min(1).nullable(),
   payload: z.string().nullable(),
@@ -128,6 +132,7 @@ export const createJobMutationRequestSchema = z
     cadenceMinutes: z.number().int().min(1).optional(),
     payload: z.record(z.string(), z.unknown()).optional(),
     profileId: z.string().trim().min(1).optional(),
+    modelRef: modelRefSchema.nullable().optional(),
   })
   .superRefine((input, ctx) => {
     if (input.scheduleType === "oneshot" && input.runAt == null) {
@@ -153,6 +158,7 @@ export const updateJobMutationRequestSchema = z
     cadenceMinutes: z.number().int().min(1).nullable().optional(),
     payload: z.record(z.string(), z.unknown()).nullable().optional(),
     profileId: z.string().trim().min(1).nullable().optional(),
+    modelRef: modelRefSchema.nullable().optional(),
   })
   .superRefine((input, ctx) => {
     if (input.scheduleType === "recurring" && input.cadenceMinutes === null) {

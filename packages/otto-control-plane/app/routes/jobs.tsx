@@ -5,6 +5,7 @@ import { JobsGroupCard } from "../components/jobs/jobs-group-card.js"
 import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js"
 import { Switch } from "../components/ui/switch.js"
+import { modelCatalogResponseSchema } from "../features/models/contracts.js"
 import type { ExternalJobListItem } from "../features/jobs/contracts.js"
 import { getJobDisplayTitle } from "../features/jobs/presentation.js"
 import {
@@ -31,6 +32,7 @@ type CreateJobFormState = {
   id: string
   type: string
   scheduleType: CreateJobScheduleType
+  modelRef: string
   cadenceMinutes: string
   runAt: string
   profileId: string
@@ -42,10 +44,13 @@ type MutationFeedback = {
   message: string
 }
 
+const INHERIT_MODEL_OPTION = "__INHERIT__"
+
 const defaultCreateJobFormState: CreateJobFormState = {
   id: "",
   type: "operator-task",
   scheduleType: "recurring",
+  modelRef: INHERIT_MODEL_OPTION,
   cadenceMinutes: "5",
   runAt: "",
   profileId: "",
@@ -148,6 +153,8 @@ export default function JobsRoute() {
     useState<CreateJobFormState>(defaultCreateJobFormState)
   const [createFeedback, setCreateFeedback] = useState<MutationFeedback | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [catalogModels, setCatalogModels] = useState<string[]>([])
+  const [catalogError, setCatalogError] = useState<string | null>(null)
 
   const preferencesStore = useMemo(() => {
     if (typeof window === "undefined") {
@@ -186,6 +193,41 @@ export default function JobsRoute() {
       window.clearInterval(handle)
     }
   }, [data.status])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadCatalog = async () => {
+      try {
+        const response = await fetch("/api/models/catalog", {
+          method: "GET",
+        })
+        const body = await response.json()
+        if (!response.ok) {
+          throw new Error(
+            typeof body?.message === "string" ? body.message : "Could not load model catalog"
+          )
+        }
+
+        const parsed = modelCatalogResponseSchema.parse(body)
+        if (!cancelled) {
+          setCatalogModels(parsed.models)
+          setCatalogError(null)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCatalogModels([])
+          setCatalogError(error instanceof Error ? error.message : "Could not load model catalog")
+        }
+      }
+    }
+
+    void loadCatalog()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   if (data.status === "error") {
     return (
@@ -276,6 +318,7 @@ export default function JobsRoute() {
     const payload: Record<string, unknown> = {
       type,
       scheduleType: createFormState.scheduleType,
+      modelRef: createFormState.modelRef === INHERIT_MODEL_OPTION ? null : createFormState.modelRef,
     }
 
     const id = createFormState.id.trim()
@@ -548,6 +591,36 @@ export default function JobsRoute() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-1">
+                  <label
+                    htmlFor="create-model-ref"
+                    className="text-xs font-mono text-[#666666] uppercase"
+                  >
+                    Model
+                  </label>
+                  <select
+                    id="create-model-ref"
+                    value={createFormState.modelRef}
+                    onChange={(event) =>
+                      setCreateFormState((current) => ({
+                        ...current,
+                        modelRef: event.target.value,
+                      }))
+                    }
+                    className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  >
+                    <option value={INHERIT_MODEL_OPTION}>inherit scheduled default</option>
+                    {catalogModels.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                  {catalogError ? (
+                    <p className="m-0 text-xs text-[#b42318]">{catalogError}</p>
+                  ) : null}
+                </div>
+
                 <div className="grid gap-1">
                   <label htmlFor="create-id" className="text-xs font-mono text-[#666666] uppercase">
                     Job ID (Optional)

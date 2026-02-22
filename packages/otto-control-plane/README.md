@@ -25,6 +25,10 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
   - `GET /api/health`
   - `GET /api/system/status`
   - `POST /api/system/restart`
+  - `GET /api/models/catalog`
+  - `POST /api/models/refresh`
+  - `GET /api/models/defaults`
+  - `PUT /api/models/defaults`
   - `GET /api/settings/notification-profile`
   - `PUT /api/settings/notification-profile`
   - `GET /api/jobs`
