@@ -228,6 +228,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       jobsRepository,
       taskAuditRepository,
       commandAuditRepository,
+      userProfileRepository,
     })
     systemServiceStates.external_api = {
       ...systemServiceStates.external_api,

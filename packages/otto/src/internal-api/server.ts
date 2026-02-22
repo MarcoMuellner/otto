@@ -11,6 +11,12 @@ import {
   TaskMutationError,
   updateTaskMutation,
 } from "../api-services/tasks-mutations.js"
+import {
+  applyNotificationProfileUpdate,
+  diffNotificationProfileFields,
+  notificationProfileUpdateSchema,
+  resolveNotificationProfile,
+} from "../api-services/settings-notification-profile.js"
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
 import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbound-enqueue.js"
@@ -26,7 +32,6 @@ import type {
   TaskListRecord,
   UserProfileRecord,
 } from "../persistence/repositories.js"
-import { isValidIanaTimezone } from "../scheduler/notification-policy.js"
 import { checkTaskFailures, resolveDefaultWatchdogChatId } from "../scheduler/watchdog.js"
 
 const DEFAULT_HOST = "127.0.0.1"
@@ -195,62 +200,11 @@ const getNotificationProfileApiSchema = z.object({
   lane: executionLaneSchema,
 })
 
-const setNotificationProfileApiSchema = z.object({
-  lane: executionLaneSchema,
-  timezone: z
-    .string()
-    .trim()
-    .min(1)
-    .refine((value) => isValidIanaTimezone(value), "timezone must be a valid IANA timezone")
-    .optional(),
-  quietHoursStart: z
-    .string()
-    .trim()
-    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-    .nullable()
-    .optional(),
-  quietHoursEnd: z
-    .string()
-    .trim()
-    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-    .nullable()
-    .optional(),
-  heartbeatMorning: z
-    .string()
-    .trim()
-    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-    .nullable()
-    .optional(),
-  heartbeatMidday: z
-    .string()
-    .trim()
-    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-    .nullable()
-    .optional(),
-  heartbeatEvening: z
-    .string()
-    .trim()
-    .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-    .nullable()
-    .optional(),
-  heartbeatCadenceMinutes: z
-    .number()
-    .int()
-    .min(30)
-    .max(24 * 60)
-    .nullable()
-    .optional(),
-  heartbeatOnlyIfSignal: z.boolean().optional(),
-  quietMode: z.enum(["critical_only", "off"]).optional(),
-  muteUntil: z.number().int().nullable().optional(),
-  muteForMinutes: z
-    .number()
-    .int()
-    .min(1)
-    .max(7 * 24 * 60)
-    .optional(),
-  markOnboardingComplete: z.boolean().optional(),
-})
+const setNotificationProfileApiSchema = z
+  .object({
+    lane: executionLaneSchema,
+  })
+  .extend(notificationProfileUpdateSchema.shape)
 
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
@@ -345,24 +299,6 @@ const writeCommandAudit = (
     metadataJson: record.metadataJson ?? null,
     createdAt: record.createdAt ?? Date.now(),
   })
-}
-
-const resolveDefaultNotificationProfile = (): UserProfileRecord => {
-  return {
-    timezone: "Europe/Vienna",
-    quietHoursStart: "20:00",
-    quietHoursEnd: "08:00",
-    quietMode: "critical_only",
-    muteUntil: null,
-    heartbeatMorning: "08:30",
-    heartbeatMidday: "12:30",
-    heartbeatEvening: "19:00",
-    heartbeatCadenceMinutes: 180,
-    heartbeatOnlyIfSignal: true,
-    onboardingCompletedAt: null,
-    lastDigestAt: null,
-    updatedAt: Date.now(),
-  }
 }
 
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
@@ -1023,8 +959,7 @@ export const buildInternalApiServer = (
 
     try {
       const payload = getNotificationProfileApiSchema.parse(request.body)
-      const profile =
-        dependencies.userProfileRepository.get() ?? resolveDefaultNotificationProfile()
+      const profile = resolveNotificationProfile(dependencies.userProfileRepository)
       writeCommandAudit(dependencies, {
         command: "get_notification_policy",
         lane: payload.lane,
@@ -1067,56 +1002,20 @@ export const buildInternalApiServer = (
 
     try {
       const payload = setNotificationProfileApiSchema.parse(request.body)
-      const existing =
-        dependencies.userProfileRepository.get() ?? resolveDefaultNotificationProfile()
       const now = Date.now()
-
-      const muteUntil =
-        payload.muteForMinutes !== undefined
-          ? now + payload.muteForMinutes * 60_000
-          : payload.muteUntil !== undefined
-            ? payload.muteUntil
-            : existing.muteUntil
-
-      const merged: UserProfileRecord = {
-        timezone: payload.timezone ?? existing.timezone,
-        quietHoursStart:
-          payload.quietHoursStart === undefined
-            ? existing.quietHoursStart
-            : payload.quietHoursStart,
-        quietHoursEnd:
-          payload.quietHoursEnd === undefined ? existing.quietHoursEnd : payload.quietHoursEnd,
-        quietMode: payload.quietMode ?? existing.quietMode,
-        muteUntil,
-        heartbeatMorning:
-          payload.heartbeatMorning === undefined
-            ? existing.heartbeatMorning
-            : payload.heartbeatMorning,
-        heartbeatMidday:
-          payload.heartbeatMidday === undefined
-            ? existing.heartbeatMidday
-            : payload.heartbeatMidday,
-        heartbeatEvening:
-          payload.heartbeatEvening === undefined
-            ? existing.heartbeatEvening
-            : payload.heartbeatEvening,
-        heartbeatCadenceMinutes:
-          payload.heartbeatCadenceMinutes === undefined
-            ? existing.heartbeatCadenceMinutes
-            : payload.heartbeatCadenceMinutes,
-        heartbeatOnlyIfSignal: payload.heartbeatOnlyIfSignal ?? existing.heartbeatOnlyIfSignal,
-        onboardingCompletedAt: payload.markOnboardingComplete
-          ? now
-          : existing.onboardingCompletedAt,
-        lastDigestAt: existing.lastDigestAt,
-        updatedAt: now,
-      }
+      const existing = resolveNotificationProfile(dependencies.userProfileRepository)
+      const merged = applyNotificationProfileUpdate(existing, payload, now)
+      const changedFields = diffNotificationProfileFields(existing, merged)
 
       dependencies.userProfileRepository.upsert(merged)
       writeCommandAudit(dependencies, {
         command: "set_notification_policy",
         lane: payload.lane,
         status: "success",
+        metadataJson: JSON.stringify({
+          source: "internal_api",
+          changedFields,
+        }),
       })
 
       return reply.code(200).send({ profile: merged })
