@@ -683,6 +683,7 @@ describe("buildExternalApiServer", () => {
   it("returns and updates model defaults via external API", async () => {
     // Arrange
     const auditRecords: CommandAuditRecord[] = []
+    let restartCalls = 0
     let currentDefaults = {
       interactiveAssistant: "openai/gpt-5.3-codex",
       scheduledTasks: null,
@@ -701,6 +702,9 @@ describe("buildExternalApiServer", () => {
       },
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
+      restartRuntime: async () => {
+        restartCalls += 1
+      },
       commandAuditRepository: createCommandAuditRepositoryStub({
         insert: (record: CommandAuditRecord): void => {
           auditRecords.push(record)
@@ -763,12 +767,14 @@ describe("buildExternalApiServer", () => {
       command: "external_models_defaults_update",
       status: "success",
     })
+    expect(restartCalls).toBe(1)
 
     await app.close()
   })
 
   it("returns validation errors for invalid model defaults payload", async () => {
     // Arrange
+    let restartCalls = 0
     const app = buildExternalApiServer({
       logger: pino({ enabled: false }),
       config: {
@@ -780,6 +786,9 @@ describe("buildExternalApiServer", () => {
       },
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
+      restartRuntime: async () => {
+        restartCalls += 1
+      },
       modelManagement: createModelManagementStub(),
     })
 
@@ -805,6 +814,7 @@ describe("buildExternalApiServer", () => {
     expect(response.json()).toMatchObject({
       error: "invalid_request",
     })
+    expect(restartCalls).toBe(0)
 
     await app.close()
   })

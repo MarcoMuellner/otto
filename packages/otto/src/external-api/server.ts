@@ -718,6 +718,7 @@ export const buildExternalApiServer = (
     try {
       const payload = externalModelDefaultsUpdateRequestSchema.parse(request.body)
       const flowDefaults = await modelManagement.updateFlowDefaults(payload.flowDefaults)
+      await restartRuntime()
 
       writeCommandAudit(commandAuditRepository, {
         command: "external_models_defaults_update",
@@ -725,10 +726,14 @@ export const buildExternalApiServer = (
         metadataJson: JSON.stringify({
           source: "external_api",
           flowDefaults,
+          runtimeRestartRequested: true,
         }),
       })
 
-      dependencies.logger.info({ flowDefaults }, "External API model defaults updated")
+      dependencies.logger.info(
+        { flowDefaults, runtimeRestartRequested: true },
+        "External API model defaults updated"
+      )
 
       return reply.code(200).send(externalModelDefaultsResponseSchema.parse({ flowDefaults }))
     } catch (error) {
