@@ -4,6 +4,7 @@ import { toast } from "sonner"
 
 import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js"
+import { Switch } from "../components/ui/switch.js"
 import {
   chatMessagesResponseSchema,
   chatThreadsResponseSchema,
@@ -140,6 +141,28 @@ const resolveMessageTone = (role: ChatMessage["role"]): string => {
   }
 
   return "border-[rgba(26,26,26,0.08)] bg-[rgba(246,246,246,0.9)]"
+}
+
+const nonInteractiveTitlePattern =
+  /\b(heartbeat|health\s*check|scheduler|scheduled|cron|job(?:\s+run)?|automation)\b/iu
+
+const isInteractiveLaneThread = (thread: ChatThread): boolean => {
+  const hasSchedulerBinding = thread.bindings.some((binding) => binding.source === "scheduler")
+  if (hasSchedulerBinding) {
+    return false
+  }
+
+  const hasUnknownBinding = thread.bindings.some((binding) => binding.source === "unknown")
+  if (hasUnknownBinding) {
+    return false
+  }
+
+  const hasTelegramBinding = thread.bindings.some((binding) => binding.source === "telegram")
+  if (hasTelegramBinding) {
+    return true
+  }
+
+  return !nonInteractiveTitlePattern.test(thread.title)
 }
 
 type MessageBlock = {
@@ -454,6 +477,7 @@ export default function ChatRoute() {
   const [isRefreshingThreads, setIsRefreshingThreads] = useState(false)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [showNonInteractiveThreads, setShowNonInteractiveThreads] = useState(false)
   const [composerDrafts, setComposerDrafts] = useState<Record<string, string>>({
     [NEW_DRAFT_KEY]: "",
   })
@@ -521,6 +545,25 @@ export default function ChatRoute() {
   const activeDraftKey = selectedThreadId ?? NEW_DRAFT_KEY
   const composerText = composerDrafts[activeDraftKey] ?? ""
   const hasUnsentDraft = composerText.trim().length > 0
+  const visibleThreads = useMemo(() => {
+    if (showNonInteractiveThreads) {
+      return threadsPayload.threads
+    }
+
+    return threadsPayload.threads.filter((thread) => isInteractiveLaneThread(thread))
+  }, [showNonInteractiveThreads, threadsPayload.threads])
+  const hiddenNonInteractiveCount = threadsPayload.threads.length - visibleThreads.length
+
+  useEffect(() => {
+    if (showNonInteractiveThreads || !selectedThreadId) {
+      return
+    }
+
+    const selected = threadsPayload.threads.find((thread) => thread.id === selectedThreadId)
+    if (selected && !isInteractiveLaneThread(selected)) {
+      setSelectedThreadId(null)
+    }
+  }, [selectedThreadId, showNonInteractiveThreads, threadsPayload.threads])
 
   useEffect(() => {
     if (!isMobileViewport) {
@@ -769,35 +812,56 @@ export default function ChatRoute() {
   }
 
   const threadsListContent =
-    threadsPayload.threads.length === 0 ? (
-      <p className="m-0 text-sm text-[#888888]">No threads yet. Create one to start chatting.</p>
+    visibleThreads.length === 0 ? (
+      hiddenNonInteractiveCount > 0 ? (
+        <p className="m-0 text-sm text-[#777777]">
+          No interactive threads right now. Turn on "Show non-interactive" to inspect job/system
+          sessions.
+        </p>
+      ) : (
+        <p className="m-0 text-sm text-[#888888]">No threads yet. Create one to start chatting.</p>
+      )
     ) : (
-      threadsPayload.threads.map((thread) => {
-        const isActive = thread.id === selectedThreadId
+      <>
+        {hiddenNonInteractiveCount > 0 ? (
+          <p className="m-0 text-xs text-[#7a7a7a]">
+            {hiddenNonInteractiveCount} non-interactive thread
+            {hiddenNonInteractiveCount === 1 ? "" : "s"} hidden.
+          </p>
+        ) : null}
+        {visibleThreads.map((thread) => {
+          const isActive = thread.id === selectedThreadId
 
-        return (
-          <button
-            key={thread.id}
-            type="button"
-            onClick={() => handleThreadSelect(thread.id)}
-            className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-              isActive
-                ? "border-[rgba(26,26,26,0.2)] bg-[rgba(26,26,26,0.06)]"
-                : "border-[rgba(26,26,26,0.1)] bg-white hover:bg-[rgba(26,26,26,0.03)]"
-            }`}
-          >
-            <p className="m-0 truncate text-sm font-medium text-[#1a1a1a]">{thread.title}</p>
-            <p className="m-0 mt-1 font-mono text-[10px] tracking-[0.08em] text-[#888888] uppercase">
-              {thread.isBound ? "Bound" : "Unbound"}
-              {thread.isStale ? " • Stale" : ""}
-            </p>
-            <p className="m-0 mt-1 text-xs text-[#777777]">
-              Updated {formatDateTime(thread.updatedAt)}
-            </p>
-          </button>
-        )
-      })
+          return (
+            <button
+              key={thread.id}
+              type="button"
+              onClick={() => handleThreadSelect(thread.id)}
+              className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                isActive
+                  ? "border-[rgba(26,26,26,0.2)] bg-[rgba(26,26,26,0.06)]"
+                  : "border-[rgba(26,26,26,0.1)] bg-white hover:bg-[rgba(26,26,26,0.03)]"
+              }`}
+            >
+              <p className="m-0 truncate text-sm font-medium text-[#1a1a1a]">{thread.title}</p>
+              <p className="m-0 mt-1 font-mono text-[10px] tracking-[0.08em] text-[#888888] uppercase">
+                {thread.isBound ? "Bound" : "Unbound"}
+                {thread.isStale ? " • Stale" : ""}
+              </p>
+              <p className="m-0 mt-1 text-xs text-[#777777]">
+                Updated {formatDateTime(thread.updatedAt)}
+              </p>
+            </button>
+          )
+        })}
+      </>
     )
+
+  const threadFilterDescription = showNonInteractiveThreads
+    ? "Includes job and system threads"
+    : hiddenNonInteractiveCount > 0
+      ? `${hiddenNonInteractiveCount} hidden`
+      : "Interactive threads only"
 
   const composerMobileStyle = isMobileViewport
     ? {
@@ -890,6 +954,16 @@ export default function ChatRoute() {
               Close
             </Button>
           </div>
+          <div className="border-b border-[rgba(26,26,26,0.08)] px-3 py-2.5">
+            <Switch
+              checked={showNonInteractiveThreads}
+              onCheckedChange={setShowNonInteractiveThreads}
+              label="Show non-interactive"
+              description={threadFilterDescription}
+              size="compact"
+              className="w-full"
+            />
+          </div>
           <div className="hide-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {threadsListContent}
           </div>
@@ -898,9 +972,17 @@ export default function ChatRoute() {
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[320px_minmax(0,1fr)] md:gap-4">
         <Card className="hidden h-full min-h-0 flex-col overflow-hidden md:flex">
-          <CardHeader>
+          <CardHeader className="space-y-2">
             <CardDescription>Bound and discovered sessions</CardDescription>
             <CardTitle>Threads</CardTitle>
+            <Switch
+              checked={showNonInteractiveThreads}
+              onCheckedChange={setShowNonInteractiveThreads}
+              label="Show non-interactive"
+              description={threadFilterDescription}
+              size="compact"
+              className="w-full"
+            />
           </CardHeader>
           <CardContent className="hide-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
             {threadsListContent}
