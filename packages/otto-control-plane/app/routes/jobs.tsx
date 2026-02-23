@@ -231,18 +231,27 @@ export default function JobsRoute() {
 
   if (data.status === "error") {
     return (
-      <section className="mx-auto flex h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col px-2 pb-6 pt-16">
-        <header className="mb-8 border-b border-[rgba(26,26,26,0.08)] pb-4">
+      <section className="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col px-2 pb-6 pt-16 max-[720px]:px-1 max-[720px]:pb-4 max-[720px]:pt-2">
+        <header className="mb-4 border-b border-[rgba(26,26,26,0.08)] pb-3 md:mb-8 md:pb-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="m-0 text-4xl leading-none font-light text-[#1a1a1a]">Job Queue</h1>
-              <p className="mt-2 mb-0 font-mono text-sm text-[#888888]">Runtime unavailable</p>
+              <h1 className="m-0 text-4xl leading-none font-light text-[#1a1a1a] max-[720px]:text-[2rem]">
+                Job Queue
+              </h1>
+              <p className="mt-2 mb-0 font-mono text-xs text-[#888888]">Runtime unavailable</p>
             </div>
-            <Link
-              to="/"
-              className="self-start font-mono text-xs tracking-[0.12em] text-[#888888] uppercase transition-colors hover:text-[#1a1a1a] sm:self-auto"
-            >
-              ESC / Back
+            <Link to="/" className="inline-flex self-start sm:self-auto">
+              <Button variant="outline" size="sm" className="h-10 gap-1.5 px-3">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+                Back
+              </Button>
             </Link>
           </div>
         </header>
@@ -419,39 +428,49 @@ export default function JobsRoute() {
   }
 
   return (
-    <section className="mx-auto flex h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col px-2 pb-6 pt-16">
-      <header className="mb-6 border-b border-[rgba(26,26,26,0.08)] pb-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <section className="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col px-2 pb-6 pt-16 max-[720px]:px-1 max-[720px]:pb-4 max-[720px]:pt-2">
+      <header className="mb-4 border-b border-[rgba(26,26,26,0.08)] pb-3 md:mb-6 md:pb-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
-            <h1 className="m-0 text-4xl leading-none font-light text-[#1a1a1a]">Job Queue</h1>
-            <p className="mt-2 mb-0 whitespace-nowrap font-mono text-xs text-[#888888]">
+            <h1 className="m-0 text-4xl leading-none font-light text-[#1a1a1a] max-[720px]:text-[2rem]">
+              Job Queue
+            </h1>
+            <p className="mt-2 mb-0 whitespace-nowrap font-mono text-[11px] text-[#888888]">
               {activeCount} Active • {scheduledCount} Scheduled • {stoppedCount} Stopped
             </p>
           </div>
-          <Link
-            to="/"
-            className="self-start font-mono text-xs tracking-[0.12em] text-[#888888] uppercase transition-colors hover:text-[#1a1a1a] sm:self-auto"
-          >
-            ESC / Back
-          </Link>
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setCreateFeedback(null)
-              setIsCreatePanelOpen((current) => !current)
-            }}
-          >
-            {isCreatePanelOpen ? "Close Create" : "Create Job"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link to="/" className="inline-flex">
+              <Button variant="outline" size="sm" className="h-10 gap-1.5 px-3">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M15 19l-7-7 7-7"
+                  />
+                </svg>
+                Back
+              </Button>
+            </Link>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-10 px-3"
+              onClick={() => {
+                setCreateFeedback(null)
+                setIsCreatePanelOpen((current) => !current)
+              }}
+            >
+              {isCreatePanelOpen ? "Close" : "Create"}
+            </Button>
+          </div>
         </div>
       </header>
 
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-[1fr_auto_auto] md:items-center md:gap-3">
-        <label className="col-span-2 flex items-center gap-2 rounded-xl border border-[rgba(26,26,26,0.08)] bg-white px-3 py-2.5 md:col-span-1">
+      <div className="mb-3 grid gap-2">
+        <label className="flex items-center gap-2 rounded-xl border border-[rgba(26,26,26,0.08)] bg-white px-3 py-2">
           <svg
             className="h-4 w-4 text-[#888888]"
             fill="none"
@@ -476,29 +495,31 @@ export default function JobsRoute() {
           />
         </label>
 
-        <Switch
-          checked={activePreferences.hideFinishedJobs}
-          onCheckedChange={(checked) =>
-            setPreferences((current) => ({
-              ...(current ?? defaultJobsViewPreferences),
-              hideFinishedJobs: checked,
-            }))
-          }
-          label="Hide finished"
-          className="min-h-[44px] gap-2 px-2"
-        />
+        <div className="grid grid-cols-2 gap-2">
+          <Switch
+            checked={activePreferences.hideFinishedJobs}
+            onCheckedChange={(checked) =>
+              setPreferences((current) => ({
+                ...(current ?? defaultJobsViewPreferences),
+                hideFinishedJobs: checked,
+              }))
+            }
+            label="Hide done"
+            size="compact"
+          />
 
-        <Switch
-          checked={activePreferences.showSystemJobs}
-          onCheckedChange={(checked) =>
-            setPreferences((current) => ({
-              ...(current ?? defaultJobsViewPreferences),
-              showSystemJobs: checked,
-            }))
-          }
-          label="Show system"
-          className="min-h-[44px] gap-2 px-2"
-        />
+          <Switch
+            checked={activePreferences.showSystemJobs}
+            onCheckedChange={(checked) =>
+              setPreferences((current) => ({
+                ...(current ?? defaultJobsViewPreferences),
+                showSystemJobs: checked,
+              }))
+            }
+            label="System"
+            size="compact"
+          />
+        </div>
       </div>
 
       {isCreatePanelOpen ? (
@@ -711,7 +732,7 @@ export default function JobsRoute() {
         </Card>
       ) : null}
 
-      {isLoading ? <p className="mb-3 mt-0 text-xs text-[#888888]">Refreshing jobs...</p> : null}
+      {isLoading ? <p className="mb-2 mt-0 text-xs text-[#888888]">Refreshing jobs...</p> : null}
 
       {!hasVisibleJobs ? (
         <Card>
@@ -725,7 +746,7 @@ export default function JobsRoute() {
           </CardContent>
         </Card>
       ) : (
-        <div className="hide-scrollbar grid flex-1 gap-4 overflow-y-auto pr-2">
+        <div className="grid gap-3 pr-1 md:hide-scrollbar md:flex-1 md:gap-4 md:overflow-y-auto md:pr-2">
           <JobsGroupCard
             title="Operator-managed jobs"
             description="Operator-owned recurring and one-shot jobs"

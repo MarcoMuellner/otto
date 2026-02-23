@@ -15,11 +15,11 @@ export const CommandBar = ({ placeholder, keyboardHint = "CMD+K" }: CommandBarPr
       type="button"
       role="search"
       onClick={openCommandPalette}
-      className="group relative flex w-full max-w-lg items-center rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white p-2 text-left shadow-sm transition-all duration-300 hover:shadow-md active:scale-[0.99]"
+      className="group relative flex min-h-14 w-full max-w-lg items-center rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white p-2.5 text-left shadow-sm transition-all duration-300 hover:shadow-md active:scale-[0.99] md:p-2"
       aria-label="Open command palette"
     >
       <span
-        className="inline-flex h-10 w-10 items-center justify-center text-[#888888]"
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center text-[#888888] md:h-11 md:w-11"
         aria-hidden="true"
       >
         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -34,7 +34,7 @@ export const CommandBar = ({ placeholder, keyboardHint = "CMD+K" }: CommandBarPr
       <span className="flex-1 px-2 text-base font-light text-[rgba(136,136,136,0.72)] md:px-4 md:text-lg">
         {placeholder}
       </span>
-      <span className="hidden pr-4 font-mono text-xs text-[rgba(136,136,136,0.5)] sm:block">
+      <span className="hidden pr-4 font-mono text-xs text-[rgba(136,136,136,0.5)] md:block">
         {keyboardHint}
       </span>
     </button>

@@ -219,7 +219,7 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col px-0 transition-opacity duration-200 md:items-start md:justify-center md:px-4 md:pt-[20vh] ${
+      className={`fixed inset-0 z-50 flex items-end px-0 transition-opacity duration-200 md:items-start md:justify-center md:px-4 md:pt-[20vh] ${
         isOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
       }`}
       aria-hidden={!isOpen}
@@ -232,11 +232,11 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
       />
 
       <section
-        className={`relative mt-auto flex h-[80vh] w-full flex-col overflow-hidden rounded-t-3xl border border-[rgba(26,26,26,0.08)] bg-white shadow-2xl transition-transform duration-300 md:mx-auto md:mt-0 md:h-auto md:max-h-[75vh] md:max-w-xl md:rounded-2xl ${
+        className={`relative flex h-dvh w-full flex-col overflow-hidden rounded-none border border-[rgba(26,26,26,0.08)] bg-white shadow-2xl transition-transform duration-300 md:mx-auto md:h-auto md:max-h-[75vh] md:max-w-xl md:rounded-2xl ${
           isOpen ? "translate-y-0 md:scale-100" : "translate-y-full md:scale-95"
         }`}
       >
-        <div className="sticky top-0 z-10 flex items-center border-b border-[rgba(26,26,26,0.08)] bg-white px-4 py-4">
+        <div className="sticky top-0 z-10 flex items-center border-b border-[rgba(26,26,26,0.08)] bg-white px-3 py-3 md:px-4 md:py-4">
           <span className="mr-3 text-[#888888]" aria-hidden="true">
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -255,14 +255,29 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="What would you like to do?"
-            className="h-8 flex-1 border-none bg-transparent p-0 text-xl font-light text-[#1a1a1a] outline-none placeholder:text-[rgba(136,136,136,0.6)]"
+            className="h-11 flex-1 border-none bg-transparent p-0 text-base leading-6 font-light text-[#1a1a1a] outline-none placeholder:text-[rgba(136,136,136,0.6)] md:text-xl md:leading-7"
           />
-          <span className="rounded border border-[rgba(26,26,26,0.12)] px-1.5 py-0.5 font-mono text-[10px] text-[#888888]">
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-2 inline-flex h-11 w-11 items-center justify-center rounded border border-[rgba(26,26,26,0.12)] text-[#888888] md:hidden"
+            aria-label="Close command palette"
+          >
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+          <span className="hidden rounded border border-[rgba(26,26,26,0.12)] px-1.5 py-0.5 font-mono text-[10px] text-[#888888] md:inline-flex">
             ESC
           </span>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto py-2">
+        <div className="flex-1 overflow-y-auto py-2">
           {[
             { label: "Jump to", group: "jump" as const },
             { label: "Quick actions", group: "quick" as const },
@@ -286,7 +301,7 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
                       type="button"
                       disabled={action.disabled}
                       onClick={() => triggerAction(action.id)}
-                      className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors ${
+                      className={`flex w-full items-center justify-between px-4 py-3.5 text-left transition-colors ${
                         isSelected ? "bg-[rgba(26,26,26,0.06)]" : "hover:bg-[rgba(26,26,26,0.04)]"
                       } ${action.disabled ? "cursor-not-allowed opacity-55" : ""}`}
                     >
@@ -298,9 +313,11 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
                         >
                           <ActionIcon icon={action.icon} />
                         </span>
-                        <span className="block font-light text-[#1a1a1a]">{action.label}</span>
+                        <span className="block text-[1.05rem] font-light leading-6 text-[#1a1a1a] md:text-base md:leading-6">
+                          {action.label}
+                        </span>
                       </span>
-                      <span className="font-mono text-[11px] tracking-[0.08em] text-[#888888] uppercase">
+                      <span className="hidden font-mono text-[11px] tracking-[0.08em] text-[#888888] uppercase md:block">
                         {action.shortcut ?? (action.disabled ? "Soon" : "")}
                       </span>
                     </button>

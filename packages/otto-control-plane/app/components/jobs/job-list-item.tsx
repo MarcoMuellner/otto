@@ -29,15 +29,15 @@ export const JobListItem = ({ job, referenceNow }: JobListItemProps) => {
   return (
     <Link
       to={`/jobs/${encodeURIComponent(job.id)}`}
-      className="grid gap-2 rounded-xl border border-[rgba(26,26,26,0.06)] bg-white p-4 shadow-sm transition-all hover:border-[rgba(26,26,26,0.2)]"
+      className="grid gap-2 rounded-xl border border-[rgba(26,26,26,0.06)] bg-white p-3 shadow-sm transition-all hover:border-[rgba(26,26,26,0.2)] md:p-4"
     >
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 md:gap-4">
           <div
             className={
               isRunning
-                ? "flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(235,59,59,0.1)] text-[#eb3b3b]"
-                : "flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(26,26,26,0.05)] text-[rgba(26,26,26,0.45)]"
+                ? "flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(235,59,59,0.1)] text-[#eb3b3b] md:h-10 md:w-10"
+                : "flex h-9 w-9 items-center justify-center rounded-full bg-[rgba(26,26,26,0.05)] text-[rgba(26,26,26,0.45)] md:h-10 md:w-10"
             }
           >
             {isRunning ? (
@@ -65,11 +65,11 @@ export const JobListItem = ({ job, referenceNow }: JobListItemProps) => {
               </svg>
             )}
           </div>
-          <div>
-            <p className="m-0 overflow-hidden text-lg font-light text-[#1a1a1a] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+          <div className="min-w-0">
+            <p className="m-0 overflow-hidden text-[1.05rem] leading-6 font-light text-[#1a1a1a] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] md:text-lg">
               {displayTitle}
             </p>
-            <p className="mt-1 mb-0 font-mono text-xs tracking-[0.08em] text-[#888888] uppercase">
+            <p className="mt-1 mb-0 font-mono text-[11px] tracking-[0.08em] text-[#888888] uppercase md:text-xs">
               {isRunning ? "Running" : "Scheduled"} • {describeSchedule(job)}
             </p>
           </div>
@@ -78,8 +78,8 @@ export const JobListItem = ({ job, referenceNow }: JobListItemProps) => {
         <span
           className={
             job.isMutable
-              ? "rounded-full border border-[rgba(26,26,26,0.12)] px-2 py-0.5 text-[11px] font-mono uppercase tracking-[0.08em] text-[#1a1a1a]"
-              : "rounded-full border border-[rgba(235,59,59,0.3)] bg-[rgba(235,59,59,0.08)] px-2 py-0.5 text-[11px] font-mono uppercase tracking-[0.08em] text-[#eb3b3b]"
+              ? "rounded-full border border-[rgba(26,26,26,0.12)] px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.08em] text-[#1a1a1a] md:px-2 md:text-[11px]"
+              : "rounded-full border border-[rgba(235,59,59,0.3)] bg-[rgba(235,59,59,0.08)] px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.08em] text-[#eb3b3b] md:px-2 md:text-[11px]"
           }
         >
           {job.isMutable ? "Mutable" : "Read-only"}

@@ -62,6 +62,10 @@ const INHERIT_OPTION_VALUE = "inherit"
 
 const timePattern = /^(?:[01]?\d|2[0-3]):[0-5]\d$/
 
+const settingsLabelClassName = "text-xs font-mono text-[#666666] uppercase"
+const settingsFieldClassName =
+  "w-full min-w-0 rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3.5 py-2.5 text-base leading-6 text-[#1a1a1a]"
+
 const isValidIanaTimezone = (value: string): boolean => {
   try {
     Intl.DateTimeFormat(undefined, { timeZone: value })
@@ -262,13 +266,13 @@ export default function SettingsRoute() {
 
   if (data.status === "error") {
     return (
-      <section className="mx-auto w-full max-w-5xl px-2 pb-8">
-        <header className="mb-6 flex items-end justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
+      <section className="mx-auto w-full max-w-5xl px-1 pb-6 md:px-2">
+        <header className="mb-4 flex items-end justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
           <div>
             <p className="mb-2 font-mono text-xs tracking-[0.2em] text-[#888888] uppercase">
               Settings
             </p>
-            <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-3xl">
+            <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-[2.35rem] max-[720px]:leading-[0.95]">
               Notification Profile
             </h1>
           </div>
@@ -490,17 +494,17 @@ export default function SettingsRoute() {
   const lastUpdatedLabel = catalog?.updatedAt == null ? "Never" : formatDateTime(catalog.updatedAt)
 
   return (
-    <section className="mx-auto w-full max-w-5xl px-2 pb-8">
-      <header className="mb-6 flex items-end justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
+    <section className="mx-auto w-full max-w-5xl px-1 pb-6 md:px-2">
+      <header className="mb-4 flex items-end justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
         <div>
           <p className="mb-2 font-mono text-xs tracking-[0.2em] text-[#888888] uppercase">
             Settings
           </p>
-          <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-3xl">
+          <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-[2.35rem] max-[720px]:leading-[0.95]">
             Notification Profile
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => void onRefresh()}>
             Refresh
           </Button>
@@ -518,12 +522,9 @@ export default function SettingsRoute() {
           <CardTitle>Delivery Preferences</CardTitle>
         </CardHeader>
         <CardContent className="pb-4">
-          <form className="grid gap-4" onSubmit={onSubmit}>
+          <form className="grid gap-3" onSubmit={onSubmit}>
             <div className="grid gap-1">
-              <label
-                htmlFor="settings-timezone"
-                className="text-xs font-mono text-[#666666] uppercase"
-              >
+              <label htmlFor="settings-timezone" className={settingsLabelClassName}>
                 Timezone
               </label>
               <input
@@ -532,17 +533,14 @@ export default function SettingsRoute() {
                 onChange={(event) =>
                   setFormState((current) => ({ ...current, timezone: event.target.value }))
                 }
-                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                className={settingsFieldClassName}
                 placeholder="Europe/Vienna"
               />
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1">
-                <label
-                  htmlFor="settings-quiet-start"
-                  className="text-xs font-mono text-[#666666] uppercase"
-                >
+                <label htmlFor="settings-quiet-start" className={settingsLabelClassName}>
                   Quiet Start
                 </label>
                 <input
@@ -551,15 +549,12 @@ export default function SettingsRoute() {
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, quietHoursStart: event.target.value }))
                   }
-                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  className={settingsFieldClassName}
                   placeholder="20:00"
                 />
               </div>
               <div className="grid gap-1">
-                <label
-                  htmlFor="settings-quiet-end"
-                  className="text-xs font-mono text-[#666666] uppercase"
-                >
+                <label htmlFor="settings-quiet-end" className={settingsLabelClassName}>
                   Quiet End
                 </label>
                 <input
@@ -568,7 +563,7 @@ export default function SettingsRoute() {
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, quietHoursEnd: event.target.value }))
                   }
-                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  className={settingsFieldClassName}
                   placeholder="08:00"
                 />
               </div>
@@ -576,10 +571,7 @@ export default function SettingsRoute() {
 
             <div className="grid gap-3 md:grid-cols-3">
               <div className="grid gap-1">
-                <label
-                  htmlFor="settings-heartbeat-morning"
-                  className="text-xs font-mono text-[#666666] uppercase"
-                >
+                <label htmlFor="settings-heartbeat-morning" className={settingsLabelClassName}>
                   Morning
                 </label>
                 <input
@@ -591,15 +583,12 @@ export default function SettingsRoute() {
                       heartbeatMorning: event.target.value,
                     }))
                   }
-                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  className={settingsFieldClassName}
                   placeholder="08:30"
                 />
               </div>
               <div className="grid gap-1">
-                <label
-                  htmlFor="settings-heartbeat-midday"
-                  className="text-xs font-mono text-[#666666] uppercase"
-                >
+                <label htmlFor="settings-heartbeat-midday" className={settingsLabelClassName}>
                   Midday
                 </label>
                 <input
@@ -608,15 +597,12 @@ export default function SettingsRoute() {
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, heartbeatMidday: event.target.value }))
                   }
-                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  className={settingsFieldClassName}
                   placeholder="12:30"
                 />
               </div>
               <div className="grid gap-1">
-                <label
-                  htmlFor="settings-heartbeat-evening"
-                  className="text-xs font-mono text-[#666666] uppercase"
-                >
+                <label htmlFor="settings-heartbeat-evening" className={settingsLabelClassName}>
                   Evening
                 </label>
                 <input
@@ -628,7 +614,7 @@ export default function SettingsRoute() {
                       heartbeatEvening: event.target.value,
                     }))
                   }
-                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  className={settingsFieldClassName}
                   placeholder="19:00"
                 />
               </div>
@@ -636,10 +622,7 @@ export default function SettingsRoute() {
 
             <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1">
-                <label
-                  htmlFor="settings-cadence"
-                  className="text-xs font-mono text-[#666666] uppercase"
-                >
+                <label htmlFor="settings-cadence" className={settingsLabelClassName}>
                   Heartbeat Cadence (minutes)
                 </label>
                 <input
@@ -654,14 +637,11 @@ export default function SettingsRoute() {
                       heartbeatCadenceMinutes: event.target.value,
                     }))
                   }
-                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  className={settingsFieldClassName}
                 />
               </div>
               <div className="grid gap-1">
-                <label
-                  htmlFor="settings-quiet-mode"
-                  className="text-xs font-mono text-[#666666] uppercase"
-                >
+                <label htmlFor="settings-quiet-mode" className={settingsLabelClassName}>
                   Quiet Mode
                 </label>
                 <select
@@ -673,7 +653,7 @@ export default function SettingsRoute() {
                       quietMode: event.target.value as "critical_only" | "off",
                     }))
                   }
-                  className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                  className={settingsFieldClassName}
                 >
                   <option value="critical_only">Critical only</option>
                   <option value="off">Off</option>
@@ -700,12 +680,12 @@ export default function SettingsRoute() {
         </CardContent>
       </Card>
 
-      <Card className="mt-4">
+      <Card className="mt-3">
         <CardHeader>
           <CardDescription>Runtime model catalog and flow defaults</CardDescription>
           <CardTitle>Model Management</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 pb-4">
+        <CardContent className="space-y-3 pb-4">
           <div className="grid gap-3 rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(248,248,248,0.8)] p-3 md:grid-cols-3">
             <p className="m-0 text-sm text-[#444444]">Catalog size: {availableModels.length}</p>
             <p className="m-0 text-sm text-[#444444]">
@@ -727,10 +707,7 @@ export default function SettingsRoute() {
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="grid gap-1">
-              <label
-                htmlFor="model-default-interactive"
-                className="text-xs font-mono text-[#666666] uppercase"
-              >
+              <label htmlFor="model-default-interactive" className={settingsLabelClassName}>
                 interactiveAssistant
               </label>
               <select
@@ -742,7 +719,7 @@ export default function SettingsRoute() {
                     interactiveAssistant: event.target.value,
                   }))
                 }
-                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                className={settingsFieldClassName}
                 disabled={isLoadingModels}
               >
                 <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
@@ -755,10 +732,7 @@ export default function SettingsRoute() {
             </div>
 
             <div className="grid gap-1">
-              <label
-                htmlFor="model-default-scheduled"
-                className="text-xs font-mono text-[#666666] uppercase"
-              >
+              <label htmlFor="model-default-scheduled" className={settingsLabelClassName}>
                 scheduledTasks
               </label>
               <select
@@ -770,7 +744,7 @@ export default function SettingsRoute() {
                     scheduledTasks: event.target.value,
                   }))
                 }
-                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                className={settingsFieldClassName}
                 disabled={isLoadingModels}
               >
                 <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
@@ -783,10 +757,7 @@ export default function SettingsRoute() {
             </div>
 
             <div className="grid gap-1">
-              <label
-                htmlFor="model-default-heartbeat"
-                className="text-xs font-mono text-[#666666] uppercase"
-              >
+              <label htmlFor="model-default-heartbeat" className={settingsLabelClassName}>
                 heartbeat
               </label>
               <select
@@ -798,7 +769,7 @@ export default function SettingsRoute() {
                     heartbeat: event.target.value,
                   }))
                 }
-                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                className={settingsFieldClassName}
                 disabled={isLoadingModels}
               >
                 <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
@@ -811,10 +782,7 @@ export default function SettingsRoute() {
             </div>
 
             <div className="grid gap-1">
-              <label
-                htmlFor="model-default-watchdog"
-                className="text-xs font-mono text-[#666666] uppercase"
-              >
+              <label htmlFor="model-default-watchdog" className={settingsLabelClassName}>
                 watchdogFailures
               </label>
               <select
@@ -826,7 +794,7 @@ export default function SettingsRoute() {
                     watchdogFailures: event.target.value,
                   }))
                 }
-                className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                className={settingsFieldClassName}
                 disabled={isLoadingModels}
               >
                 <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>

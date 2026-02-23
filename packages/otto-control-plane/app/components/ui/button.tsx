@@ -18,12 +18,12 @@ const variantClassByType: Record<ButtonVariant, string> = {
 }
 
 const sizeClassByType: Record<ButtonSize, string> = {
-  sm: "px-3 py-2 text-xs",
-  md: "px-3.5 py-2.5 text-[0.85rem]",
+  sm: "h-11 px-3.5 text-xs",
+  md: "h-11 px-4 text-[0.85rem]",
 }
 
 const baseClasses =
-  "inline-flex items-center justify-center rounded-[10px] border font-mono uppercase tracking-[0.09em] transition-[opacity,background-color,color,border-color,box-shadow] duration-150 disabled:cursor-default disabled:opacity-60"
+  "inline-flex min-w-11 touch-manipulation items-center justify-center rounded-[10px] border font-mono uppercase tracking-[0.09em] transition-[opacity,background-color,color,border-color,box-shadow] duration-150 disabled:cursor-default disabled:opacity-60"
 
 /**
  * Provides a small shadcn-style button primitive so action controls remain consistent across

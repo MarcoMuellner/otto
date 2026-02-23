@@ -3,7 +3,6 @@ import { useLoaderData } from "react-router"
 import { z } from "zod"
 
 import { CommandBar } from "../components/command/command-bar.js"
-import { openCommandPalette } from "../components/command/events.js"
 import { RuntimeHealthCard } from "../components/health/runtime-health-card.js"
 import { loadRuntimeHealthSnapshot, type RuntimeHealthSnapshot } from "../server/health.server.js"
 
@@ -66,28 +65,22 @@ export default function HomeRoute() {
   }
 
   return (
-    <section className="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col items-center justify-center px-2 pb-6">
-      <button
-        type="button"
-        onClick={openCommandPalette}
-        className="group relative mb-10 inline-flex h-3 w-3 items-center justify-center rounded-full bg-[#eb3b3b] shadow-[0_0_15px_rgba(235,59,59,0.35)] transition-colors hover:bg-[#1a1a1a]"
-        aria-label="Open command palette"
-      >
-        <span className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap font-mono text-[10px] tracking-[0.12em] text-[#888888] uppercase opacity-0 transition-opacity group-hover:block group-hover:opacity-100">
-          Open Command Palette
-        </span>
-      </button>
+    <section className="mx-auto flex min-h-[calc(100dvh-4.5rem)] w-full max-w-5xl flex-col items-center justify-start px-2 pb-4 pt-3 md:justify-center md:pb-6">
+      <span
+        className="mb-6 inline-flex h-2.5 w-2.5 rounded-full bg-[#eb3b3b] shadow-[0_0_15px_rgba(235,59,59,0.35)] md:mb-10 md:h-3 md:w-3"
+        aria-hidden="true"
+      />
 
-      <h1 className="mb-2 select-none text-6xl leading-none font-light tracking-tight text-[#1a1a1a] md:text-8xl">
+      <h1 className="mb-1 select-none text-[clamp(3.5rem,22vw,5rem)] leading-none font-light tracking-tight text-[#1a1a1a] md:text-8xl">
         {clock}
       </h1>
-      <p className="mb-10 select-none font-mono text-xs tracking-[0.2em] text-[#888888] uppercase md:mb-16 md:text-sm">
+      <p className="mb-5 select-none font-mono text-[11px] tracking-[0.2em] text-[#888888] uppercase md:mb-16 md:text-sm">
         {health.runtimeStatus === "ok" ? "System Active" : "System Degraded"}
       </p>
 
       <CommandBar placeholder="Ask Otto..." />
 
-      <div className="mt-6 w-full max-w-xl">
+      <div className="mt-4 w-full max-w-xl md:mt-6">
         <RuntimeHealthCard health={health} refreshState={refreshState} onRefresh={handleRefresh} />
       </div>
     </section>

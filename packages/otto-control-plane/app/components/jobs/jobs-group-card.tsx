@@ -23,11 +23,13 @@ export const JobsGroupCard = ({
 }: JobsGroupCardProps) => {
   return (
     <Card className="rounded-xl border-[rgba(26,26,26,0.08)] shadow-sm">
-      <CardHeader className="border-b border-[rgba(26,26,26,0.06)] pb-4">
-        <CardDescription>{description}</CardDescription>
-        <CardTitle className="text-[1.6rem] font-light tracking-tight">{title}</CardTitle>
+      <CardHeader className="border-b border-[rgba(26,26,26,0.06)] pb-3 max-[720px]:px-4 max-[720px]:pt-3 max-[720px]:pb-2.5">
+        <CardDescription className="max-[720px]:text-[11px]">{description}</CardDescription>
+        <CardTitle className="text-[1.6rem] font-light tracking-tight max-[720px]:text-[1.22rem] max-[720px]:leading-[1.1]">
+          {title}
+        </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3 pt-4 pb-4">
+      <CardContent className="space-y-2.5 pt-3 pb-3 max-[720px]:px-4">
         <p className="m-0 font-mono text-xs text-[#888888]">{jobs.length} entries</p>
         {jobs.length === 0 ? (
           <p className="m-0 text-sm text-[#888888]">{emptyMessage}</p>

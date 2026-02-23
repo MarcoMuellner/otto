@@ -200,15 +200,15 @@ export default function SystemRoute() {
   }, [snapshot.services])
 
   return (
-    <section className="mx-auto w-full max-w-5xl px-2 pb-8">
-      <header className="mb-6 flex items-end justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
+    <section className="mx-auto w-full max-w-5xl px-1 pb-6 md:px-2">
+      <header className="mb-4 flex items-end justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
         <div>
           <p className="mb-2 font-mono text-xs tracking-[0.2em] text-[#888888] uppercase">System</p>
-          <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-3xl">
+          <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-[2.35rem] max-[720px]:leading-[0.95]">
             Runtime Status and Operations
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={refreshSnapshot} disabled={isRefreshing}>
             {isRefreshing ? "Refreshing" : "Refresh"}
           </Button>
@@ -247,7 +247,7 @@ export default function SystemRoute() {
               {snapshot.status.toUpperCase()}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 pb-2 text-[0.92rem]">
+          <CardContent className="space-y-2 pb-2 text-[0.95rem] md:text-[0.92rem]">
             <p className="m-0">Version: {snapshot.runtime.version}</p>
             <p className="m-0">PID: {snapshot.runtime.pid}</p>
             <p className="m-0">Started: {formatDateTime(snapshot.runtime.startedAt)}</p>
@@ -266,7 +266,7 @@ export default function SystemRoute() {
             <CardTitle>Restart Runtime</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="m-0 text-[0.92rem] text-[#303030]">
+            <p className="m-0 text-[0.96rem] text-[#303030] md:text-[0.92rem]">
               Restart only the Otto runtime process. The control-plane web process stays available.
             </p>
           </CardContent>

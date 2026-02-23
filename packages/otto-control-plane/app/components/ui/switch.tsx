@@ -6,6 +6,7 @@ type SwitchProps = {
   label: string
   description?: string
   className?: string
+  size?: "default" | "compact"
 }
 
 /**
@@ -18,19 +19,32 @@ export const Switch = ({
   label,
   description,
   className,
+  size = "default",
 }: SwitchProps) => {
+  const isCompact = size === "compact"
+
   return (
     <label
       className={cn(
-        "flex items-center justify-between gap-4 rounded-xl border border-[rgba(26,26,26,0.08)] bg-white px-3 py-2",
+        "flex items-center justify-between rounded-xl border border-[rgba(26,26,26,0.08)] bg-white",
+        isCompact ? "gap-2 px-2.5 py-2" : "gap-4 px-3 py-2.5",
         className
       )}
     >
       <span className="min-w-0">
-        <span className="block whitespace-nowrap text-[0.95rem] font-medium text-[#1a1a1a]">
+        <span
+          className={cn(
+            "block font-medium text-[#1a1a1a]",
+            isCompact ? "text-[0.9rem] leading-5 whitespace-nowrap" : "text-[0.95rem] leading-6"
+          )}
+        >
           {label}
         </span>
-        {description ? <span className="block text-xs text-[#888888]">{description}</span> : null}
+        {description ? (
+          <span className={cn("block text-[#888888]", isCompact ? "text-[11px]" : "text-xs")}>
+            {description}
+          </span>
+        ) : null}
       </span>
 
       <button
@@ -39,14 +53,20 @@ export const Switch = ({
         aria-checked={checked}
         onClick={() => onCheckedChange(!checked)}
         className={cn(
-          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200",
-          checked ? "bg-[#1a1a1a]" : "bg-[rgba(26,26,26,0.16)]"
+          "relative inline-flex shrink-0 items-center rounded-full transition-colors duration-200",
+          isCompact ? "h-6 w-10 p-[2px]" : "h-11 w-14 p-1",
+          checked
+            ? isCompact
+              ? "bg-[rgba(26,26,26,0.82)]"
+              : "bg-[#1a1a1a]"
+            : "bg-[rgba(26,26,26,0.16)]"
         )}
       >
         <span
           className={cn(
-            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
-            checked ? "translate-x-6" : "translate-x-1"
+            "inline-block transform rounded-full bg-white transition-transform duration-200",
+            isCompact ? "h-3.5 w-3.5" : "h-5 w-5",
+            checked ? (isCompact ? "translate-x-[18px]" : "translate-x-7") : "translate-x-0"
           )}
         />
       </button>

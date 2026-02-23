@@ -32,6 +32,8 @@ const emptyThreadsPayload: ChatThreadsResponse = {
   degraded: false,
 }
 
+const NEW_DRAFT_KEY = "__new__"
+
 export const loader = async (): Promise<ChatLoaderData> => {
   try {
     const service = createChatSurfaceService()
@@ -445,20 +447,68 @@ export default function ChatRoute() {
   const shouldAutoScrollRef = useRef(true)
 
   const [threadsPayload, setThreadsPayload] = useState<ChatThreadsResponse>(data.payload)
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(
-    data.payload.threads[0]?.id ?? null
-  )
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [messagesDegraded, setMessagesDegraded] = useState(false)
   const [messagesStatusMessage, setMessagesStatusMessage] = useState<string | null>(null)
   const [isRefreshingThreads, setIsRefreshingThreads] = useState(false)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
   const [isSending, setIsSending] = useState(false)
-  const [composerText, setComposerText] = useState("")
+  const [composerDrafts, setComposerDrafts] = useState<Record<string, string>>({
+    [NEW_DRAFT_KEY]: "",
+  })
   const [showTraceEvents, setShowTraceEvents] = useState(false)
+  const [isThreadsDrawerOpen, setIsThreadsDrawerOpen] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
+  const [keyboardInset, setKeyboardInset] = useState(0)
   const [messageLoadError, setMessageLoadError] = useState<string | null>(
     data.status === "error" ? data.message : null
   )
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const mediaQuery = window.matchMedia("(max-width: 767px)")
+    const update = () => {
+      setIsMobileViewport(mediaQuery.matches)
+    }
+
+    update()
+    mediaQuery.addEventListener("change", update)
+
+    return () => {
+      mediaQuery.removeEventListener("change", update)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      setKeyboardInset(0)
+      return
+    }
+
+    if (typeof window === "undefined" || !window.visualViewport) {
+      return
+    }
+
+    const viewport = window.visualViewport
+
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - (viewport.height + viewport.offsetTop))
+      setKeyboardInset(Math.round(inset))
+    }
+
+    update()
+    viewport.addEventListener("resize", update)
+    viewport.addEventListener("scroll", update)
+
+    return () => {
+      viewport.removeEventListener("resize", update)
+      viewport.removeEventListener("scroll", update)
+    }
+  }, [isMobileViewport])
 
   const selectedThread = useMemo(() => {
     if (!selectedThreadId) {
@@ -467,6 +517,18 @@ export default function ChatRoute() {
 
     return threadsPayload.threads.find((thread) => thread.id === selectedThreadId) ?? null
   }, [selectedThreadId, threadsPayload.threads])
+
+  const activeDraftKey = selectedThreadId ?? NEW_DRAFT_KEY
+  const composerText = composerDrafts[activeDraftKey] ?? ""
+  const hasUnsentDraft = composerText.trim().length > 0
+
+  useEffect(() => {
+    if (!isMobileViewport) {
+      return
+    }
+
+    setIsThreadsDrawerOpen(false)
+  }, [isMobileViewport, selectedThreadId])
 
   const messagePresentation = useMemo(() => {
     const allItems = messages.map((message) => {
@@ -578,12 +640,8 @@ export default function ChatRoute() {
       const payload = await fetchThreads()
       setThreadsPayload(payload)
 
-      if (!selectedThreadId && payload.threads.length > 0) {
-        setSelectedThreadId(payload.threads[0]?.id ?? null)
-      }
-
       if (selectedThreadId && !payload.threads.some((thread) => thread.id === selectedThreadId)) {
-        setSelectedThreadId(payload.threads[0]?.id ?? null)
+        setSelectedThreadId(null)
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not refresh threads")
@@ -592,24 +650,22 @@ export default function ChatRoute() {
     }
   }
 
-  const handleCreateThread = async () => {
-    try {
-      const created = await createThread()
-      setThreadsPayload((current) => ({
-        ...current,
-        threads: [created, ...current.threads.filter((thread) => thread.id !== created.id)],
-      }))
-      setSelectedThreadId(created.id)
-      setComposerText("")
-      toast.success("Thread created")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not create thread")
-    }
+  const handleStartNewChat = () => {
+    setSelectedThreadId(null)
+    setComposerDrafts((current) => ({
+      ...current,
+      [NEW_DRAFT_KEY]: "",
+    }))
+    setMessages([])
+    setMessageLoadError(null)
+    setMessagesStatusMessage(null)
+    setShowTraceEvents(false)
+    shouldAutoScrollRef.current = true
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (isSending || !selectedThreadId) {
+    if (isSending) {
       return
     }
 
@@ -623,15 +679,31 @@ export default function ChatRoute() {
     shouldAutoScrollRef.current = true
 
     try {
-      const response = await sendMessage(selectedThreadId, text)
-      setComposerText("")
+      let targetThreadId = selectedThreadId
+      if (!targetThreadId) {
+        const created = await createThread()
+        targetThreadId = created.id
+
+        setThreadsPayload((current) => ({
+          ...current,
+          threads: [created, ...current.threads.filter((thread) => thread.id !== created.id)],
+        }))
+        setSelectedThreadId(created.id)
+      }
+
+      const response = await sendMessage(targetThreadId, text)
+      setComposerDrafts((current) => ({
+        ...current,
+        [targetThreadId]: "",
+        [NEW_DRAFT_KEY]: targetThreadId === selectedThreadId ? (current[NEW_DRAFT_KEY] ?? "") : "",
+      }))
 
       const reply = response.reply
       if (reply) {
         setMessages((current) => [...current, reply])
       }
 
-      const refreshed = await fetchMessages(selectedThreadId)
+      const refreshed = await fetchMessages(targetThreadId)
       setMessages(refreshed.messages)
       setMessagesDegraded(refreshed.degraded)
       setMessagesStatusMessage(refreshed.message ?? null)
@@ -640,7 +712,7 @@ export default function ChatRoute() {
       setThreadsPayload((current) => ({
         ...current,
         threads: current.threads.map((thread) =>
-          thread.id === selectedThreadId
+          thread.id === targetThreadId
             ? {
                 ...thread,
                 updatedAt: Date.now(),
@@ -673,24 +745,88 @@ export default function ChatRoute() {
     event.currentTarget.form?.requestSubmit()
   }
 
+  const handleThreadSelect = (threadId: string) => {
+    setSelectedThreadId(threadId)
+    if (isMobileViewport) {
+      setIsThreadsDrawerOpen(false)
+    }
+  }
+
+  const handleComposerChange = (value: string) => {
+    const draftKey = selectedThreadId ?? NEW_DRAFT_KEY
+    setComposerDrafts((current) => ({
+      ...current,
+      [draftKey]: value,
+    }))
+  }
+
+  const handleDiscardDraft = () => {
+    const draftKey = selectedThreadId ?? NEW_DRAFT_KEY
+    setComposerDrafts((current) => ({
+      ...current,
+      [draftKey]: "",
+    }))
+  }
+
+  const threadsListContent =
+    threadsPayload.threads.length === 0 ? (
+      <p className="m-0 text-sm text-[#888888]">No threads yet. Create one to start chatting.</p>
+    ) : (
+      threadsPayload.threads.map((thread) => {
+        const isActive = thread.id === selectedThreadId
+
+        return (
+          <button
+            key={thread.id}
+            type="button"
+            onClick={() => handleThreadSelect(thread.id)}
+            className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+              isActive
+                ? "border-[rgba(26,26,26,0.2)] bg-[rgba(26,26,26,0.06)]"
+                : "border-[rgba(26,26,26,0.1)] bg-white hover:bg-[rgba(26,26,26,0.03)]"
+            }`}
+          >
+            <p className="m-0 truncate text-sm font-medium text-[#1a1a1a]">{thread.title}</p>
+            <p className="m-0 mt-1 font-mono text-[10px] tracking-[0.08em] text-[#888888] uppercase">
+              {thread.isBound ? "Bound" : "Unbound"}
+              {thread.isStale ? " • Stale" : ""}
+            </p>
+            <p className="m-0 mt-1 text-xs text-[#777777]">
+              Updated {formatDateTime(thread.updatedAt)}
+            </p>
+          </button>
+        )
+      })
+    )
+
+  const composerMobileStyle = isMobileViewport
+    ? {
+        transform: `translateY(-${keyboardInset}px)`,
+        marginBottom: "calc(env(safe-area-inset-bottom) + 2px)",
+      }
+    : undefined
+
   return (
-    <section className="flex h-[calc(100dvh-5.8rem)] w-full max-w-none flex-col overflow-hidden px-0 pb-1">
-      <header className="mb-6 flex items-end justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
+    <section className="flex h-full min-h-0 w-full max-w-none flex-col px-0 pb-1">
+      <header className="mb-2.5 flex items-end justify-between gap-3 max-[720px]:mb-2 max-[720px]:flex-col max-[720px]:items-start max-[720px]:gap-2">
         <div>
-          <p className="mb-2 font-mono text-xs tracking-[0.2em] text-[#888888] uppercase">Chat</p>
-          <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-3xl">
+          <p className="mb-1.5 font-mono text-[11px] tracking-[0.2em] text-[#888888] uppercase">
+            Chat
+          </p>
+          <h1 className="m-0 text-4xl font-light tracking-tight text-[#1a1a1a] max-[720px]:text-[1.8rem] max-[720px]:leading-[1.02]">
             Operator Chat Surface
           </h1>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => void handleCreateThread()}>
-            New Thread
+        <div className="flex flex-wrap gap-1.5">
+          <Button variant="outline" size="sm" onClick={handleStartNewChat}>
+            New
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => void refreshThreads()}
             disabled={isRefreshingThreads}
+            className="max-[720px]:hidden"
           >
             {isRefreshingThreads ? "Refreshing" : "Refresh"}
           </Button>
@@ -703,7 +839,7 @@ export default function ChatRoute() {
       </header>
 
       {threadsPayload.degraded || messagesDegraded || data.status === "error" ? (
-        <Card className="mb-4 border-[rgba(235,59,59,0.35)] bg-[rgba(255,247,247,0.9)]">
+        <Card className="mb-3 border-[rgba(235,59,59,0.35)] bg-[rgba(255,247,247,0.9)]">
           <CardHeader>
             <CardTitle className="text-[#9f2424]">Degraded Chat Window</CardTitle>
             <CardDescription>OpenCode or session state is partially unavailable</CardDescription>
@@ -719,198 +855,249 @@ export default function ChatRoute() {
         </Card>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[340px_minmax(0,1fr)]">
-        <Card className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div
+        className={`fixed inset-0 z-50 md:hidden ${
+          isThreadsDrawerOpen ? "pointer-events-auto" : "pointer-events-none"
+        }`}
+        aria-hidden={!isThreadsDrawerOpen}
+      >
+        <button
+          type="button"
+          aria-label="Close threads panel"
+          className={`absolute inset-0 bg-[rgba(20,20,20,0.36)] transition-opacity ${
+            isThreadsDrawerOpen ? "opacity-100" : "opacity-0"
+          }`}
+          onClick={() => setIsThreadsDrawerOpen(false)}
+        />
+        <aside
+          className={`relative flex h-full w-[86%] max-w-[320px] flex-col border-r border-[rgba(26,26,26,0.12)] bg-[rgba(250,250,250,0.96)] shadow-2xl backdrop-blur transition-transform duration-200 ${
+            isThreadsDrawerOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          <div className="flex items-center justify-between border-b border-[rgba(26,26,26,0.1)] px-3 py-3">
+            <div>
+              <p className="m-0 font-mono text-[10px] tracking-[0.1em] text-[#7b7b7b] uppercase">
+                Chat Sessions
+              </p>
+              <p className="m-0 mt-0.5 text-lg font-medium text-[#1a1a1a]">Threads</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 px-3"
+              onClick={() => setIsThreadsDrawerOpen(false)}
+            >
+              Close
+            </Button>
+          </div>
+          <div className="hide-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
+            {threadsListContent}
+          </div>
+        </aside>
+      </div>
+
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[320px_minmax(0,1fr)] md:gap-4">
+        <Card className="hidden h-full min-h-0 flex-col overflow-hidden md:flex">
           <CardHeader>
             <CardDescription>Bound and discovered sessions</CardDescription>
             <CardTitle>Threads</CardTitle>
           </CardHeader>
           <CardContent className="hide-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pb-4">
-            {threadsPayload.threads.length === 0 ? (
-              <p className="m-0 text-sm text-[#888888]">
-                No threads yet. Create one to start chatting.
-              </p>
-            ) : (
-              threadsPayload.threads.map((thread) => {
-                const isActive = thread.id === selectedThreadId
-
-                return (
-                  <button
-                    key={thread.id}
-                    type="button"
-                    onClick={() => setSelectedThreadId(thread.id)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                      isActive
-                        ? "border-[rgba(26,26,26,0.2)] bg-[rgba(26,26,26,0.06)]"
-                        : "border-[rgba(26,26,26,0.1)] bg-white hover:bg-[rgba(26,26,26,0.03)]"
-                    }`}
-                  >
-                    <p className="m-0 truncate text-sm font-medium text-[#1a1a1a]">
-                      {thread.title}
-                    </p>
-                    <p className="m-0 mt-1 font-mono text-[10px] tracking-[0.08em] text-[#888888] uppercase">
-                      {thread.isBound ? "Bound" : "Unbound"}
-                      {thread.isStale ? " • Stale" : ""}
-                    </p>
-                    <p className="m-0 mt-1 text-xs text-[#777777]">
-                      Updated {formatDateTime(thread.updatedAt)}
-                    </p>
-                  </button>
-                )
-              })
-            )}
+            {threadsListContent}
           </CardContent>
         </Card>
 
-        <Card className="flex h-full min-h-0 flex-col">
-          <CardHeader>
-            <CardDescription>
-              {selectedThread ? selectedThread.id : "No thread selected"}
-            </CardDescription>
-            <CardTitle>{selectedThread ? selectedThread.title : "Messages"}</CardTitle>
+        <Card className="flex min-h-0 flex-1 flex-col">
+          <CardHeader className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <CardDescription>
+                {selectedThread ? selectedThread.id : "Draft session (creates on first send)"}
+              </CardDescription>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <span>{selectedThread ? selectedThread.title : "New chat"}</span>
+                {hasUnsentDraft ? (
+                  <span className="rounded-full border border-[rgba(185,91,0,0.35)] bg-[rgba(255,245,230,0.9)] px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] text-[#9a5600] uppercase">
+                    Draft unsent
+                  </span>
+                ) : null}
+              </CardTitle>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsThreadsDrawerOpen(true)}
+              className="h-10 px-3 md:hidden"
+            >
+              Threads
+            </Button>
           </CardHeader>
-          <CardContent className="flex min-h-0 flex-1 flex-col pb-4">
-            {!selectedThread ? (
-              <p className="m-0 text-sm text-[#888888]">
-                Select or create a thread to view messages.
-              </p>
-            ) : (
-              <>
-                <div
-                  ref={messagesViewportRef}
-                  onScroll={handleMessagesScroll}
-                  className="hide-scrollbar mb-3 min-h-0 flex-1 space-y-2 overflow-y-auto rounded-lg border border-[rgba(26,26,26,0.08)] bg-[rgba(255,255,255,0.75)] p-3"
-                >
-                  {messagePresentation.traceOnlyCount > 0 ? (
-                    <div className="mb-2 flex items-center justify-between rounded-md border border-[rgba(26,26,26,0.12)] bg-[rgba(248,248,248,0.9)] px-2.5 py-2">
-                      <p className="m-0 text-xs text-[#666666]">
-                        {showTraceEvents
-                          ? `Showing ${messagePresentation.traceOnlyCount} execution trace events`
-                          : `${messagePresentation.hiddenTraceCount} execution trace events hidden`}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setShowTraceEvents((current) => !current)}
-                        className="font-mono text-[10px] tracking-[0.08em] text-[#1a1a1a] uppercase"
+          <CardContent className="flex min-h-0 flex-1 flex-col pb-3">
+            <>
+              <div
+                ref={messagesViewportRef}
+                onScroll={handleMessagesScroll}
+                className="hide-scrollbar mb-2 min-h-0 flex-1 space-y-2 overflow-y-auto rounded-lg border border-[rgba(26,26,26,0.08)] bg-[rgba(255,255,255,0.75)] p-2.5 md:mb-3 md:p-3"
+              >
+                {selectedThread && messagePresentation.traceOnlyCount > 0 ? (
+                  <div className="mb-2 flex items-center justify-between rounded-md border border-[rgba(26,26,26,0.12)] bg-[rgba(248,248,248,0.9)] px-2.5 py-2">
+                    <p className="m-0 text-xs text-[#666666]">
+                      {showTraceEvents
+                        ? `Showing ${messagePresentation.traceOnlyCount} execution trace events`
+                        : `${messagePresentation.hiddenTraceCount} execution trace events hidden`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowTraceEvents((current) => !current)}
+                      className="font-mono text-[10px] tracking-[0.08em] text-[#1a1a1a] uppercase"
+                    >
+                      {showTraceEvents ? "Hide trace" : "Show trace"}
+                    </button>
+                  </div>
+                ) : null}
+
+                {isLoadingMessages ? (
+                  <p className="m-0 flex min-h-full items-center justify-center text-sm text-[#888888]">
+                    Loading messages...
+                  </p>
+                ) : messageLoadError ? (
+                  <p className="m-0 flex min-h-full items-center justify-center text-center text-sm text-[#b42318]">
+                    {messageLoadError}
+                  </p>
+                ) : !selectedThread ? (
+                  <p className="m-0 flex min-h-full items-center justify-center text-center text-sm text-[#777777]">
+                    New chat started. Your first message will create and bind a session.
+                  </p>
+                ) : messagePresentation.items.length === 0 ? (
+                  <p className="m-0 flex min-h-full items-center justify-center text-center text-sm text-[#888888]">
+                    No messages yet in this thread.
+                  </p>
+                ) : (
+                  messagePresentation.items.map(({ message, blocks }) => {
+                    const traceBlocks = blocks.filter(
+                      (block) => block.kind === "reasoning" || block.kind === "tool"
+                    )
+                    const responseBlocks = blocks.filter(
+                      (block) => block.kind !== "reasoning" && block.kind !== "tool"
+                    )
+                    const hasResponseBlocks = responseBlocks.length > 0
+                    const isAssistant = message.role === "assistant"
+                    const isUser = message.role === "user"
+                    const responseCharacterCount = responseBlocks.reduce(
+                      (total, block) => total + block.content.length,
+                      0
+                    )
+                    const shouldCollapseUser = isUser && responseCharacterCount > 520
+                    const userSummary = summarizeBlocks(responseBlocks)
+
+                    return (
+                      <article
+                        key={message.id}
+                        className={`rounded-xl border px-3 py-2 shadow-[0_1px_0_rgba(0,0,0,0.04)] ${resolveMessageTone(message.role)}`}
                       >
-                        {showTraceEvents ? "Hide trace" : "Show trace"}
-                      </button>
-                    </div>
-                  ) : null}
+                        <div className="mb-1.5 flex items-center justify-between gap-3">
+                          <p className="m-0 font-mono text-[10px] tracking-[0.1em] text-[#666666] uppercase">
+                            {message.role}
+                          </p>
+                          <p className="m-0 text-[11px] text-[#787878]">
+                            {formatDateTime(message.createdAt)}
+                          </p>
+                        </div>
 
-                  {isLoadingMessages ? (
-                    <p className="m-0 text-sm text-[#888888]">Loading messages...</p>
-                  ) : messageLoadError ? (
-                    <p className="m-0 text-sm text-[#b42318]">{messageLoadError}</p>
-                  ) : messagePresentation.items.length === 0 ? (
-                    <p className="m-0 text-sm text-[#888888]">No messages yet in this thread.</p>
-                  ) : (
-                    messagePresentation.items.map(({ message, blocks }) => {
-                      const traceBlocks = blocks.filter(
-                        (block) => block.kind === "reasoning" || block.kind === "tool"
-                      )
-                      const responseBlocks = blocks.filter(
-                        (block) => block.kind !== "reasoning" && block.kind !== "tool"
-                      )
-                      const hasResponseBlocks = responseBlocks.length > 0
-                      const isAssistant = message.role === "assistant"
-                      const isUser = message.role === "user"
-                      const responseCharacterCount = responseBlocks.reduce(
-                        (total, block) => total + block.content.length,
-                        0
-                      )
-                      const shouldCollapseUser = isUser && responseCharacterCount > 520
-                      const userSummary = summarizeBlocks(responseBlocks)
-
-                      return (
-                        <article
-                          key={message.id}
-                          className={`rounded-xl border px-3 py-2 shadow-[0_1px_0_rgba(0,0,0,0.04)] ${resolveMessageTone(message.role)}`}
-                        >
-                          <div className="mb-1.5 flex items-center justify-between gap-3">
-                            <p className="m-0 font-mono text-[10px] tracking-[0.1em] text-[#666666] uppercase">
-                              {message.role}
-                            </p>
-                            <p className="m-0 text-[11px] text-[#787878]">
-                              {formatDateTime(message.createdAt)}
-                            </p>
-                          </div>
-
-                          {blocks.length === 0 ? (
-                            <p className="m-0 text-sm text-[#666666]">[non-text response]</p>
-                          ) : isAssistant ? (
-                            <div className="space-y-2">
-                              {hasResponseBlocks ? (
-                                <div className="rounded-md border border-[rgba(20,114,70,0.24)] bg-[rgba(242,252,247,0.85)] px-2.5 py-2">
-                                  <p className="m-0 font-mono text-[10px] tracking-[0.08em] text-[#1f7a4f] uppercase">
-                                    Response
-                                  </p>
-                                  <div className="mt-1.5 space-y-2">
-                                    {responseBlocks.map((block, index) =>
-                                      renderMessageBlock(block, `${message.id}-response-${index}`)
-                                    )}
-                                  </div>
+                        {blocks.length === 0 ? (
+                          <p className="m-0 text-sm text-[#666666]">[non-text response]</p>
+                        ) : isAssistant ? (
+                          <div className="space-y-2">
+                            {hasResponseBlocks ? (
+                              <div className="rounded-md border border-[rgba(20,114,70,0.24)] bg-[rgba(242,252,247,0.85)] px-2.5 py-2">
+                                <p className="m-0 font-mono text-[10px] tracking-[0.08em] text-[#1f7a4f] uppercase">
+                                  Response
+                                </p>
+                                <div className="mt-1.5 space-y-2">
+                                  {responseBlocks.map((block, index) =>
+                                    renderMessageBlock(block, `${message.id}-response-${index}`)
+                                  )}
                                 </div>
-                              ) : null}
-
-                              {traceBlocks.length > 0 ? (
-                                <details className="rounded-md border border-[rgba(76,65,184,0.24)] bg-[rgba(244,241,255,0.78)] px-2.5 py-2">
-                                  <summary className="cursor-pointer text-xs text-[#4b3d9f]">
-                                    Thinking and tools ({traceBlocks.length})
-                                  </summary>
-                                  <div className="mt-2 space-y-2">
-                                    {traceBlocks.map((block, index) =>
-                                      renderMessageBlock(block, `${message.id}-trace-${index}`)
-                                    )}
-                                  </div>
-                                </details>
-                              ) : null}
-                            </div>
-                          ) : shouldCollapseUser ? (
-                            <details className="rounded-md border border-[rgba(26,26,26,0.14)] bg-[rgba(250,250,250,0.9)] px-2.5 py-2">
-                              <summary className="cursor-pointer text-sm text-[#3a3a3a]">
-                                {userSummary}
-                              </summary>
-                              <div className="mt-2 space-y-2">
-                                {responseBlocks.map((block, index) =>
-                                  renderMessageBlock(block, `${message.id}-user-${index}`)
-                                )}
                               </div>
-                            </details>
-                          ) : (
-                            <div className="space-y-2">
+                            ) : null}
+
+                            {traceBlocks.length > 0 ? (
+                              <details className="rounded-md border border-[rgba(76,65,184,0.24)] bg-[rgba(244,241,255,0.78)] px-2.5 py-2">
+                                <summary className="cursor-pointer text-xs text-[#4b3d9f]">
+                                  Thinking and tools ({traceBlocks.length})
+                                </summary>
+                                <div className="mt-2 space-y-2">
+                                  {traceBlocks.map((block, index) =>
+                                    renderMessageBlock(block, `${message.id}-trace-${index}`)
+                                  )}
+                                </div>
+                              </details>
+                            ) : null}
+                          </div>
+                        ) : shouldCollapseUser ? (
+                          <details className="rounded-md border border-[rgba(26,26,26,0.14)] bg-[rgba(250,250,250,0.9)] px-2.5 py-2">
+                            <summary className="cursor-pointer text-sm text-[#3a3a3a]">
+                              {userSummary}
+                            </summary>
+                            <div className="mt-2 space-y-2">
                               {responseBlocks.map((block, index) =>
-                                renderMessageBlock(block, `${message.id}-${index}`)
+                                renderMessageBlock(block, `${message.id}-user-${index}`)
                               )}
                             </div>
-                          )}
-                        </article>
-                      )
-                    })
-                  )}
-                </div>
+                          </details>
+                        ) : (
+                          <div className="space-y-2">
+                            {responseBlocks.map((block, index) =>
+                              renderMessageBlock(block, `${message.id}-${index}`)
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    )
+                  })
+                )}
+              </div>
 
-                <form onSubmit={handleSubmit} className="grid gap-2">
-                  <textarea
-                    id="chat-composer"
-                    value={composerText}
-                    onChange={(event) => setComposerText(event.target.value)}
-                    onKeyDown={handleComposerKeyDown}
-                    placeholder="Write a message to Otto..."
-                    rows={4}
-                    className="rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
-                  />
-                  <div className="flex justify-end">
-                    <Button type="submit" disabled={isSending || composerText.trim().length === 0}>
+              <form
+                onSubmit={handleSubmit}
+                className="grid gap-2 rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(255,255,255,0.94)] p-2.5 shadow-sm transition-transform duration-150"
+                style={composerMobileStyle}
+              >
+                <textarea
+                  id="chat-composer"
+                  value={composerText}
+                  onChange={(event) => handleComposerChange(event.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  placeholder="Write a message to Otto..."
+                  rows={isMobileViewport ? 2 : 4}
+                  className="max-h-[45dvh] min-h-[86px] rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a] md:min-h-[120px]"
+                />
+                <div className="flex items-center justify-between gap-2">
+                  <p className="m-0 text-[11px] text-[#7a7a7a] md:text-xs">
+                    Enter to send, Shift+Enter for newline.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {hasUnsentDraft ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 px-3"
+                        onClick={handleDiscardDraft}
+                      >
+                        Discard
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="submit"
+                      disabled={isSending || !hasUnsentDraft}
+                      className="h-10 px-4"
+                    >
                       {isSending ? "Sending..." : "Send"}
                     </Button>
                   </div>
-                  <p className="m-0 text-xs text-[#7a7a7a]">
-                    Enter to send, Shift+Enter for newline.
-                  </p>
-                </form>
-              </>
-            )}
+                </div>
+              </form>
+            </>
           </CardContent>
         </Card>
       </div>
