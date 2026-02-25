@@ -510,7 +510,7 @@ export const createChatSurfaceService = (
               continue
             }
 
-            if (assistantMessageId && part.messageID !== assistantMessageId) {
+            if (part.messageID !== assistantMessageId) {
               continue
             }
 
