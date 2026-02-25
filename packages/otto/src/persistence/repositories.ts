@@ -123,6 +123,15 @@ export type JobRunRecord = {
   createdAt: number
 }
 
+export type JobRunSessionRecord = {
+  runId: string
+  jobId: string
+  sessionId: string
+  createdAt: number
+  closedAt: number | null
+  closeErrorMessage: string | null
+}
+
 export type FailedJobRunRecord = {
   runId: string
   jobId: string
@@ -1126,6 +1135,76 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     listTasks: (): TaskListRecord[] => {
       return listTasksStatement.all() as TaskListRecord[]
+    },
+  }
+}
+
+/**
+ * Persists OpenCode session lifecycle metadata per run so background execution can be
+ * observed, debugged, and controlled across process restarts.
+ *
+ * @param database Open SQLite database instance.
+ * @returns Repository for run session lifecycle persistence.
+ */
+export const createJobRunSessionsRepository = (database: DatabaseSync) => {
+  const insertStatement = database.prepare(
+    `INSERT INTO job_run_sessions
+      (run_id, job_id, session_id, created_at, closed_at, close_error_message)
+     VALUES
+      (?, ?, ?, ?, NULL, NULL)`
+  )
+
+  const markClosedStatement = database.prepare(
+    `UPDATE job_run_sessions
+     SET closed_at = ?,
+         close_error_message = ?
+     WHERE run_id = ?`
+  )
+
+  const getByRunIdStatement = database.prepare(
+    `SELECT
+      run_id as runId,
+      job_id as jobId,
+      session_id as sessionId,
+      created_at as createdAt,
+      closed_at as closedAt,
+      close_error_message as closeErrorMessage
+     FROM job_run_sessions
+     WHERE run_id = ?`
+  )
+
+  const listActiveByJobIdStatement = database.prepare(
+    `SELECT
+      run_id as runId,
+      job_id as jobId,
+      session_id as sessionId,
+      created_at as createdAt,
+      closed_at as closedAt,
+      close_error_message as closeErrorMessage
+     FROM job_run_sessions
+     WHERE job_id = ?
+       AND closed_at IS NULL
+     ORDER BY created_at DESC`
+  )
+
+  return {
+    insert: (record: {
+      runId: string
+      jobId: string
+      sessionId: string
+      createdAt: number
+    }): void => {
+      insertStatement.run(record.runId, record.jobId, record.sessionId, record.createdAt)
+    },
+    markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null): void => {
+      markClosedStatement.run(closedAt, closeErrorMessage, runId)
+    },
+    getByRunId: (runId: string): JobRunSessionRecord | null => {
+      const row = getByRunIdStatement.get(runId) as JobRunSessionRecord | undefined
+      return row ?? null
+    },
+    listActiveByJobId: (jobId: string): JobRunSessionRecord[] => {
+      return listActiveByJobIdStatement.all(jobId) as JobRunSessionRecord[]
     },
   }
 }

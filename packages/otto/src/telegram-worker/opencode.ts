@@ -25,6 +25,7 @@ type SessionModelContext = {
 
 export type OpencodeSessionGateway = {
   ensureSession: (sessionId: string | null) => Promise<string>
+  closeSession?: (sessionId: string) => Promise<void>
   promptSessionParts: (
     sessionId: string,
     parts: OpencodePromptPart[],
@@ -201,6 +202,41 @@ export const createOpencodeSessionGateway = (
       }
 
       return createdId
+    },
+    closeSession: async (sessionId) => {
+      const authorization = process.env.OPENCODE_AUTH_TOKEN?.trim()
+      const headers: Record<string, string> = authorization
+        ? {
+            authorization: `Bearer ${authorization}`,
+          }
+        : {}
+
+      const abortResponse = await fetch(
+        `${baseUrl}/session/${encodeURIComponent(sessionId)}/abort`,
+        {
+          method: "POST",
+          headers,
+        }
+      )
+
+      if (!abortResponse.ok && abortResponse.status !== 404) {
+        const body = await abortResponse.text()
+        throw new Error(
+          `OpenCode session abort failed (${abortResponse.status}): ${body || "no response body"}`
+        )
+      }
+
+      const deleteResponse = await fetch(`${baseUrl}/session/${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+        headers,
+      })
+
+      if (!deleteResponse.ok && deleteResponse.status !== 404) {
+        const body = await deleteResponse.text()
+        throw new Error(
+          `OpenCode session delete failed (${deleteResponse.status}): ${body || "no response body"}`
+        )
+      }
     },
     promptSessionParts,
     promptSession: async (sessionId, text, options) => {

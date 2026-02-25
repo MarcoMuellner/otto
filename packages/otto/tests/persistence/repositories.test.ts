@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   createApprovalsRepository,
   createCommandAuditRepository,
+  createJobRunSessionsRepository,
   createJobsRepository,
   createOutboundMessagesRepository,
   createSessionBindingsRepository,
@@ -44,6 +45,70 @@ describe("persistence repositories", () => {
       sessionId: "session-123",
       updatedAt: 1000,
     })
+
+    db.close()
+  })
+
+  it("stores and closes job run session lifecycle records", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const repository = createJobRunSessionsRepository(db)
+
+    jobsRepository.createTask({
+      id: "job-1",
+      type: "interactive_background_oneshot",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 1_000,
+      cadenceMinutes: null,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    jobsRepository.insertRun({
+      id: "run-1",
+      jobId: "job-1",
+      scheduledFor: 1_000,
+      startedAt: 1_001,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 1_001,
+    })
+
+    // Act
+    repository.insert({
+      runId: "run-1",
+      jobId: "job-1",
+      sessionId: "session-1",
+      createdAt: 1_001,
+    })
+    repository.markClosed("run-1", 1_050, null)
+
+    // Assert
+    const byRun = repository.getByRunId("run-1")
+    expect(byRun).toEqual({
+      runId: "run-1",
+      jobId: "job-1",
+      sessionId: "session-1",
+      createdAt: 1_001,
+      closedAt: 1_050,
+      closeErrorMessage: null,
+    })
+    expect(repository.listActiveByJobId("job-1")).toHaveLength(0)
 
     db.close()
   })

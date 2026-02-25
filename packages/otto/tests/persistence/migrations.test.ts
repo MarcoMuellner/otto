@@ -58,6 +58,7 @@ describe("openPersistenceDatabase", () => {
       expect.arrayContaining([
         "approvals",
         "jobs",
+        "job_run_sessions",
         "messages_in",
         "messages_in_voice",
         "messages_out",
