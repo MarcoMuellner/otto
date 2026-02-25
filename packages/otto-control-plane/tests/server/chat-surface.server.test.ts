@@ -35,6 +35,7 @@ describe("createChatSurfaceService", () => {
           throw new Error("unused in this test")
         },
         subscribeEvents: async function* () {
+          yield* []
           throw new Error("unused in this test")
         },
       }),
@@ -95,6 +96,7 @@ describe("createChatSurfaceService", () => {
           throw new Error("unused in this test")
         },
         subscribeEvents: async function* () {
+          yield* []
           throw new Error("unused in this test")
         },
       }),

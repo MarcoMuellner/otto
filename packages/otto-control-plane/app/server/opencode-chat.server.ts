@@ -659,7 +659,11 @@ export const createOpencodeChatClient = ({
         throw mapError(error, endpoint)
       }
     },
-    promptSessionAsync: async (sessionId: string, text: string, messageId?: string): Promise<void> => {
+    promptSessionAsync: async (
+      sessionId: string,
+      text: string,
+      messageId?: string
+    ): Promise<void> => {
       const endpoint = `/session/${encodeURIComponent(sessionId)}/prompt_async`
       const body = {
         ...(messageId ? { messageID: messageId } : {}),

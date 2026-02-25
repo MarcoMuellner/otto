@@ -64,6 +64,7 @@ describe("api.chat.thread-messages-stream action", () => {
     // Arrange
     const action = createApiChatThreadMessageStreamAction({
       sendMessageStream: async function* () {
+        yield* []
         throw new Error("unused")
       },
     })

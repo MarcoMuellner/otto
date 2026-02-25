@@ -494,7 +494,9 @@ export const createChatSurfaceService = (
             const error = isRecord(event.properties.error) ? event.properties.error : null
             const errorData = error && isRecord(error.data) ? error.data : null
             const errorMessage =
-              typeof errorData?.message === "string" ? errorData.message : "Streaming response failed"
+              typeof errorData?.message === "string"
+                ? errorData.message
+                : "Streaming response failed"
             throw new OpencodeChatApiError(errorMessage)
           }
 
@@ -518,13 +520,23 @@ export const createChatSurfaceService = (
 
             if (type === "text") {
               const existing = textParts.get(part.id) ?? ""
-              const next = delta.length > 0 ? `${existing}${delta}` : typeof part.text === "string" ? part.text : existing
+              const next =
+                delta.length > 0
+                  ? `${existing}${delta}`
+                  : typeof part.text === "string"
+                    ? part.text
+                    : existing
               textParts.set(part.id, next)
             }
 
             if (type === "reasoning") {
               const existing = reasoningParts.get(part.id) ?? ""
-              const next = delta.length > 0 ? `${existing}${delta}` : typeof part.text === "string" ? part.text : existing
+              const next =
+                delta.length > 0
+                  ? `${existing}${delta}`
+                  : typeof part.text === "string"
+                    ? part.text
+                    : existing
               reasoningParts.set(part.id, next)
             }
 
@@ -560,8 +572,9 @@ export const createChatSurfaceService = (
           const candidate =
             [...latest]
               .reverse()
-              .find((message) => message.role === "assistant" && message.createdAt >= startedAt - 1_000) ??
-            null
+              .find(
+                (message) => message.role === "assistant" && message.createdAt >= startedAt - 1_000
+              ) ?? null
           reply = candidate ? toChatMessage(candidate) : null
         }
 

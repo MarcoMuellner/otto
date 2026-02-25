@@ -120,13 +120,16 @@ const streamMessage = async (
   text: string,
   onEvent: (event: ChatStreamEvent) => void
 ) => {
-  const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}/messages/stream`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ text }),
-  })
+  const response = await fetch(
+    `/api/chat/threads/${encodeURIComponent(threadId)}/messages/stream`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+    }
+  )
 
   if (!response.ok) {
     const body = (await response.json()) as unknown
@@ -850,7 +853,8 @@ export default function ChatRoute() {
             setMessages((current) =>
               current.filter(
                 (message) =>
-                  message.id !== optimisticAssistantMessageId && message.id !== streamedAssistantMessageId
+                  message.id !== optimisticAssistantMessageId &&
+                  message.id !== streamedAssistantMessageId
               )
             )
             return
