@@ -1,4 +1,5 @@
 import type {
+  ChatStreamEvent,
   ChatMessage,
   ChatMessagesResponse,
   ChatThread,
@@ -14,6 +15,7 @@ import {
 import {
   createOpencodeChatClient,
   OpencodeChatApiError,
+  type OpencodeChatEvent,
   type OpencodeMessage,
   type OpencodeSessionSummary,
 } from "./opencode-chat.server.js"
@@ -117,6 +119,32 @@ const toChatMessage = (message: OpencodeMessage): ChatMessage => {
     createdAt: message.createdAt,
     partTypes: message.partTypes,
   }
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+const resolveEventSessionId = (event: OpencodeChatEvent): string | null => {
+  const sessionId = event.properties.sessionID
+  return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null
+}
+
+const resolveAssistantMessageIdFromEvent = (event: OpencodeChatEvent): string | null => {
+  if (event.type === "message.updated") {
+    const info = isRecord(event.properties.info) ? event.properties.info : null
+    if (!info) {
+      return null
+    }
+
+    if (info.role !== "assistant") {
+      return null
+    }
+
+    return typeof info.id === "string" && info.id.length > 0 ? info.id : null
+  }
+
+  return null
 }
 
 const writeAudit = (
@@ -358,6 +386,234 @@ export const createChatSurfaceService = (
         })
 
         throw error
+      }
+    },
+    sendMessageStream: async function* (
+      threadId: string,
+      text: string
+    ): AsyncGenerator<ChatStreamEvent> {
+      const config = await dependencies.resolveConfig()
+      const chatClient = dependencies.createOpencodeChatClient({ baseUrl: config.opencodeApiUrl })
+      const startedAt = (dependencies.now ?? Date.now)()
+      const requestMessageId = `cp-${startedAt}-${Math.random().toString(36).slice(2, 10)}`
+
+      const abortController = new AbortController()
+      const textParts = new Map<string, string>()
+      const reasoningParts = new Map<string, string>()
+      const toolParts = new Map<string, string>()
+      const seenPartTypes = new Set<string>()
+      let assistantMessageId: string | null = null
+      let lastText = ""
+
+      const buildCombinedText = (): string => {
+        const textContent = [...textParts.values()].join("")
+        const reasoningContent = [...reasoningParts.values()]
+          .filter((entry) => entry.trim().length > 0)
+          .map((entry) => `Reasoning: ${entry.trim()}`)
+        const toolContent = [...toolParts.values()]
+          .filter((entry) => entry.trim().length > 0)
+          .map((entry) => `Tool: ${entry.trim()}`)
+
+        return [...(textContent ? [textContent] : []), ...reasoningContent, ...toolContent]
+          .join("\n")
+          .trim()
+      }
+
+      const emitDelta = (): ChatStreamEvent | null => {
+        const combined = buildCombinedText()
+        const delta = combined.startsWith(lastText) ? combined.slice(lastText.length) : combined
+        lastText = combined
+
+        if (!assistantMessageId) {
+          return null
+        }
+
+        return {
+          type: "delta",
+          messageId: assistantMessageId,
+          delta,
+          text: combined,
+          partTypes: [...seenPartTypes],
+        }
+      }
+
+      try {
+        yield {
+          type: "started",
+          messageId: requestMessageId,
+          createdAt: startedAt,
+        }
+
+        const eventIterator = chatClient
+          .subscribeEvents(abortController.signal)
+          [Symbol.asyncIterator]()
+        const nextEventWithTimeout = async (): Promise<IteratorResult<OpencodeChatEvent>> => {
+          const timeoutMs = 45_000
+          let timer: ReturnType<typeof setTimeout> | null = null
+
+          try {
+            return await Promise.race([
+              eventIterator.next(),
+              new Promise<IteratorResult<OpencodeChatEvent>>((_, reject) => {
+                timer = setTimeout(() => {
+                  reject(new OpencodeChatApiError("Timed out while waiting for stream events"))
+                }, timeoutMs)
+              }),
+            ])
+          } finally {
+            if (timer) {
+              clearTimeout(timer)
+            }
+          }
+        }
+
+        const firstEventPromise = nextEventWithTimeout()
+        await chatClient.promptSessionAsync(threadId, text, requestMessageId)
+
+        let firstEventPending = true
+        while (true) {
+          const step = firstEventPending ? await firstEventPromise : await nextEventWithTimeout()
+          firstEventPending = false
+
+          if (step.done) {
+            break
+          }
+
+          const event = step.value
+          const eventSessionId = resolveEventSessionId(event)
+          if (eventSessionId && eventSessionId !== threadId) {
+            continue
+          }
+
+          const eventAssistantMessageId = resolveAssistantMessageIdFromEvent(event)
+          if (!assistantMessageId && eventAssistantMessageId) {
+            assistantMessageId = eventAssistantMessageId
+          }
+
+          if (event.type === "session.error") {
+            const error = isRecord(event.properties.error) ? event.properties.error : null
+            const errorData = error && isRecord(error.data) ? error.data : null
+            const errorMessage =
+              typeof errorData?.message === "string"
+                ? errorData.message
+                : "Streaming response failed"
+            throw new OpencodeChatApiError(errorMessage)
+          }
+
+          if (event.type === "message.part.updated") {
+            const part = isRecord(event.properties.part) ? event.properties.part : null
+            if (!part || typeof part.type !== "string" || typeof part.id !== "string") {
+              continue
+            }
+
+            if (!assistantMessageId) {
+              continue
+            }
+
+            if (part.messageID !== assistantMessageId) {
+              continue
+            }
+
+            const delta = typeof event.properties.delta === "string" ? event.properties.delta : ""
+            const type = part.type
+            seenPartTypes.add(type)
+
+            if (type === "text") {
+              const existing = textParts.get(part.id) ?? ""
+              const next =
+                delta.length > 0
+                  ? `${existing}${delta}`
+                  : typeof part.text === "string"
+                    ? part.text
+                    : existing
+              textParts.set(part.id, next)
+            }
+
+            if (type === "reasoning") {
+              const existing = reasoningParts.get(part.id) ?? ""
+              const next =
+                delta.length > 0
+                  ? `${existing}${delta}`
+                  : typeof part.text === "string"
+                    ? part.text
+                    : existing
+              reasoningParts.set(part.id, next)
+            }
+
+            if (type === "tool") {
+              const state = isRecord(part.state) ? part.state : null
+              const output = typeof state?.output === "string" ? state.output : ""
+              if (output.length > 0) {
+                toolParts.set(part.id, output)
+              }
+            }
+
+            const update = emitDelta()
+            if (update) {
+              yield update
+            }
+          }
+
+          if (event.type === "session.idle") {
+            break
+          }
+        }
+
+        abortController.abort()
+
+        let reply: ChatMessage | null = null
+        if (assistantMessageId) {
+          const resolved = await chatClient.getMessage(threadId, assistantMessageId)
+          reply = resolved?.message ? toChatMessage(resolved.message) : null
+        }
+
+        if (!reply) {
+          const latest = await chatClient.listMessages(threadId)
+          const candidate =
+            [...latest]
+              .reverse()
+              .find(
+                (message) => message.role === "assistant" && message.createdAt >= startedAt - 1_000
+              ) ?? null
+          reply = candidate ? toChatMessage(candidate) : null
+        }
+
+        writeAudit(dependencies, config.stateDatabasePath, {
+          command: "chat.send_message_stream",
+          status: "success",
+          errorMessage: null,
+          metadata: {
+            threadId,
+            sentChars: text.length,
+            streamedChars: lastText.length,
+            hasReply: reply !== null,
+          },
+        })
+
+        yield {
+          type: "completed",
+          reply,
+        }
+      } catch (error) {
+        abortController.abort()
+
+        const message = error instanceof Error ? error.message : "Could not stream message"
+
+        writeAudit(dependencies, config.stateDatabasePath, {
+          command: "chat.send_message_stream",
+          status: "failed",
+          errorMessage: message,
+          metadata: {
+            threadId,
+            sentChars: text.length,
+            streamedChars: lastText.length,
+          },
+        })
+
+        yield {
+          type: "error",
+          message,
+        }
       }
     },
   }

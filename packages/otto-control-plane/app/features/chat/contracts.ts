@@ -52,6 +52,37 @@ export const sendChatMessageResponseSchema = z.object({
   reply: chatMessageSchema.nullable(),
 })
 
+export const chatStreamStartedEventSchema = z.object({
+  type: z.literal("started"),
+  messageId: z.string().trim().min(1),
+  createdAt: z.number().int(),
+})
+
+export const chatStreamDeltaEventSchema = z.object({
+  type: z.literal("delta"),
+  messageId: z.string().trim().min(1),
+  delta: z.string(),
+  text: z.string(),
+  partTypes: z.array(z.string().trim().min(1)),
+})
+
+export const chatStreamCompletedEventSchema = z.object({
+  type: z.literal("completed"),
+  reply: chatMessageSchema.nullable(),
+})
+
+export const chatStreamErrorEventSchema = z.object({
+  type: z.literal("error"),
+  message: z.string().trim().min(1),
+})
+
+export const chatStreamEventSchema = z.union([
+  chatStreamStartedEventSchema,
+  chatStreamDeltaEventSchema,
+  chatStreamCompletedEventSchema,
+  chatStreamErrorEventSchema,
+])
+
 export type ChatThreadBinding = z.infer<typeof chatThreadBindingSchema>
 export type ChatThread = z.infer<typeof chatThreadSchema>
 export type ChatThreadsResponse = z.infer<typeof chatThreadsResponseSchema>
@@ -61,3 +92,8 @@ export type CreateChatThreadRequest = z.infer<typeof createChatThreadRequestSche
 export type CreateChatThreadResponse = z.infer<typeof createChatThreadResponseSchema>
 export type SendChatMessageRequest = z.infer<typeof sendChatMessageRequestSchema>
 export type SendChatMessageResponse = z.infer<typeof sendChatMessageResponseSchema>
+export type ChatStreamStartedEvent = z.infer<typeof chatStreamStartedEventSchema>
+export type ChatStreamDeltaEvent = z.infer<typeof chatStreamDeltaEventSchema>
+export type ChatStreamCompletedEvent = z.infer<typeof chatStreamCompletedEventSchema>
+export type ChatStreamErrorEvent = z.infer<typeof chatStreamErrorEventSchema>
+export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>

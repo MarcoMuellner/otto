@@ -167,4 +167,46 @@ describe("createOpencodeChatClient", () => {
     // Act + Assert
     await expect(client.listSessions()).rejects.toBeInstanceOf(OpencodeChatApiError)
   })
+
+  it("sends async prompt via HTTP fallback", async () => {
+    // Arrange
+    const client = createOpencodeChatClient({
+      baseUrl: "http://127.0.0.1:4096",
+      fetchImpl: async () => {
+        return new Response(null, { status: 204 })
+      },
+      sessionApi: {},
+    })
+
+    // Act + Assert
+    await expect(client.promptSessionAsync("session-1", "hello", "req-1")).resolves.toBeUndefined()
+  })
+
+  it("subscribes to events through event API", async () => {
+    // Arrange
+    const client = createOpencodeChatClient({
+      baseUrl: "http://127.0.0.1:4096",
+      eventApi: {
+        subscribe: async () => ({
+          stream: (async function* () {
+            yield {
+              type: "message.updated",
+              properties: {
+                sessionID: "session-1",
+              },
+            }
+          })(),
+        }),
+      },
+    })
+
+    // Act
+    const events = [] as string[]
+    for await (const event of client.subscribeEvents()) {
+      events.push(event.type)
+    }
+
+    // Assert
+    expect(events).toEqual(["message.updated"])
+  })
 })
