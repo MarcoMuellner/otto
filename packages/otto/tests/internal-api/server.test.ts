@@ -186,6 +186,82 @@ const createUserProfileRepositoryStub = () => {
   }
 }
 
+const createJobRunSessionsRepositoryStub = () => {
+  const byRunId = new Map<
+    string,
+    { runId: string; jobId: string; sessionId: string; closedAt: number | null }
+  >()
+
+  return {
+    insert: (record: {
+      runId: string
+      jobId: string
+      sessionId: string
+      createdAt: number
+    }): void => {
+      byRunId.set(record.runId, {
+        runId: record.runId,
+        jobId: record.jobId,
+        sessionId: record.sessionId,
+        closedAt: null,
+      })
+    },
+    markClosed: (runId: string, closedAt: number): void => {
+      const existing = byRunId.get(runId)
+      if (!existing) {
+        return
+      }
+
+      byRunId.set(runId, {
+        ...existing,
+        closedAt,
+      })
+    },
+    getByRunId: (
+      runId: string
+    ): { runId: string; jobId: string; sessionId: string; closedAt: number | null } | null => {
+      const record = byRunId.get(runId)
+      if (!record) {
+        return null
+      }
+
+      return {
+        runId: record.runId,
+        jobId: record.jobId,
+        sessionId: record.sessionId,
+        closedAt: record.closedAt,
+      }
+    },
+    listActiveByJobId: (
+      jobId: string
+    ): Array<{ runId: string; jobId: string; sessionId: string }> => {
+      return [...byRunId.values()]
+        .filter((record) => record.jobId === jobId && record.closedAt == null)
+        .map((record) => ({
+          runId: record.runId,
+          jobId: record.jobId,
+          sessionId: record.sessionId,
+        }))
+    },
+    getLatestActiveBySessionId: (
+      sessionId: string
+    ): { runId: string; jobId: string; sessionId: string } | null => {
+      const record = [...byRunId.values()]
+        .filter((entry) => entry.sessionId === sessionId && entry.closedAt == null)
+        .at(-1)
+      if (!record) {
+        return null
+      }
+
+      return {
+        runId: record.runId,
+        jobId: record.jobId,
+        sessionId: record.sessionId,
+      }
+    },
+  }
+}
+
 describe("resolveInternalApiConfig", () => {
   it("creates and reuses a persisted token file", async () => {
     // Arrange
@@ -224,6 +300,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -262,6 +339,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -315,6 +393,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => 777),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -370,6 +449,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -432,6 +512,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => 777),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -483,6 +564,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -562,6 +644,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository,
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -611,6 +694,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => 777),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository,
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -654,6 +738,332 @@ describe("buildInternalApiServer", () => {
     await app.close()
   })
 
+  it("reports background milestones via active session context and throttles duplicates", async () => {
+    // Arrange
+    const previousInterval = process.env.OTTO_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS
+    process.env.OTTO_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS = "300"
+
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "job-background-1",
+      type: "interactive_background_oneshot",
+      status: "running",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 1_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: "session-origin",
+          sourceMessageId: "msg-1",
+          chatId: null,
+        },
+        request: {
+          text: "analyze logs",
+          requestedAt: 1_000,
+          rationale: null,
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: "lock-1",
+      lockExpiresAt: 9_999,
+      createdAt: 900,
+      updatedAt: 900,
+    })
+
+    const jobRunSessionsRepository = createJobRunSessionsRepositoryStub()
+    jobRunSessionsRepository.insert({
+      runId: "run-background-1",
+      jobId: "job-background-1",
+      sessionId: "session-active",
+      createdAt: 1_000,
+    })
+
+    const dedupeKeys = new Set<string>()
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        (record) => {
+          if (record.dedupeKey && dedupeKeys.has(record.dedupeKey)) {
+            return "duplicate"
+          }
+          if (record.dedupeKey) {
+            dedupeKeys.add(record.dedupeKey)
+          }
+          return "enqueued"
+        }
+      ),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => 777),
+      },
+      jobRunSessionsRepository,
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    try {
+      // Act
+      const first = await app.inject({
+        method: "POST",
+        url: "/internal/tools/background-jobs/milestone",
+        headers: {
+          authorization: "Bearer secret",
+        },
+        payload: {
+          lane: "interactive",
+          sessionId: "session-active",
+          content: "Phase 1 done",
+        },
+      })
+
+      const second = await app.inject({
+        method: "POST",
+        url: "/internal/tools/background-jobs/milestone",
+        headers: {
+          authorization: "Bearer secret",
+        },
+        payload: {
+          lane: "interactive",
+          sessionId: "session-active",
+          content: "Phase 2 done",
+        },
+      })
+
+      // Assert
+      expect(first.statusCode).toBe(200)
+      expect(first.json()).toMatchObject({
+        status: "enqueued",
+        taskId: "job-background-1",
+        runId: "run-background-1",
+      })
+      expect(second.statusCode).toBe(200)
+      expect(second.json()).toMatchObject({
+        status: "duplicate",
+        taskId: "job-background-1",
+        runId: "run-background-1",
+      })
+    } finally {
+      await app.close()
+      if (previousInterval === undefined) {
+        delete process.env.OTTO_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS
+      } else {
+        process.env.OTTO_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS = previousInterval
+      }
+    }
+  })
+
+  it("reports background milestone using explicit task fallback", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "job-background-2",
+      type: "interactive_background_oneshot",
+      status: "running",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 2_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: null,
+          sourceMessageId: null,
+          chatId: 999,
+        },
+        request: {
+          text: "prepare report",
+          requestedAt: 2_000,
+          rationale: null,
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 2_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: "lock-2",
+      lockExpiresAt: 9_999,
+      createdAt: 1_900,
+      updatedAt: 1_900,
+    })
+
+    const jobRunSessionsRepository = createJobRunSessionsRepositoryStub()
+    jobRunSessionsRepository.insert({
+      runId: "run-background-2",
+      jobId: "job-background-2",
+      sessionId: "session-bg-2",
+      createdAt: 2_000,
+    })
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository,
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/milestone",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        taskId: "job-background-2",
+        content: "Halfway there",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      status: "enqueued",
+      taskId: "job-background-2",
+      runId: "run-background-2",
+    })
+
+    const firstCall = vi.mocked(repository.enqueueOrIgnoreDedupe).mock.calls[0]?.[0]
+    expect(firstCall?.chatId).toBe(999)
+
+    await app.close()
+  })
+
+  it("rejects milestone reports for closed run ids", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "job-background-closed",
+      type: "interactive_background_oneshot",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 3_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: null,
+          sourceMessageId: null,
+          chatId: 888,
+        },
+        request: {
+          text: "finish writeup",
+          requestedAt: 3_000,
+          rationale: null,
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: null,
+      terminalState: "completed",
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 2_900,
+      updatedAt: 3_100,
+    })
+
+    const jobRunSessionsRepository = createJobRunSessionsRepositoryStub()
+    jobRunSessionsRepository.insert({
+      runId: "run-closed-1",
+      jobId: "job-background-closed",
+      sessionId: "session-closed-1",
+      createdAt: 3_000,
+    })
+    jobRunSessionsRepository.markClosed("run-closed-1", 3_100)
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository,
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/milestone",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        runId: "run-closed-1",
+        content: "late milestone",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: "missing_task_context",
+    })
+    expect(repository.enqueueOrIgnoreDedupe).not.toHaveBeenCalled()
+
+    await app.close()
+  })
+
   it("returns task and command audit streams", async () => {
     // Arrange
     const taskAuditRepository = createTaskAuditRepositoryStub()
@@ -678,6 +1088,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository,
       commandAuditRepository,
@@ -749,6 +1160,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => 777),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository,
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -803,6 +1215,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
@@ -869,6 +1282,7 @@ describe("buildInternalApiServer", () => {
       sessionBindingsRepository: {
         getTelegramChatIdBySessionId: vi.fn(() => null),
       },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
       jobsRepository: createJobsRepositoryStub(),
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
