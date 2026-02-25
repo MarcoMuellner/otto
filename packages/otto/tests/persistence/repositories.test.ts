@@ -109,6 +109,35 @@ describe("persistence repositories", () => {
       closeErrorMessage: null,
     })
     expect(repository.listActiveByJobId("job-1")).toHaveLength(0)
+    expect(repository.getLatestActiveBySessionId("session-1")).toBeNull()
+
+    jobsRepository.insertRun({
+      id: "run-2",
+      jobId: "job-1",
+      scheduledFor: 1_100,
+      startedAt: 1_101,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 1_101,
+    })
+    repository.insert({
+      runId: "run-2",
+      jobId: "job-1",
+      sessionId: "session-1",
+      createdAt: 1_100,
+    })
+
+    expect(repository.getLatestActiveBySessionId("session-1")).toEqual({
+      runId: "run-2",
+      jobId: "job-1",
+      sessionId: "session-1",
+      createdAt: 1_100,
+      closedAt: null,
+      closeErrorMessage: null,
+    })
 
     db.close()
   })

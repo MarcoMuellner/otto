@@ -172,6 +172,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       ottoHome: config.ottoHome,
       outboundMessagesRepository,
       sessionBindingsRepository,
+      jobRunSessionsRepository,
       jobsRepository,
       userProfileRepository,
       taskAuditRepository,

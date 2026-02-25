@@ -11,7 +11,11 @@ import {
   TaskMutationError,
   updateTaskMutation,
 } from "../api-services/tasks-mutations.js"
-import { spawnInteractiveBackgroundJob } from "../api-services/interactive-background-jobs.js"
+import {
+  interactiveBackgroundJobPayloadSchema,
+  INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+  spawnInteractiveBackgroundJob,
+} from "../api-services/interactive-background-jobs.js"
 import {
   applyNotificationProfileUpdate,
   diffNotificationProfileFields,
@@ -38,6 +42,7 @@ import { checkTaskFailures, resolveDefaultWatchdogChatId } from "../scheduler/wa
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
 const TELEGRAM_OUTBOUND_MAX_FILE_BYTES = 20 * 1024 * 1024
+const DEFAULT_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS = 120
 
 export type InternalApiConfig = {
   host: string
@@ -76,6 +81,17 @@ type InternalApiServerDependencies = {
     runTaskNow: (jobId: string, scheduledFor: number, updatedAt?: number) => void
     listTasks: () => TaskListRecord[]
     listRecentFailedRuns: (sinceTimestamp: number, limit?: number) => FailedJobRunRecord[]
+  }
+  jobRunSessionsRepository: {
+    getByRunId: (
+      runId: string
+    ) => { runId: string; jobId: string; sessionId: string; closedAt: number | null } | null
+    listActiveByJobId: (jobId: string) => Array<{ runId: string; jobId: string; sessionId: string }>
+    getLatestActiveBySessionId: (sessionId: string) => {
+      runId: string
+      jobId: string
+      sessionId: string
+    } | null
   }
   taskAuditRepository: {
     insert: (record: TaskAuditRecord) => void
@@ -215,6 +231,137 @@ const spawnBackgroundJobApiSchema = z.object({
   rationale: z.string().trim().min(1).max(500).optional(),
   sourceMessageId: z.string().trim().min(1).optional(),
 })
+
+const reportBackgroundMilestoneApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  sessionId: z.string().trim().min(1).optional(),
+  taskId: z.string().trim().min(1).optional(),
+  runId: z.string().trim().min(1).optional(),
+  chatId: z.number().int().positive().optional(),
+  content: z.string().trim().min(1),
+})
+
+type BackgroundMilestoneContext = {
+  jobId: string
+  runId: string
+  sourceSessionId: string | null
+  sourceChatId: number | null
+}
+
+const resolveBackgroundMilestoneIntervalMs = (
+  environment: NodeJS.ProcessEnv = process.env
+): number => {
+  const raw = environment.OTTO_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS?.trim()
+  if (!raw) {
+    return DEFAULT_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS * 1000
+  }
+
+  const seconds = Number(raw)
+  if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+    return DEFAULT_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS * 1000
+  }
+
+  return seconds * 1000
+}
+
+const parseInteractiveBackgroundPayloadSource = (
+  payloadJson: string | null
+): { sourceSessionId: string | null; sourceChatId: number | null } => {
+  if (!payloadJson) {
+    return {
+      sourceSessionId: null,
+      sourceChatId: null,
+    }
+  }
+
+  try {
+    const parsedPayload = interactiveBackgroundJobPayloadSchema.safeParse(JSON.parse(payloadJson))
+    if (!parsedPayload.success) {
+      return {
+        sourceSessionId: null,
+        sourceChatId: null,
+      }
+    }
+
+    return {
+      sourceSessionId: parsedPayload.data.source.sessionId,
+      sourceChatId: parsedPayload.data.source.chatId,
+    }
+  } catch {
+    return {
+      sourceSessionId: null,
+      sourceChatId: null,
+    }
+  }
+}
+
+const resolveBackgroundMilestoneContext = (
+  dependencies: InternalApiServerDependencies,
+  input: {
+    sessionId?: string
+    taskId?: string
+    runId?: string
+  }
+): BackgroundMilestoneContext | null => {
+  const fromRun = input.runId ? dependencies.jobRunSessionsRepository.getByRunId(input.runId) : null
+  if (fromRun) {
+    if (fromRun.closedAt != null) {
+      return null
+    }
+
+    const job = dependencies.jobsRepository.getById(fromRun.jobId)
+    if (!job || job.type !== INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE) {
+      return null
+    }
+
+    const payloadSource = parseInteractiveBackgroundPayloadSource(job.payload)
+    return {
+      jobId: fromRun.jobId,
+      runId: fromRun.runId,
+      sourceSessionId: payloadSource.sourceSessionId,
+      sourceChatId: payloadSource.sourceChatId,
+    }
+  }
+
+  const fromSession = input.sessionId
+    ? dependencies.jobRunSessionsRepository.getLatestActiveBySessionId(input.sessionId)
+    : null
+  if (fromSession) {
+    const job = dependencies.jobsRepository.getById(fromSession.jobId)
+    if (!job || job.type !== INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE) {
+      return null
+    }
+
+    const payloadSource = parseInteractiveBackgroundPayloadSource(job.payload)
+    return {
+      jobId: fromSession.jobId,
+      runId: fromSession.runId,
+      sourceSessionId: payloadSource.sourceSessionId,
+      sourceChatId: payloadSource.sourceChatId,
+    }
+  }
+
+  const activeByTask = input.taskId
+    ? dependencies.jobRunSessionsRepository.listActiveByJobId(input.taskId)
+    : []
+  const fromTask = activeByTask[0]
+  if (!fromTask) {
+    return null
+  }
+
+  const task = dependencies.jobsRepository.getById(fromTask.jobId)
+  if (!task || task.type !== INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE) {
+    return null
+  }
+
+  const payloadSource = parseInteractiveBackgroundPayloadSource(task.payload)
+  return {
+    jobId: fromTask.jobId,
+    runId: fromTask.runId,
+    sourceSessionId: payloadSource.sourceSessionId,
+    sourceChatId: payloadSource.sourceChatId,
+  }
+}
 
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
@@ -758,6 +905,148 @@ export const buildInternalApiServer = (
         errorMessage: err.message,
       })
       dependencies.logger.error({ error: err.message }, "Internal API background job spawn failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/background-jobs/milestone", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = reportBackgroundMilestoneApiSchema.parse(request.body)
+      const laneDecision = assertTaskMutationLane(dependencies.logger, payload.lane, "update")
+      if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "report_background_milestone",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
+        return reply.code(laneDecision.statusCode).send(laneDecision.body)
+      }
+
+      const context = resolveBackgroundMilestoneContext(dependencies, {
+        sessionId: payload.sessionId,
+        taskId: payload.taskId,
+        runId: payload.runId,
+      })
+      if (!context) {
+        writeCommandAudit(dependencies, {
+          command: "report_background_milestone",
+          lane: payload.lane,
+          status: "failed",
+          errorMessage: "missing_task_context",
+        })
+        return reply.code(400).send({
+          error: "missing_task_context",
+          message:
+            "Could not resolve an active interactive background run from sessionId/taskId/runId",
+        })
+      }
+
+      const resolvedChatId =
+        payload.chatId ??
+        context.sourceChatId ??
+        (context.sourceSessionId
+          ? dependencies.sessionBindingsRepository.getTelegramChatIdBySessionId(
+              context.sourceSessionId
+            )
+          : null) ??
+        resolveDefaultWatchdogChatId()
+
+      if (!resolvedChatId) {
+        writeCommandAudit(dependencies, {
+          command: "report_background_milestone",
+          lane: payload.lane,
+          status: "failed",
+          errorMessage: "missing_chat",
+        })
+        return reply.code(400).send({
+          error: "missing_chat",
+          message:
+            "chatId is required unless task/session context resolves to a Telegram chat or TELEGRAM_ALLOWED_USER_ID is configured",
+        })
+      }
+
+      const intervalMs = resolveBackgroundMilestoneIntervalMs()
+      const timeBucket = Math.floor(Date.now() / intervalMs)
+      const dedupeKey = `bg-milestone:${context.jobId}:${timeBucket}`
+      const result = enqueueTelegramMessage(
+        {
+          chatId: resolvedChatId,
+          content: payload.content,
+          dedupeKey,
+          priority: "normal",
+        },
+        dependencies.outboundMessagesRepository
+      )
+
+      dependencies.logger.info(
+        {
+          route: "background-jobs-milestone",
+          taskId: context.jobId,
+          runId: context.runId,
+          chatId: resolvedChatId,
+          dedupeKey,
+          intervalMs,
+          status: result.status,
+          queuedCount: result.queuedCount,
+          duplicateCount: result.duplicateCount,
+        },
+        "Internal API queued background milestone Telegram message"
+      )
+
+      writeCommandAudit(dependencies, {
+        command: "report_background_milestone",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          taskId: context.jobId,
+          runId: context.runId,
+          chatId: resolvedChatId,
+          dedupeKey,
+          status: result.status,
+          queuedCount: result.queuedCount,
+          duplicateCount: result.duplicateCount,
+        }),
+      })
+
+      return reply.code(200).send({
+        ...result,
+        taskId: context.jobId,
+        runId: context.runId,
+      })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "report_background_milestone",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "report_background_milestone",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error(
+        { error: err.message },
+        "Internal API background milestone report failed"
+      )
       return reply.code(500).send({ error: "internal_error" })
     }
   })

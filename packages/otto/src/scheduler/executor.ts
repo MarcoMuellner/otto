@@ -9,6 +9,7 @@ import {
 } from "../api-services/interactive-background-jobs.js"
 import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
+import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import { executeHeartbeatTask, HEARTBEAT_TASK_TYPE } from "./heartbeat.js"
 import { resolveScheduleTransition } from "./schedule.js"
 import {
@@ -127,6 +128,7 @@ type TaskExecutionEngineDependencies = {
   }
   sessionBindingsRepository: {
     getByBindingKey: (bindingKey: string) => { sessionId: string } | null
+    getTelegramChatIdBySessionId: (sessionId: string) => number | null
     upsert: (bindingKey: string, sessionId: string, updatedAt?: number) => void
   }
   outboundMessagesRepository: {
@@ -171,6 +173,13 @@ type TaskExecutionEngineDependencies = {
     setLastDigestAt: (lastDigestAt: number, updatedAt?: number) => void
   }
   now?: () => number
+}
+
+type BackgroundLifecycleContext = {
+  jobId: string
+  runId: string
+  sourceSessionId: string | null
+  sourceChatId: number | null
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
@@ -412,12 +421,97 @@ const buildInteractiveBackgroundPrompt = (
   return [
     "Execute this interactive background request now.",
     "Work autonomously and do not ask clarifying questions.",
+    "When useful, call report_background_milestone with concise free-text phase updates.",
+    "Do not spam milestone updates; call it only on meaningful phase changes.",
     "Return only a JSON object with keys: status, summary, errors.",
     "status must be one of: success, failed, skipped.",
     "Do not include markdown.",
     "",
     payload.request.text,
   ].join("\n")
+}
+
+const resolveBackgroundLifecycleChatId = (
+  dependencies: TaskExecutionEngineDependencies,
+  context: BackgroundLifecycleContext
+): number | null => {
+  if (context.sourceChatId) {
+    return context.sourceChatId
+  }
+
+  if (context.sourceSessionId) {
+    const boundChatId = dependencies.sessionBindingsRepository.getTelegramChatIdBySessionId(
+      context.sourceSessionId
+    )
+    if (boundChatId) {
+      return boundChatId
+    }
+  }
+
+  return dependencies.defaultWatchdogChatId
+}
+
+const enqueueBackgroundLifecycleMessage = (
+  dependencies: TaskExecutionEngineDependencies,
+  context: BackgroundLifecycleContext,
+  input: {
+    phase: "started" | "final_success" | "final_failed" | "final_skipped"
+    content: string
+    priority?: "low" | "normal" | "high" | "critical"
+    timestamp: number
+  }
+): void => {
+  try {
+    const chatId = resolveBackgroundLifecycleChatId(dependencies, context)
+    if (!chatId) {
+      dependencies.logger.warn(
+        {
+          jobId: context.jobId,
+          runId: context.runId,
+          phase: input.phase,
+        },
+        "Skipped background lifecycle Telegram message because chat id could not be resolved"
+      )
+      return
+    }
+
+    const dedupeKey = `bg-run:${context.jobId}:${context.runId}:${input.phase}`
+    const enqueueResult = enqueueTelegramMessage(
+      {
+        chatId,
+        content: input.content,
+        dedupeKey,
+        priority: input.priority ?? "normal",
+      },
+      dependencies.outboundMessagesRepository,
+      input.timestamp
+    )
+
+    dependencies.logger.info(
+      {
+        jobId: context.jobId,
+        runId: context.runId,
+        chatId,
+        phase: input.phase,
+        dedupeKey,
+        queueStatus: enqueueResult.status,
+        queuedCount: enqueueResult.queuedCount,
+        duplicateCount: enqueueResult.duplicateCount,
+      },
+      "Queued background lifecycle Telegram message"
+    )
+  } catch (error) {
+    const err = error as Error
+    dependencies.logger.warn(
+      {
+        jobId: context.jobId,
+        runId: context.runId,
+        phase: input.phase,
+        error: err.message,
+      },
+      "Failed to enqueue background lifecycle Telegram message"
+    )
+  }
 }
 
 const executeWatchdogTask = (
@@ -533,6 +627,12 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             if (!validatedPayload.success) {
               result = toFailureResult("invalid_task_payload", validatedPayload.error.message)
             } else {
+              const lifecycleContext: BackgroundLifecycleContext = {
+                jobId: job.id,
+                runId,
+                sourceSessionId: validatedPayload.data.source.sessionId,
+                sourceChatId: validatedPayload.data.source.chatId,
+              }
               const baseConfig = await loadTaskRuntimeBaseConfig(dependencies.ottoHome)
               const profile = job.profileId
                 ? await loadTaskProfile(dependencies.ottoHome, job.profileId)
@@ -553,6 +653,13 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 jobId: job.id,
                 sessionId,
                 createdAt: startedAt,
+              })
+
+              enqueueBackgroundLifecycleMessage(dependencies, lifecycleContext, {
+                phase: "started",
+                content: "Started your background run. I'll send milestone and final updates here.",
+                priority: "normal",
+                timestamp: startedAt,
               })
 
               let closeErrorMessage: string | null = null
@@ -611,6 +718,26 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
 
                 dependencies.jobRunSessionsRepository.markClosed(runId, now(), closeErrorMessage)
               }
+
+              const finalPhase =
+                result.status === "success"
+                  ? "final_success"
+                  : result.status === "failed"
+                    ? "final_failed"
+                    : "final_skipped"
+              const finalText =
+                result.status === "success"
+                  ? `Background run completed successfully: ${result.summary}`
+                  : result.status === "failed"
+                    ? `Background run failed: ${result.errors[0]?.message ?? result.summary}`
+                    : `Background run finished as skipped: ${result.summary}`
+
+              enqueueBackgroundLifecycleMessage(dependencies, lifecycleContext, {
+                phase: finalPhase,
+                content: finalText,
+                priority: result.status === "failed" ? "high" : "normal",
+                timestamp: now(),
+              })
             }
           }
         } else {

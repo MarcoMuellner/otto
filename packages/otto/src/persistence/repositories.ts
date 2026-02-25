@@ -1187,6 +1187,21 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
      ORDER BY created_at DESC`
   )
 
+  const getLatestActiveBySessionIdStatement = database.prepare(
+    `SELECT
+      run_id as runId,
+      job_id as jobId,
+      session_id as sessionId,
+      created_at as createdAt,
+      closed_at as closedAt,
+      close_error_message as closeErrorMessage
+     FROM job_run_sessions
+     WHERE session_id = ?
+       AND closed_at IS NULL
+     ORDER BY created_at DESC
+     LIMIT 1`
+  )
+
   return {
     insert: (record: {
       runId: string
@@ -1205,6 +1220,12 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
     },
     listActiveByJobId: (jobId: string): JobRunSessionRecord[] => {
       return listActiveByJobIdStatement.all(jobId) as JobRunSessionRecord[]
+    },
+    getLatestActiveBySessionId: (sessionId: string): JobRunSessionRecord | null => {
+      const row = getLatestActiveBySessionIdStatement.get(sessionId) as
+        | JobRunSessionRecord
+        | undefined
+      return row ?? null
     },
   }
 }
