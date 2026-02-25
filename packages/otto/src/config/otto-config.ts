@@ -30,6 +30,8 @@ const DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS = {
   httpPath: "/v1/audio/transcriptions",
 }
 
+const DEFAULT_TELEGRAM_PROMPT_TIMEOUT_MS = 300_000
+
 const telegramVoiceSettingsSchema = z
   .object({
     enabled: z.boolean().default(false),
@@ -61,10 +63,12 @@ const telegramTranscriptionSettingsSchema = z
 
 const telegramSettingsSchema = z
   .object({
+    promptTimeoutMs: z.number().int().min(5_000).default(DEFAULT_TELEGRAM_PROMPT_TIMEOUT_MS),
     voice: telegramVoiceSettingsSchema,
     transcription: telegramTranscriptionSettingsSchema,
   })
   .default({
+    promptTimeoutMs: DEFAULT_TELEGRAM_PROMPT_TIMEOUT_MS,
     voice: DEFAULT_TELEGRAM_VOICE_SETTINGS,
     transcription: DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS,
   })
@@ -137,6 +141,7 @@ export const buildDefaultOttoConfig = (homeDirectory = homedir()): OttoConfig =>
       port: 4096,
     },
     telegram: {
+      promptTimeoutMs: DEFAULT_TELEGRAM_PROMPT_TIMEOUT_MS,
       voice: { ...DEFAULT_TELEGRAM_VOICE_SETTINGS },
       transcription: {
         ...DEFAULT_TELEGRAM_TRANSCRIPTION_SETTINGS,
