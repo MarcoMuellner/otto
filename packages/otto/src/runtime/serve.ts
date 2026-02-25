@@ -24,6 +24,7 @@ import {
 } from "../model-management/index.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createJobsRepository } from "../persistence/repositories.js"
+import { createJobRunSessionsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
@@ -107,6 +108,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
 
   const persistenceDatabase = openPersistenceDatabase({ ottoHome: config.ottoHome })
   const jobsRepository = createJobsRepository(persistenceDatabase)
+  const jobRunSessionsRepository = createJobRunSessionsRepository(persistenceDatabase)
   const taskAuditRepository = createTaskAuditRepository(persistenceDatabase)
   const commandAuditRepository = createCommandAuditRepository(persistenceDatabase)
   const outboundMessagesRepository = createOutboundMessagesRepository(persistenceDatabase)
@@ -384,6 +386,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       logger,
       ottoHome: config.ottoHome,
       jobsRepository,
+      jobRunSessionsRepository,
       sessionBindingsRepository,
       outboundMessagesRepository,
       userProfileRepository,

@@ -280,4 +280,21 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
     id: "015_jobs_model_ref",
     statements: [`ALTER TABLE jobs ADD COLUMN model_ref TEXT`],
   },
+  {
+    id: "016_job_run_sessions",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS job_run_sessions (
+        run_id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        closed_at INTEGER,
+        close_error_message TEXT,
+        FOREIGN KEY (run_id) REFERENCES job_runs(id),
+        FOREIGN KEY (job_id) REFERENCES jobs(id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_job_run_sessions_job_id ON job_run_sessions (job_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_job_run_sessions_session_id ON job_run_sessions (session_id)`,
+    ],
+  },
 ]

@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto"
 import type { Logger } from "pino"
 import { z } from "zod"
 
+import {
+  INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+  interactiveBackgroundJobPayloadSchema,
+} from "../api-services/interactive-background-jobs.js"
 import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { executeHeartbeatTask, HEARTBEAT_TASK_TYPE } from "./heartbeat.js"
@@ -116,6 +120,10 @@ type TaskExecutionEngineDependencies = {
       errorMessage: string | null
       resultJson: string | null
     }>
+  }
+  jobRunSessionsRepository: {
+    insert: (record: { runId: string; jobId: string; sessionId: string; createdAt: number }) => void
+    markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
   }
   sessionBindingsRepository: {
     getByBindingKey: (bindingKey: string) => { sessionId: string } | null
@@ -398,6 +406,20 @@ const buildExecutionPrompt = (
   ].join("\n")
 }
 
+const buildInteractiveBackgroundPrompt = (
+  payload: z.infer<typeof interactiveBackgroundJobPayloadSchema>
+) => {
+  return [
+    "Execute this interactive background request now.",
+    "Work autonomously and do not ask clarifying questions.",
+    "Return only a JSON object with keys: status, summary, errors.",
+    "status must be one of: success, failed, skipped.",
+    "Do not include markdown.",
+    "",
+    payload.request.text,
+  ].join("\n")
+}
+
 const executeWatchdogTask = (
   dependencies: TaskExecutionEngineDependencies,
   job: ClaimedJobRecord,
@@ -499,6 +521,97 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             status: heartbeatResult.status,
             summary: heartbeatResult.summary,
             errors: [],
+          }
+        } else if (job.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE) {
+          const payloadParsed = parseTaskPayload(job.payload)
+          if (payloadParsed.error) {
+            result = toFailureResult("invalid_task_payload", payloadParsed.error)
+          } else {
+            const validatedPayload = interactiveBackgroundJobPayloadSchema.safeParse(
+              payloadParsed.parsed
+            )
+            if (!validatedPayload.success) {
+              result = toFailureResult("invalid_task_payload", validatedPayload.error.message)
+            } else {
+              const baseConfig = await loadTaskRuntimeBaseConfig(dependencies.ottoHome)
+              const profile = job.profileId
+                ? await loadTaskProfile(dependencies.ottoHome, job.profileId)
+                : undefined
+              const effectiveConfig = buildEffectiveTaskExecutionConfig(
+                baseConfig,
+                "interactive",
+                profile
+              )
+              const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
+              const systemPrompt =
+                typeof assistant?.prompt === "string" ? assistant.prompt : undefined
+              const tools = resolveTools(assistant?.tools)
+
+              const sessionId = await dependencies.sessionGateway.ensureSession(null)
+              dependencies.jobRunSessionsRepository.insert({
+                runId,
+                jobId: job.id,
+                sessionId,
+                createdAt: startedAt,
+              })
+
+              let closeErrorMessage: string | null = null
+
+              try {
+                const assistantOutput = await dependencies.sessionGateway.promptSession(
+                  sessionId,
+                  buildInteractiveBackgroundPrompt(validatedPayload.data),
+                  {
+                    systemPrompt,
+                    tools,
+                    agent: "assistant",
+                    modelContext: {
+                      flow: "interactiveAssistant",
+                      jobModelRef: job.modelRef,
+                    },
+                  }
+                )
+
+                const parsedResult = parseStructuredResult(assistantOutput)
+                if (parsedResult.parseErrorCode) {
+                  dependencies.logger.warn(
+                    {
+                      jobId: job.id,
+                      parseErrorCode: parsedResult.parseErrorCode,
+                      parseErrorMessage: parsedResult.parseErrorMessage,
+                      rawOutput: parsedResult.rawOutput,
+                    },
+                    "Interactive background execution returned non-conforming structured output"
+                  )
+                }
+
+                result = parsedResult.result
+                persistedRawOutput = parsedResult.rawOutput
+              } catch (error) {
+                const err = error as Error
+                result = toFailureResult("task_execution_error", err.message)
+              } finally {
+                try {
+                  if (dependencies.sessionGateway.closeSession) {
+                    await dependencies.sessionGateway.closeSession(sessionId)
+                  }
+                } catch (error) {
+                  const err = error as Error
+                  closeErrorMessage = err.message
+                  dependencies.logger.warn(
+                    {
+                      jobId: job.id,
+                      runId,
+                      sessionId,
+                      error: err.message,
+                    },
+                    "Failed to close background run session"
+                  )
+                }
+
+                dependencies.jobRunSessionsRepository.markClosed(runId, now(), closeErrorMessage)
+              }
+            }
           }
         } else {
           const payloadParsed = parseTaskPayload(job.payload)

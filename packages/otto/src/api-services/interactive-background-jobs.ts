@@ -12,7 +12,7 @@ const spawnInteractiveBackgroundJobInputSchema = z.object({
   chatId: z.number().int().positive().nullable().optional(),
 })
 
-const interactiveBackgroundJobPayloadSchema = z.object({
+export const interactiveBackgroundJobPayloadSchema = z.object({
   version: z.literal(1),
   source: z.object({
     surface: z.literal("interactive"),
@@ -30,6 +30,8 @@ const interactiveBackgroundJobPayloadSchema = z.object({
 export type SpawnInteractiveBackgroundJobInput = z.input<
   typeof spawnInteractiveBackgroundJobInputSchema
 >
+
+export type InteractiveBackgroundJobPayload = z.infer<typeof interactiveBackgroundJobPayloadSchema>
 
 type SpawnBackgroundJobDependencies = {
   jobsRepository: {
