@@ -391,7 +391,7 @@ const toMessageBlocks = (message: ChatMessage): MessageBlock[] => {
   return blocks
 }
 
-const renderMessageBlock = (block: MessageBlock, key: string) => {
+const renderMessageBlock = (block: MessageBlock, key: string, forceExpanded = false) => {
   if (block.kind === "reasoning") {
     return (
       <div
@@ -426,6 +426,7 @@ const renderMessageBlock = (block: MessageBlock, key: string) => {
       return (
         <details
           key={key}
+          open={forceExpanded}
           className="rounded-md border border-[rgba(26,26,26,0.14)] bg-[rgba(245,247,250,0.92)] px-2.5 py-2"
         >
           <summary className="cursor-pointer text-xs text-[#4e5661]">
@@ -463,6 +464,7 @@ const renderMessageBlock = (block: MessageBlock, key: string) => {
     return (
       <details
         key={key}
+        open={forceExpanded}
         className="rounded-md border border-[rgba(26,26,26,0.12)] bg-[rgba(250,250,250,0.9)] px-2.5 py-2"
       >
         <summary className="cursor-pointer text-sm text-[#3b3b3b]">{preview}</summary>
@@ -1184,6 +1186,8 @@ export default function ChatRoute() {
                   </p>
                 ) : (
                   messagePresentation.items.map(({ message, blocks }) => {
+                    const latestMessage = messagePresentation.items.at(-1)?.message.id ?? null
+                    const isLatestMessage = latestMessage === message.id
                     const traceBlocks = blocks.filter(
                       (block) => block.kind === "reasoning" || block.kind === "tool"
                     )
@@ -1225,40 +1229,58 @@ export default function ChatRoute() {
                                 </p>
                                 <div className="mt-1.5 space-y-2">
                                   {responseBlocks.map((block, index) =>
-                                    renderMessageBlock(block, `${message.id}-response-${index}`)
+                                    renderMessageBlock(
+                                      block,
+                                      `${message.id}-response-${index}`,
+                                      isLatestMessage
+                                    )
                                   )}
                                 </div>
                               </div>
                             ) : null}
 
                             {traceBlocks.length > 0 ? (
-                              <details className="rounded-md border border-[rgba(76,65,184,0.24)] bg-[rgba(244,241,255,0.78)] px-2.5 py-2">
+                              <details
+                                open={isLatestMessage}
+                                className="rounded-md border border-[rgba(76,65,184,0.24)] bg-[rgba(244,241,255,0.78)] px-2.5 py-2"
+                              >
                                 <summary className="cursor-pointer text-xs text-[#4b3d9f]">
                                   Thinking and tools ({traceBlocks.length})
                                 </summary>
                                 <div className="mt-2 space-y-2">
                                   {traceBlocks.map((block, index) =>
-                                    renderMessageBlock(block, `${message.id}-trace-${index}`)
+                                    renderMessageBlock(
+                                      block,
+                                      `${message.id}-trace-${index}`,
+                                      isLatestMessage
+                                    )
                                   )}
                                 </div>
                               </details>
                             ) : null}
                           </div>
                         ) : shouldCollapseUser ? (
-                          <details className="rounded-md border border-[rgba(26,26,26,0.14)] bg-[rgba(250,250,250,0.9)] px-2.5 py-2">
+                          <details
+                            open={isLatestMessage}
+                            className="rounded-md border border-[rgba(26,26,26,0.14)] bg-[rgba(250,250,250,0.9)] px-2.5 py-2"
+                          >
                             <summary className="cursor-pointer text-sm text-[#3a3a3a]">
                               {userSummary}
                             </summary>
                             <div className="mt-2 space-y-2">
                               {responseBlocks.map((block, index) =>
-                                renderMessageBlock(block, `${message.id}-user-${index}`)
+                                renderMessageBlock(
+                                  block,
+                                  `${message.id}-user-${index}`,
+                                  isLatestMessage
+                                )
                               )}
                             </div>
                           </details>
                         ) : (
                           <div className="space-y-2">
                             {responseBlocks.map((block, index) =>
-                              renderMessageBlock(block, `${message.id}-${index}`)
+                              renderMessageBlock(block, `${message.id}-${index}`, isLatestMessage)
                             )}
                           </div>
                         )}
