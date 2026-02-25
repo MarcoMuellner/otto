@@ -468,7 +468,7 @@ export const createChatSurfaceService = (
         }
 
         const firstEventPromise = nextEventWithTimeout()
-        await chatClient.promptSessionAsync(threadId, text, requestMessageId)
+        await chatClient.promptSessionAsync(threadId, text)
 
         let firstEventPending = true
         while (true) {
