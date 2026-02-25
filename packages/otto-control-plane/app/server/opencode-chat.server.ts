@@ -13,13 +13,31 @@ export type OpencodeMessage = {
   partTypes: string[]
 }
 
+export type OpencodeChatEvent = {
+  type: string
+  properties: Record<string, unknown>
+}
+
+export type OpencodeRawPart = {
+  id: string
+  type: string
+  text?: string
+  tool?: string
+  state?: Record<string, unknown>
+}
+
 type DynamicSessionApi = {
   list?: (input?: unknown) => Promise<unknown>
   get?: (input: { path: { id: string } }) => Promise<unknown>
   messages?: (input: { path: { id: string } }) => Promise<unknown>
+  message?: (input: { path: { id: string; messageID: string } }) => Promise<unknown>
   prompt?: (input: {
     path: { id: string }
     body: { parts: Array<{ type: "text"; text: string }> }
+  }) => Promise<unknown>
+  promptAsync?: (input: {
+    path: { id: string }
+    body: { messageID?: string; parts: Array<{ type: "text"; text: string }> }
   }) => Promise<unknown>
   chat?: (input: {
     path: { id: string }
@@ -28,10 +46,17 @@ type DynamicSessionApi = {
   create?: (input: { body?: { title?: string } }) => Promise<unknown>
 }
 
+type DynamicEventApi = {
+  subscribe?: () => Promise<{
+    stream: AsyncIterable<unknown>
+  }>
+}
+
 type OpencodeChatClientInput = {
   baseUrl: string
   fetchImpl?: typeof fetch
   sessionApi?: DynamicSessionApi
+  eventApi?: DynamicEventApi
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -259,6 +284,61 @@ const mapMessage = (input: unknown): OpencodeMessage | null => {
   }
 }
 
+const mapMessageParts = (input: unknown): OpencodeRawPart[] => {
+  if (!isRecord(input)) {
+    return []
+  }
+
+  const hasInfoEnvelope = isRecord(input.info)
+  const partsRaw = hasInfoEnvelope ? input.parts : input.parts
+  if (!Array.isArray(partsRaw)) {
+    return []
+  }
+
+  const parts: OpencodeRawPart[] = []
+  for (const candidate of partsRaw) {
+    if (!isRecord(candidate)) {
+      continue
+    }
+
+    if (typeof candidate.id !== "string" || typeof candidate.type !== "string") {
+      continue
+    }
+
+    parts.push({
+      id: candidate.id,
+      type: candidate.type,
+      text: typeof candidate.text === "string" ? candidate.text : undefined,
+      tool: typeof candidate.tool === "string" ? candidate.tool : undefined,
+      state: isRecord(candidate.state) ? candidate.state : undefined,
+    })
+  }
+
+  return parts
+}
+
+const mapEvent = (input: unknown): OpencodeChatEvent | null => {
+  if (!isRecord(input)) {
+    return null
+  }
+
+  const type = input.type
+  if (typeof type !== "string" || type.trim().length === 0) {
+    return null
+  }
+
+  const properties = isRecord(input.properties)
+    ? input.properties
+    : isRecord(input.payload)
+      ? input.payload
+      : {}
+
+  return {
+    type,
+    properties,
+  }
+}
+
 const toMessageList = (payload: unknown): OpencodeMessage[] => {
   const unwrapped = unwrapData(payload)
   if (!Array.isArray(unwrapped)) {
@@ -328,6 +408,101 @@ const requestJson = async (
   return (await response.json()) as unknown
 }
 
+const requestVoid = async (
+  fetchImpl: typeof fetch,
+  baseUrl: string,
+  endpoint: string,
+  init?: RequestInit
+): Promise<void> => {
+  const response = await fetchImpl(new URL(endpoint, baseUrl), init)
+  if (!response.ok) {
+    throw new OpencodeChatApiError(
+      `OpenCode chat request failed for ${endpoint} (${response.status})`,
+      response.status
+    )
+  }
+}
+
+const parseSseDataBlock = (block: string): unknown | null => {
+  const payload = block
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n")
+
+  if (payload.length === 0) {
+    return null
+  }
+
+  try {
+    return JSON.parse(payload) as unknown
+  } catch {
+    return null
+  }
+}
+
+const streamEventsFromSse = async function* (
+  fetchImpl: typeof fetch,
+  baseUrl: string,
+  signal?: AbortSignal
+): AsyncGenerator<OpencodeChatEvent> {
+  const response = await fetchImpl(new URL("/event", baseUrl), {
+    method: "GET",
+    headers: {
+      accept: "text/event-stream",
+    },
+    signal,
+  })
+
+  if (!response.ok || !response.body) {
+    throw new OpencodeChatApiError(
+      `OpenCode chat request failed for /event (${response.status})`,
+      response.status
+    )
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) {
+        break
+      }
+
+      buffer += decoder.decode(chunk.value, { stream: true })
+
+      while (true) {
+        const normalizedBuffer = buffer.replace(/\r\n/gu, "\n")
+        const delimiterIndex = normalizedBuffer.indexOf("\n\n")
+        if (delimiterIndex < 0) {
+          break
+        }
+
+        const block = normalizedBuffer.slice(0, delimiterIndex)
+        buffer = normalizedBuffer.slice(delimiterIndex + 2)
+
+        const parsed = parseSseDataBlock(block)
+        const event = mapEvent(parsed)
+        if (event) {
+          yield event
+        }
+      }
+    }
+
+    const trailing = parseSseDataBlock(buffer)
+    const trailingEvent = mapEvent(trailing)
+    if (trailingEvent) {
+      yield trailingEvent
+    }
+  } finally {
+    await reader.cancel()
+  }
+}
+
 /**
  * Creates a server-side OpenCode chat client abstraction used by control-plane chat routes.
  */
@@ -335,8 +510,10 @@ export const createOpencodeChatClient = ({
   baseUrl,
   fetchImpl = globalThis.fetch,
   sessionApi,
+  eventApi,
 }: OpencodeChatClientInput) => {
   const resolvedSessionApi = sessionApi ?? null
+  const resolvedEventApi = eventApi ?? null
 
   const mapError = (error: unknown, endpoint: string): OpencodeChatApiError => {
     if (error instanceof OpencodeChatApiError) {
@@ -425,6 +602,32 @@ export const createOpencodeChatClient = ({
         throw mapError(error, endpoint)
       }
     },
+    getMessage: async (sessionId: string, messageId: string) => {
+      const endpoint = `/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(messageId)}`
+
+      try {
+        const payload = resolvedSessionApi?.message
+          ? await resolvedSessionApi.message({
+              path: {
+                id: sessionId,
+                messageID: messageId,
+              },
+            })
+          : await requestJson(fetchImpl, baseUrl, endpoint)
+
+        const message = toSingleMessage(payload)
+        if (!message) {
+          return null
+        }
+
+        return {
+          message,
+          parts: mapMessageParts(unwrapData(payload)),
+        }
+      } catch (error) {
+        throw mapError(error, endpoint)
+      }
+    },
     promptSession: async (sessionId: string, text: string): Promise<OpencodeMessage | null> => {
       const endpoint = `/session/${encodeURIComponent(sessionId)}/message`
       const body = {
@@ -454,6 +657,53 @@ export const createOpencodeChatClient = ({
         return message
       } catch (error) {
         throw mapError(error, endpoint)
+      }
+    },
+    promptSessionAsync: async (sessionId: string, text: string, messageId?: string): Promise<void> => {
+      const endpoint = `/session/${encodeURIComponent(sessionId)}/prompt_async`
+      const body = {
+        ...(messageId ? { messageID: messageId } : {}),
+        parts: [{ type: "text" as const, text }],
+      }
+
+      try {
+        if (resolvedSessionApi?.promptAsync) {
+          await resolvedSessionApi.promptAsync({
+            path: { id: sessionId },
+            body,
+          })
+          return
+        }
+
+        await requestVoid(fetchImpl, baseUrl, endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        })
+      } catch (error) {
+        throw mapError(error, endpoint)
+      }
+    },
+    subscribeEvents: async function* (signal?: AbortSignal): AsyncGenerator<OpencodeChatEvent> {
+      try {
+        if (resolvedEventApi?.subscribe) {
+          const subscription = await resolvedEventApi.subscribe()
+
+          for await (const rawEvent of subscription.stream) {
+            const event = mapEvent(rawEvent)
+            if (event) {
+              yield event
+            }
+          }
+
+          return
+        }
+
+        yield* streamEventsFromSse(fetchImpl, baseUrl, signal)
+      } catch (error) {
+        throw mapError(error, "/event")
       }
     },
   }

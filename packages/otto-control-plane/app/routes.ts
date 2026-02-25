@@ -24,4 +24,8 @@ export default [
   route("api/jobs/:jobId/runs/:runId", "routes/api.jobs.$jobId.runs.$runId.ts"),
   route("api/chat/threads", "routes/api.chat.threads.ts"),
   route("api/chat/threads/:threadId/messages", "routes/api.chat.threads.$threadId.messages.ts"),
+  route(
+    "api/chat/threads/:threadId/messages/stream",
+    "routes/api.chat.threads.$threadId.messages.stream.ts"
+  ),
 ] satisfies RouteConfig

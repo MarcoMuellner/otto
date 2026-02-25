@@ -7,9 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Switch } from "../components/ui/switch.js"
 import {
   chatMessagesResponseSchema,
+  chatStreamEventSchema,
   chatThreadsResponseSchema,
   createChatThreadResponseSchema,
-  sendChatMessageResponseSchema,
+  type ChatStreamEvent,
   type ChatMessage,
   type ChatThread,
   type ChatThreadsResponse,
@@ -114,8 +115,12 @@ const fetchMessages = async (threadId: string) => {
   return chatMessagesResponseSchema.parse(body)
 }
 
-const sendMessage = async (threadId: string, text: string) => {
-  const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`, {
+const streamMessage = async (
+  threadId: string,
+  text: string,
+  onEvent: (event: ChatStreamEvent) => void
+) => {
+  const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}/messages/stream`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -123,12 +128,53 @@ const sendMessage = async (threadId: string, text: string) => {
     body: JSON.stringify({ text }),
   })
 
-  const body = (await response.json()) as unknown
   if (!response.ok) {
+    const body = (await response.json()) as unknown
     throw new Error(parseErrorMessage(body, "Could not send message"))
   }
 
-  return sendChatMessageResponseSchema.parse(body)
+  if (!response.body) {
+    throw new Error("Streaming response body is not available")
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) {
+        break
+      }
+
+      buffer += decoder.decode(chunk.value, { stream: true })
+
+      while (true) {
+        const newLineIndex = buffer.indexOf("\n")
+        if (newLineIndex < 0) {
+          break
+        }
+
+        const line = buffer.slice(0, newLineIndex).trim()
+        buffer = buffer.slice(newLineIndex + 1)
+        if (line.length === 0) {
+          continue
+        }
+
+        const event = chatStreamEventSchema.parse(JSON.parse(line) as unknown)
+        onEvent(event)
+      }
+    }
+
+    const trailing = buffer.trim()
+    if (trailing.length > 0) {
+      const event = chatStreamEventSchema.parse(JSON.parse(trailing) as unknown)
+      onEvent(event)
+    }
+  } finally {
+    await reader.cancel()
+  }
 }
 
 const resolveMessageTone = (role: ChatMessage["role"]): string => {
@@ -675,7 +721,11 @@ export default function ChatRoute() {
     return () => {
       window.cancelAnimationFrame(raf)
     }
-  }, [isLoadingMessages, messagePresentation.items.length])
+  }, [
+    isLoadingMessages,
+    messagePresentation.items.length,
+    messagePresentation.items.at(-1)?.message.text,
+  ])
 
   const refreshThreads = async () => {
     setIsRefreshingThreads(true)
@@ -734,17 +784,92 @@ export default function ChatRoute() {
         setSelectedThreadId(created.id)
       }
 
-      const response = await sendMessage(targetThreadId, text)
+      const optimisticUserMessageId = `local-user-${Date.now()}`
+      const optimisticAssistantMessageId = `local-assistant-${Date.now()}`
+      let streamedAssistantMessageId = optimisticAssistantMessageId
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: optimisticUserMessageId,
+          role: "user",
+          text,
+          createdAt: Date.now(),
+          partTypes: ["text"],
+        },
+        {
+          id: optimisticAssistantMessageId,
+          role: "assistant",
+          text: "Thinking...",
+          createdAt: Date.now() + 1,
+          partTypes: ["text"],
+        },
+      ])
+
       setComposerDrafts((current) => ({
         ...current,
         [targetThreadId]: "",
         [NEW_DRAFT_KEY]: targetThreadId === selectedThreadId ? (current[NEW_DRAFT_KEY] ?? "") : "",
       }))
 
-      const reply = response.reply
-      if (reply) {
-        setMessages((current) => [...current, reply])
-      }
+      await streamMessage(targetThreadId, text, (event) => {
+        if (event.type === "started") {
+          streamedAssistantMessageId = event.messageId
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === optimisticAssistantMessageId
+                ? {
+                    ...message,
+                    id: event.messageId,
+                    createdAt: event.createdAt,
+                  }
+                : message
+            )
+          )
+          return
+        }
+
+        if (event.type === "delta") {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === streamedAssistantMessageId || message.id === event.messageId
+                ? {
+                    ...message,
+                    text: event.text.length > 0 ? event.text : "Thinking...",
+                    partTypes: event.partTypes,
+                  }
+                : message
+            )
+          )
+          return
+        }
+
+        if (event.type === "completed") {
+          const reply = event.reply
+          if (!reply) {
+            setMessages((current) =>
+              current.filter(
+                (message) =>
+                  message.id !== optimisticAssistantMessageId && message.id !== streamedAssistantMessageId
+              )
+            )
+            return
+          }
+
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === optimisticAssistantMessageId ||
+              message.id === streamedAssistantMessageId ||
+              message.id === reply.id
+                ? reply
+                : message
+            )
+          )
+          return
+        }
+
+        setMessageLoadError(event.message)
+      })
 
       const refreshed = await fetchMessages(targetThreadId)
       setMessages(refreshed.messages)
