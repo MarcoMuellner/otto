@@ -439,9 +439,7 @@ export const createChatSurfaceService = (
         }
       }
 
-      const resolveMessageRole = async (
-        messageId: string
-      ): Promise<OpencodeMessage["role"]> => {
+      const resolveMessageRole = async (messageId: string): Promise<OpencodeMessage["role"]> => {
         const cachedRole = inspectedMessageRoles.get(messageId)
         if (cachedRole) {
           return cachedRole
@@ -540,7 +538,8 @@ export const createChatSurfaceService = (
 
           if (event.type === "message.part.delta") {
             const partMessageId =
-              typeof event.properties.messageID === "string" && event.properties.messageID.length > 0
+              typeof event.properties.messageID === "string" &&
+              event.properties.messageID.length > 0
                 ? event.properties.messageID
                 : null
             const partId =
@@ -561,9 +560,7 @@ export const createChatSurfaceService = (
               continue
             }
 
-            const partType =
-              partTypesById.get(partId) ??
-              (field === "text" ? "text" : null)
+            const partType = partTypesById.get(partId) ?? (field === "text" ? "text" : null)
 
             if (!partType) {
               continue
@@ -596,7 +593,9 @@ export const createChatSurfaceService = (
             }
 
             const partMessageId =
-              typeof part.messageID === "string" && part.messageID.length > 0 ? part.messageID : null
+              typeof part.messageID === "string" && part.messageID.length > 0
+                ? part.messageID
+                : null
             if (!partMessageId) {
               continue
             }
