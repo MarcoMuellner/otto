@@ -11,6 +11,7 @@ import {
   TaskMutationError,
   updateTaskMutation,
 } from "../api-services/tasks-mutations.js"
+import { spawnInteractiveBackgroundJob } from "../api-services/interactive-background-jobs.js"
 import {
   applyNotificationProfileUpdate,
   diffNotificationProfileFields,
@@ -206,6 +207,14 @@ const setNotificationProfileApiSchema = z
     lane: executionLaneSchema,
   })
   .extend(notificationProfileUpdateSchema.shape)
+
+const spawnBackgroundJobApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  sessionId: z.string().trim().min(1).optional(),
+  request: z.string().trim().min(1),
+  rationale: z.string().trim().min(1).max(500).optional(),
+  sourceMessageId: z.string().trim().min(1).optional(),
+})
 
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
@@ -658,6 +667,97 @@ export const buildInternalApiServer = (
         errorMessage: err.message,
       })
       dependencies.logger.error({ error: err.message }, "Internal API task create failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/background-jobs/spawn", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = spawnBackgroundJobApiSchema.parse(request.body)
+      const laneDecision = assertTaskMutationLane(dependencies.logger, payload.lane, "create")
+      if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "spawn_background_job",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
+        return reply.code(laneDecision.statusCode).send(laneDecision.body)
+      }
+
+      const resolvedSessionId = payload.sessionId
+      const chatId = resolvedSessionId
+        ? dependencies.sessionBindingsRepository.getTelegramChatIdBySessionId(resolvedSessionId)
+        : null
+
+      const result = spawnInteractiveBackgroundJob(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        {
+          request: payload.request,
+          rationale: payload.rationale,
+          sourceMessageId: payload.sourceMessageId,
+          sessionId: resolvedSessionId,
+          chatId,
+        }
+      )
+
+      writeCommandAudit(dependencies, {
+        command: "spawn_background_job",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          jobId: result.jobId,
+          jobType: result.jobType,
+          hasSessionId: Boolean(resolvedSessionId),
+          hasChatId: Boolean(chatId),
+        }),
+      })
+
+      return reply.code(200).send(result)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "spawn_background_job",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "spawn_background_job",
+          lane: null,
+          status: error.code === "forbidden_mutation" ? "denied" : "failed",
+          errorMessage: error.message,
+        })
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "spawn_background_job",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API background job spawn failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

@@ -591,6 +591,69 @@ describe("buildInternalApiServer", () => {
     await app.close()
   })
 
+  it("spawns interactive background one-shot jobs from the tool endpoint", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => 777),
+      },
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/spawn",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        sessionId: "session-42",
+        request: "Analyze this repository and draft a migration plan",
+        rationale: "Long-running analysis task",
+        sourceMessageId: "12345",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    const body = response.json() as {
+      status: string
+      jobId: string
+      jobType: string
+      acknowledgement: string
+    }
+    expect(body.status).toBe("queued")
+    expect(body.jobType).toBe("interactive_background_oneshot")
+    expect(body.acknowledgement).toContain(body.jobId)
+
+    const created = jobsRepository.getById(body.jobId)
+    expect(created).not.toBeNull()
+    expect(created?.type).toBe("interactive_background_oneshot")
+    expect(created?.scheduleType).toBe("oneshot")
+    expect(created?.nextRunAt).not.toBeNull()
+
+    await app.close()
+  })
+
   it("returns task and command audit streams", async () => {
     // Arrange
     const taskAuditRepository = createTaskAuditRepositoryStub()
