@@ -11,6 +11,7 @@ export type TelegramInboundMediaMessage = {
   mediaType: TelegramInboundMediaType
   fileId: string
   fileUniqueId: string | null
+  mediaGroupId: string | null
   mimeType: string
   fileSizeBytes: number | null
   fileName: string | null
