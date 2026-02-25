@@ -91,6 +91,7 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
           mediaType: "document" | "photo"
           fileId: string
           fileUniqueId: string | null
+          mediaGroupId: string | null
           mimeType: string
           fileSizeBytes: number | null
           fileName: string | null
@@ -195,6 +196,7 @@ const createFakeBotRuntime = (options: { launchError?: Error } = {}) => {
         mediaType: "document" | "photo"
         fileId: string
         fileUniqueId: string | null
+        mediaGroupId: string | null
         mimeType: string
         fileSizeBytes: number | null
         fileName: string | null
@@ -628,6 +630,7 @@ describe("startTelegramWorker", () => {
         mediaType: "document",
         fileId: "doc-1",
         fileUniqueId: "doc-u1",
+        mediaGroupId: null,
         mimeType: "application/pdf",
         fileSizeBytes: 15,
         fileName: "report.pdf",
@@ -645,6 +648,286 @@ describe("startTelegramWorker", () => {
     expect(promptSessionParts).toHaveBeenCalled()
     const parts = vi.mocked(promptSessionParts).mock.calls[0]?.[1]
     expect(parts?.some((part) => part.type === "file")).toBe(true)
+
+    await worker.stop()
+  })
+
+  it("processes grouped inbound media as one OpenCode prompt", async () => {
+    // Arrange
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(Buffer.from("image"), {
+          status: 200,
+          headers: {
+            "content-length": "5",
+          },
+        })
+      })
+    )
+
+    const { logger } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+    const promptSessionParts = vi.fn(async () => "assistant reply")
+
+    const worker = await startTelegramWorker(logger, createWorkerConfig(), {
+      createBotRuntime: () => fakeBot.runtime,
+      openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+      createSessionGateway: () => ({
+        ensureSession: async () => "session-1",
+        promptSessionParts,
+        promptSession: async () => "assistant reply",
+      }),
+    })
+
+    // Act
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "media-group-1",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "photo",
+        fileId: "photo-1",
+        fileUniqueId: "photo-u1",
+        mediaGroupId: "group-1",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 5,
+        fileName: null,
+        caption: "first",
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "media-group-2",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "photo",
+        fileId: "photo-2",
+        fileUniqueId: "photo-u2",
+        mediaGroupId: "group-1",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 5,
+        fileName: null,
+        caption: "second",
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 700))
+
+    // Assert
+    expect(promptSessionParts).toHaveBeenCalledTimes(1)
+    const parts = vi.mocked(promptSessionParts).mock.calls[0]?.[1]
+    expect(parts?.filter((part) => part.type === "file")).toHaveLength(2)
+
+    await worker.stop()
+  })
+
+  it("processes valid files in a media group and skips invalid ones", async () => {
+    // Arrange
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(Buffer.from("image"), {
+          status: 200,
+          headers: {
+            "content-length": "5",
+          },
+        })
+      })
+    )
+
+    const { logger } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+    const promptSessionParts = vi.fn(async () => "assistant reply")
+
+    const worker = await startTelegramWorker(logger, createWorkerConfig(), {
+      createBotRuntime: () => fakeBot.runtime,
+      openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+      createSessionGateway: () => ({
+        ensureSession: async () => "session-1",
+        promptSessionParts,
+        promptSession: async () => "assistant reply",
+      }),
+    })
+
+    // Act
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "media-group-valid-1",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "photo",
+        fileId: "photo-1",
+        fileUniqueId: "photo-u1",
+        mediaGroupId: "group-2",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 5,
+        fileName: null,
+        caption: null,
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "media-group-invalid-1",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "document",
+        fileId: "doc-1",
+        fileUniqueId: "doc-u1",
+        mediaGroupId: "group-2",
+        mimeType: "application/zip",
+        fileSizeBytes: 5,
+        fileName: "archive.zip",
+        caption: null,
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 700))
+
+    // Assert
+    expect(promptSessionParts).toHaveBeenCalledTimes(1)
+    const parts = vi.mocked(promptSessionParts).mock.calls[0]?.[1]
+    expect(parts?.filter((part) => part.type === "file")).toHaveLength(1)
+    expect(fakeBot.sentMessages.some((message) => message.text.includes("Skipped 1"))).toBe(true)
+
+    await worker.stop()
+  })
+
+  it("does not drop new files when an album replay includes an earlier duplicate", async () => {
+    // Arrange
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(Buffer.from("image"), {
+          status: 200,
+          headers: {
+            "content-length": "5",
+          },
+        })
+      })
+    )
+
+    const { logger } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+    const promptSessionParts = vi.fn(async () => "assistant reply")
+
+    const worker = await startTelegramWorker(logger, createWorkerConfig(), {
+      createBotRuntime: () => fakeBot.runtime,
+      openDatabase: () => openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") }),
+      createSessionGateway: () => ({
+        ensureSession: async () => "session-1",
+        promptSessionParts,
+        promptSession: async () => "assistant reply",
+      }),
+    })
+
+    // First album batch
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "replay-base-1",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "photo",
+        fileId: "photo-base-1",
+        fileUniqueId: "photo-base-u1",
+        mediaGroupId: "group-replay",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 5,
+        fileName: null,
+        caption: "base",
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 700))
+
+    // Replay where first update is duplicate and second is new
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "replay-base-1",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "photo",
+        fileId: "photo-base-1",
+        fileUniqueId: "photo-base-u1",
+        mediaGroupId: "group-replay",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 5,
+        fileName: null,
+        caption: "base",
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    await fakeBot.dispatchMedia({
+      sourceMessageId: "replay-new-2",
+      chatId: 2002,
+      userId: 1001,
+      media: {
+        mediaType: "photo",
+        fileId: "photo-new-2",
+        fileUniqueId: "photo-new-u2",
+        mediaGroupId: "group-replay",
+        mimeType: "image/jpeg",
+        fileSizeBytes: 5,
+        fileName: null,
+        caption: "new",
+      },
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 700))
+
+    // Assert
+    expect(promptSessionParts).toHaveBeenCalledTimes(2)
+    const secondParts = vi.mocked(promptSessionParts).mock.calls[1]?.[1]
+    expect(secondParts?.filter((part) => part.type === "file")).toHaveLength(1)
 
     await worker.stop()
   })

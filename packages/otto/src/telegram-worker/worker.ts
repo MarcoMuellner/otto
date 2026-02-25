@@ -111,6 +111,7 @@ export type TelegramWorkerDependencies = {
 const TELEGRAM_LAUNCH_RETRY_DELAY_MS = 30_000
 const TELEGRAM_MEDIA_MAX_BYTES = 15 * 1024 * 1024
 const TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS = 25_000
+const TELEGRAM_MEDIA_GROUP_FLUSH_DELAY_MS = 600
 const ALLOWED_DOCUMENT_MIME_TYPES = [
   "application/pdf",
   "text/plain",
@@ -148,6 +149,15 @@ const classifyUnsupportedMediaType = (
   }
 
   return "unknown"
+}
+
+const resolveMediaGroupId = (message: object): string | null => {
+  const value = (message as { media_group_id?: unknown }).media_group_id
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value
+  }
+
+  return null
 }
 
 const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
@@ -225,6 +235,7 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
         mediaType: "document",
         fileId: document.file_id,
         fileUniqueId: document.file_unique_id,
+        mediaGroupId: resolveMediaGroupId(message),
         mimeType: document.mime_type ?? "application/octet-stream",
         fileSizeBytes: document.file_size ?? null,
         fileName: document.file_name ?? null,
@@ -249,6 +260,7 @@ const createTelegrafRuntime = (botToken: string): TelegramBotRuntime => {
         mediaType: "photo",
         fileId: photo.file_id,
         fileUniqueId: photo.file_unique_id,
+        mediaGroupId: resolveMediaGroupId(message),
         mimeType: "image/jpeg",
         fileSizeBytes: photo.file_size ?? null,
         fileName: null,
@@ -406,6 +418,16 @@ export const startTelegramWorker = async (
     dependencies.createBotRuntime?.(config.botToken) ?? createTelegrafRuntime(config.botToken)
   const inFlightChats = new Set<number>()
   const onboardingPromptedChats = new Set<number>()
+  const pendingMediaGroupBatches = new Map<
+    string,
+    {
+      chatId: number
+      userId: number
+      mediaGroupId: string
+      updates: TelegramInboundMediaUpdate[]
+      timer: NodeJS.Timeout | null
+    }
+  >()
   let stopRequested = false
   let launchInFlight = false
   let launchRetryTimer: NodeJS.Timeout | null = null
@@ -447,6 +469,297 @@ export const startTelegramWorker = async (
       const err = error as Error
       logger.error({ error: err.message }, "Failed to process outbound Telegram queue")
     }
+  }
+
+  const describeMediaForUser = (update: TelegramInboundMediaUpdate, index: number): string => {
+    if (update.media.fileName && update.media.fileName.trim().length > 0) {
+      return update.media.fileName
+    }
+
+    return `${update.media.mediaType} ${index + 1}`
+  }
+
+  const createMediaGroupPromptSourceMessageId = (
+    chatId: number,
+    mediaGroupId: string,
+    sourceMessageIds: string[]
+  ): string => {
+    const normalizedIds = [...sourceMessageIds].sort().join("+")
+    return `media-group:${chatId}:${mediaGroupId}:${normalizedIds}`
+  }
+
+  const flushMediaGroupBatch = async (batchKey: string): Promise<void> => {
+    const pendingBatch = pendingMediaGroupBatches.get(batchKey)
+    if (!pendingBatch) {
+      return
+    }
+
+    if (inFlightChats.has(pendingBatch.chatId)) {
+      if (pendingBatch.timer) {
+        clearTimeout(pendingBatch.timer)
+      }
+
+      pendingBatch.timer = setTimeout(() => {
+        void flushMediaGroupBatch(batchKey)
+      }, TELEGRAM_MEDIA_GROUP_FLUSH_DELAY_MS)
+      return
+    }
+
+    pendingMediaGroupBatches.delete(batchKey)
+    if (pendingBatch.timer) {
+      clearTimeout(pendingBatch.timer)
+      pendingBatch.timer = null
+    }
+
+    logger.info(
+      {
+        chatId: pendingBatch.chatId,
+        userId: pendingBatch.userId,
+        mediaGroupId: pendingBatch.mediaGroupId,
+        mediaCount: pendingBatch.updates.length,
+      },
+      "Processing inbound Telegram media group"
+    )
+
+    inFlightChats.add(pendingBatch.chatId)
+
+    const skippedItems: string[] = []
+    const downloadableItems: Array<{
+      sourceMessageId: string
+      media: TelegramInboundMediaPayload
+      dataUrl: string
+      filename: string | undefined
+      downloadedBytes: number
+    }> = []
+
+    try {
+      for (const [index, update] of pendingBatch.updates.entries()) {
+        const now = Date.now()
+        const insertResult = mediaInboundMessagesRepository.insertOrIgnore({
+          id: randomUUID(),
+          sourceMessageId: update.sourceMessageId,
+          chatId: update.chatId,
+          userId: update.userId,
+          telegramFileId: update.media.fileId,
+          telegramFileUniqueId: update.media.fileUniqueId,
+          mediaType: update.media.mediaType,
+          mimeType: update.media.mimeType,
+          fileName: update.media.fileName,
+          fileSizeBytes: update.media.fileSizeBytes,
+          downloadedSizeBytes: null,
+          caption: update.media.caption,
+          status: "accepted",
+          rejectReason: null,
+          errorMessage: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+
+        if (insertResult === "duplicate") {
+          logger.info(
+            { sourceMessageId: update.sourceMessageId },
+            "Skipping duplicate inbound Telegram media message"
+          )
+          skippedItems.push(`${describeMediaForUser(update, index)} (duplicate)`)
+          continue
+        }
+
+        const validation = validateInboundMediaPayload(update.media, {
+          maxBytes: TELEGRAM_MEDIA_MAX_BYTES,
+          allowedMimeTypes:
+            update.media.mediaType === "document"
+              ? ALLOWED_DOCUMENT_MIME_TYPES
+              : ALLOWED_PHOTO_MIME_TYPES,
+          downloadTimeoutMs: TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS,
+        })
+
+        if (!validation.accepted) {
+          mediaInboundMessagesRepository.markRejected(update.sourceMessageId, validation.reason)
+          skippedItems.push(`${describeMediaForUser(update, index)} (${validation.reason})`)
+          continue
+        }
+
+        let downloadedBytes: number | null = null
+        try {
+          const descriptor = await bot.resolveFileDownload(update.media.fileId)
+          const downloaded = await downloadInboundMediaFile(descriptor, {
+            maxBytes: TELEGRAM_MEDIA_MAX_BYTES,
+            downloadTimeoutMs: TELEGRAM_MEDIA_DOWNLOAD_TIMEOUT_MS,
+          })
+          downloadedBytes = downloaded.bytes
+
+          try {
+            const resolvedMimeType = update.media.mimeType || "application/octet-stream"
+            const dataUrl = await buildMediaDataUrl(downloaded.filePath, resolvedMimeType)
+            const filename = update.media.fileName ?? descriptor.fileName ?? undefined
+
+            downloadableItems.push({
+              sourceMessageId: update.sourceMessageId,
+              media: update.media,
+              dataUrl,
+              filename,
+              downloadedBytes,
+            })
+          } finally {
+            await downloaded.cleanup()
+          }
+        } catch (error) {
+          const err = error as Error
+          mediaInboundMessagesRepository.markFailed(
+            update.sourceMessageId,
+            err.message,
+            Date.now(),
+            downloadedBytes
+          )
+
+          logger.error(
+            { error: err.message, chatId: update.chatId, sourceMessageId: update.sourceMessageId },
+            "Failed to process Telegram media message"
+          )
+          skippedItems.push(`${describeMediaForUser(update, index)} (download_failed)`)
+        }
+      }
+
+      if (downloadableItems.length === 0) {
+        await bot.sendMessage(
+          pendingBatch.chatId,
+          "I could not process any files in that album. Please try again with supported file types and sizes."
+        )
+        return
+      }
+
+      const captionHints = downloadableItems
+        .map((item, index) => {
+          const caption = item.media.caption?.trim()
+          if (!caption) {
+            return null
+          }
+
+          return `File ${index + 1} caption: ${caption}`
+        })
+        .filter((value): value is string => value != null)
+
+      const parts = [
+        {
+          type: "text" as const,
+          text:
+            captionHints.length > 0
+              ? [
+                  `User sent ${downloadableItems.length} files in one message. Analyze them together and respond helpfully.`,
+                  ...captionHints,
+                ].join("\n")
+              : `User sent ${downloadableItems.length} files in one message. Analyze them together and respond helpfully.`,
+        },
+        ...downloadableItems.map((item) => ({
+          type: "file" as const,
+          mime: item.media.mimeType || "application/octet-stream",
+          filename: item.filename,
+          url: item.dataUrl,
+        })),
+      ]
+
+      const storageText = [
+        `[media_group:${pendingBatch.mediaGroupId}] ${downloadableItems.length} files`,
+        ...captionHints,
+      ].join(" | ")
+
+      const mediaHandleResult = await bridge.handleMediaMessage({
+        sourceMessageId: createMediaGroupPromptSourceMessageId(
+          pendingBatch.chatId,
+          pendingBatch.mediaGroupId,
+          downloadableItems.map((item) => item.sourceMessageId)
+        ),
+        chatId: pendingBatch.chatId,
+        userId: pendingBatch.userId,
+        storageText,
+        parts,
+      })
+
+      if (mediaHandleResult.outcome === "processed") {
+        for (const item of downloadableItems) {
+          mediaInboundMessagesRepository.markProcessed(
+            item.sourceMessageId,
+            Date.now(),
+            item.downloadedBytes
+          )
+        }
+      } else if (mediaHandleResult.outcome === "duplicate") {
+        for (const item of downloadableItems) {
+          mediaInboundMessagesRepository.markProcessed(
+            item.sourceMessageId,
+            Date.now(),
+            item.downloadedBytes
+          )
+        }
+      } else if (mediaHandleResult.outcome === "failed") {
+        for (const item of downloadableItems) {
+          mediaInboundMessagesRepository.markFailed(
+            item.sourceMessageId,
+            mediaHandleResult.errorMessage,
+            Date.now(),
+            item.downloadedBytes
+          )
+        }
+      }
+
+      if (skippedItems.length > 0) {
+        await bot.sendMessage(
+          pendingBatch.chatId,
+          `Processed ${downloadableItems.length} file(s). Skipped ${skippedItems.length}: ${skippedItems.join(", ")}.`
+        )
+      }
+    } catch (error) {
+      const err = error as Error
+
+      logger.error(
+        {
+          error: err.message,
+          chatId: pendingBatch.chatId,
+          mediaGroupId: pendingBatch.mediaGroupId,
+        },
+        "Failed to process Telegram media group"
+      )
+
+      await bot.sendMessage(
+        pendingBatch.chatId,
+        "I could not process those files right now. Please try again in a moment."
+      )
+    } finally {
+      inFlightChats.delete(pendingBatch.chatId)
+    }
+  }
+
+  const enqueueMediaGroupUpdate = (update: TelegramInboundMediaUpdate): void => {
+    const mediaGroupId = update.media.mediaGroupId
+    if (!mediaGroupId) {
+      return
+    }
+
+    const batchKey = `${update.chatId}:${mediaGroupId}`
+    const existingBatch = pendingMediaGroupBatches.get(batchKey)
+
+    if (existingBatch) {
+      existingBatch.updates.push(update)
+      if (existingBatch.timer) {
+        clearTimeout(existingBatch.timer)
+      }
+      existingBatch.timer = setTimeout(() => {
+        void flushMediaGroupBatch(batchKey)
+      }, TELEGRAM_MEDIA_GROUP_FLUSH_DELAY_MS)
+      return
+    }
+
+    const timer = setTimeout(() => {
+      void flushMediaGroupBatch(batchKey)
+    }, TELEGRAM_MEDIA_GROUP_FLUSH_DELAY_MS)
+
+    pendingMediaGroupBatches.set(batchKey, {
+      chatId: update.chatId,
+      userId: update.userId,
+      mediaGroupId,
+      updates: [update],
+      timer,
+    })
   }
 
   bot.onTextMessage(async (update) => {
@@ -747,6 +1060,7 @@ export const startTelegramWorker = async (
           chatId: update.chatId,
           userId: update.userId,
           mediaType: update.media.mediaType,
+          mediaGroupId: update.media.mediaGroupId,
           mimeType: update.media.mimeType,
           fileSizeBytes: update.media.fileSizeBytes,
           hasCaption: Boolean(update.media.caption),
@@ -761,6 +1075,11 @@ export const startTelegramWorker = async (
       logDeniedTelegramAccess(logger, decision, context)
 
       if (!decision.allowed) {
+        return
+      }
+
+      if (update.media.mediaGroupId) {
+        enqueueMediaGroupUpdate(update)
         return
       }
 
@@ -1014,6 +1333,12 @@ export const startTelegramWorker = async (
   return {
     stop: async () => {
       stopRequested = true
+      for (const pendingBatch of pendingMediaGroupBatches.values()) {
+        if (pendingBatch.timer) {
+          clearTimeout(pendingBatch.timer)
+        }
+      }
+      pendingMediaGroupBatches.clear()
       if (launchRetryTimer) {
         clearTimeout(launchRetryTimer)
         launchRetryTimer = null
