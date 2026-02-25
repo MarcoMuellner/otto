@@ -401,7 +401,9 @@ export const createChatSurfaceService = (
       const textParts = new Map<string, string>()
       const reasoningParts = new Map<string, string>()
       const toolParts = new Map<string, string>()
+      const partTypesById = new Map<string, string>()
       const seenPartTypes = new Set<string>()
+      const inspectedMessageRoles = new Map<string, OpencodeMessage["role"]>()
       let assistantMessageId: string | null = null
       let lastText = ""
 
@@ -435,6 +437,41 @@ export const createChatSurfaceService = (
           text: combined,
           partTypes: [...seenPartTypes],
         }
+      }
+
+      const resolveMessageRole = async (
+        messageId: string
+      ): Promise<OpencodeMessage["role"]> => {
+        const cachedRole = inspectedMessageRoles.get(messageId)
+        if (cachedRole) {
+          return cachedRole
+        }
+
+        try {
+          const resolved = await chatClient.getMessage(threadId, messageId)
+          const role = resolved?.message.role ?? "unknown"
+          if (role !== "unknown") {
+            inspectedMessageRoles.set(messageId, role)
+          }
+
+          return role
+        } catch {
+          return "unknown"
+        }
+      }
+
+      const ensureAssistantMessage = async (messageId: string): Promise<boolean> => {
+        if (assistantMessageId) {
+          return messageId === assistantMessageId
+        }
+
+        const role = await resolveMessageRole(messageId)
+        if (role !== "assistant") {
+          return false
+        }
+
+        assistantMessageId = messageId
+        return true
       }
 
       try {
@@ -488,6 +525,7 @@ export const createChatSurfaceService = (
           const eventAssistantMessageId = resolveAssistantMessageIdFromEvent(event)
           if (!assistantMessageId && eventAssistantMessageId) {
             assistantMessageId = eventAssistantMessageId
+            inspectedMessageRoles.set(eventAssistantMessageId, "assistant")
           }
 
           if (event.type === "session.error") {
@@ -500,17 +538,72 @@ export const createChatSurfaceService = (
             throw new OpencodeChatApiError(errorMessage)
           }
 
+          if (event.type === "message.part.delta") {
+            const partMessageId =
+              typeof event.properties.messageID === "string" && event.properties.messageID.length > 0
+                ? event.properties.messageID
+                : null
+            const partId =
+              typeof event.properties.partID === "string" && event.properties.partID.length > 0
+                ? event.properties.partID
+                : null
+            const field =
+              typeof event.properties.field === "string" && event.properties.field.length > 0
+                ? event.properties.field
+                : null
+            const delta = typeof event.properties.delta === "string" ? event.properties.delta : ""
+
+            if (!partMessageId || !partId || !field || delta.length === 0) {
+              continue
+            }
+
+            if (!(await ensureAssistantMessage(partMessageId))) {
+              continue
+            }
+
+            const partType =
+              partTypesById.get(partId) ??
+              (field === "text" ? "text" : null)
+
+            if (!partType) {
+              continue
+            }
+
+            seenPartTypes.add(partType)
+
+            if (partType === "text") {
+              const existing = textParts.get(partId) ?? ""
+              textParts.set(partId, `${existing}${delta}`)
+            }
+
+            if (partType === "reasoning") {
+              const existing = reasoningParts.get(partId) ?? ""
+              reasoningParts.set(partId, `${existing}${delta}`)
+            }
+
+            const update = emitDelta()
+            if (update) {
+              yield update
+            }
+
+            continue
+          }
+
           if (event.type === "message.part.updated") {
             const part = isRecord(event.properties.part) ? event.properties.part : null
             if (!part || typeof part.type !== "string" || typeof part.id !== "string") {
               continue
             }
 
-            if (!assistantMessageId) {
+            const partMessageId =
+              typeof part.messageID === "string" && part.messageID.length > 0 ? part.messageID : null
+            if (!partMessageId) {
               continue
             }
 
-            if (part.messageID !== assistantMessageId) {
+            partTypesById.set(part.id, part.type)
+
+            if (!(await ensureAssistantMessage(partMessageId))) {
               continue
             }
 
