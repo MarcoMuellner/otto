@@ -54,7 +54,6 @@ const DEFAULT_OUTBOUND_MAX_ATTEMPTS = 5
 const DEFAULT_OUTBOUND_RETRY_BASE_MS = 5_000
 const DEFAULT_OUTBOUND_RETRY_MAX_MS = 300_000
 const DEFAULT_OPENCODE_BASE_URL = "http://127.0.0.1:4096"
-const DEFAULT_PROMPT_TIMEOUT_MS = 120_000
 
 /**
  * Anchors Telegram credential resolution to a predictable file so runtime startup does not
@@ -219,7 +218,7 @@ export const resolveTelegramWorkerConfig = (
     outboundRetryBaseMs: DEFAULT_OUTBOUND_RETRY_BASE_MS,
     outboundRetryMaxMs: DEFAULT_OUTBOUND_RETRY_MAX_MS,
     opencodeBaseUrl: DEFAULT_OPENCODE_BASE_URL,
-    promptTimeoutMs: DEFAULT_PROMPT_TIMEOUT_MS,
+    promptTimeoutMs: settings.promptTimeoutMs,
     voice: {
       enabled: settings.voice.enabled,
       maxDurationSec: settings.voice.maxDurationSec,

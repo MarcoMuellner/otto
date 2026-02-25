@@ -14,6 +14,7 @@ const TEMP_PREFIX = path.join(tmpdir(), "otto-telegram-config-")
 const cleanupPaths: string[] = []
 
 const defaultSettings = {
+  promptTimeoutMs: 300_000,
   voice: {
     enabled: false,
     maxDurationSec: 180,
@@ -109,6 +110,7 @@ describe("resolveTelegramWorkerConfig", () => {
     expect(config.enabled).toBe(true)
     expect(config.botToken).toBe("bot-token")
     expect(config.allowedUserId).toBe(1001)
+    expect(config.promptTimeoutMs).toBe(300_000)
     expect(config.voice.enabled).toBe(true)
     expect(config.transcription.model).toBe("small")
   })

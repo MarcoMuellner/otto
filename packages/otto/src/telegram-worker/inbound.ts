@@ -81,6 +81,11 @@ export type InboundBridgeDependencies = {
   bindingPrefix?: string
 }
 
+const DEFAULT_FALLBACK_MESSAGE =
+  "I could not complete that right now. Please try again in a moment."
+const TIMEOUT_FALLBACK_MESSAGE =
+  "That request is taking longer than expected. Please try again in a moment."
+
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -97,6 +102,10 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T
         reject(error)
       })
   })
+}
+
+const isPromptTimeoutError = (errorMessage: string): boolean => {
+  return errorMessage.includes("OpenCode prompt timed out after")
 }
 
 const isUniqueConstraintViolation = (error: unknown): boolean => {
@@ -242,6 +251,8 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
       input.chatId
     )
 
+    const promptStartedAt = Date.now()
+
     try {
       assistantText = await withTimeout(
         dependencies.sessionGateway.promptSessionParts(resolvedSessionId, input.parts, {
@@ -252,14 +263,26 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
         dependencies.promptTimeoutMs
       )
     } catch (error) {
-      const err = error as Error
-      dependencies.logger.error({ error: err.message }, "Failed to process Telegram inbound prompt")
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const timedOut = isPromptTimeoutError(errorMessage)
 
-      const fallbackMessage = "I could not complete that right now. Please try again in a moment."
+      dependencies.logger.error(
+        {
+          error: errorMessage,
+          chatId: input.chatId,
+          sourceMessageId: input.sourceMessageId,
+          timedOut,
+          elapsedMs: Date.now() - promptStartedAt,
+          promptTimeoutMs: dependencies.promptTimeoutMs,
+        },
+        "Failed to process Telegram inbound prompt"
+      )
+
+      const fallbackMessage = timedOut ? TIMEOUT_FALLBACK_MESSAGE : DEFAULT_FALLBACK_MESSAGE
       await dependencies.sender.sendMessage(input.chatId, fallbackMessage)
       return {
         outcome: "failed",
-        errorMessage: err.message,
+        errorMessage,
       }
     } finally {
       stopTypingHeartbeat()

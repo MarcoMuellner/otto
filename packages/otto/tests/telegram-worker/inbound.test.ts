@@ -167,4 +167,117 @@ describe("createInboundBridge", () => {
     expect(sendChatAction).toHaveBeenCalledWith(7, "typing")
     expect(sendMessage).toHaveBeenCalledWith(7, "done")
   })
+
+  it("sends a timeout fallback message when prompt exceeds timeout", async () => {
+    vi.useFakeTimers()
+
+    try {
+      // Arrange
+      const logger = {
+        info: vi.fn(),
+        error: vi.fn(),
+      } as unknown as Logger
+      const sendMessage = vi.fn(async () => {})
+      const sessionGateway = {
+        ensureSession: vi.fn(async () => "session-1"),
+        promptSessionParts: vi.fn(async () => await new Promise<string>(() => {})),
+        promptSession: vi.fn(async () => await new Promise<string>(() => {})),
+      }
+      const sessionBindingsRepository = {
+        getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+        upsert: vi.fn(),
+      }
+      const inboundMessagesRepository = {
+        insert: vi.fn(),
+      }
+      const outboundMessagesRepository = {
+        enqueue: vi.fn(),
+      }
+
+      const bridge = createInboundBridge({
+        logger,
+        sender: { sendMessage },
+        sessionGateway,
+        sessionBindingsRepository,
+        inboundMessagesRepository,
+        outboundMessagesRepository,
+        promptTimeoutMs: 1_000,
+      })
+
+      // Act
+      const pendingHandle = bridge.handleTextMessage({
+        sourceMessageId: "timeout-1",
+        chatId: 7,
+        userId: 9,
+        text: "slow",
+      })
+      await vi.advanceTimersByTimeAsync(1_000)
+      const result = await pendingHandle
+
+      // Assert
+      expect(result.outcome).toBe("failed")
+      expect(sendMessage).toHaveBeenCalledWith(
+        7,
+        "That request is taking longer than expected. Please try again in a moment."
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("handles non-Error prompt rejections and sends generic fallback", async () => {
+    // Arrange
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger
+    const sendMessage = vi.fn(async () => {})
+    const sessionGateway = {
+      ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => {
+        throw "gateway failed"
+      }),
+      promptSession: vi.fn(async () => {
+        throw "gateway failed"
+      }),
+    }
+    const sessionBindingsRepository = {
+      getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+      upsert: vi.fn(),
+    }
+    const inboundMessagesRepository = {
+      insert: vi.fn(),
+    }
+    const outboundMessagesRepository = {
+      enqueue: vi.fn(),
+    }
+
+    const bridge = createInboundBridge({
+      logger,
+      sender: { sendMessage },
+      sessionGateway,
+      sessionBindingsRepository,
+      inboundMessagesRepository,
+      outboundMessagesRepository,
+      promptTimeoutMs: 30_000,
+    })
+
+    // Act
+    const result = await bridge.handleTextMessage({
+      sourceMessageId: "non-error-1",
+      chatId: 7,
+      userId: 9,
+      text: "hi",
+    })
+
+    // Assert
+    expect(result).toEqual({
+      outcome: "failed",
+      errorMessage: "gateway failed",
+    })
+    expect(sendMessage).toHaveBeenCalledWith(
+      7,
+      "I could not complete that right now. Please try again in a moment."
+    )
+  })
 })
