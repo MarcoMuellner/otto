@@ -13,6 +13,7 @@ This directory stores deployable epics and tickets.
 - `epic_007`: Otto web control plane (separate UI process + runtime-owned external API).
 - `epic_008`: Runtime model management defaults and per-job model switching.
 - `epic_009`: Interactive background one-shot tasks across Telegram, CLI chat, and web chat.
+- `epic_010`: Prompt management hierarchy with update-safe user layers and per-run provenance.
 
 ## Structure
 
