@@ -10,6 +10,7 @@ import type { OutboundMessageEnqueueRepository } from "../../src/telegram-worker
 import type {
   FailedJobRunRecord,
   JobRecord,
+  JobRunSessionRecord,
   TaskListRecord,
 } from "../../src/persistence/repositories.js"
 
@@ -187,10 +188,7 @@ const createUserProfileRepositoryStub = () => {
 }
 
 const createJobRunSessionsRepositoryStub = () => {
-  const byRunId = new Map<
-    string,
-    { runId: string; jobId: string; sessionId: string; closedAt: number | null }
-  >()
+  const byRunId = new Map<string, JobRunSessionRecord>()
 
   return {
     insert: (record: {
@@ -203,10 +201,12 @@ const createJobRunSessionsRepositoryStub = () => {
         runId: record.runId,
         jobId: record.jobId,
         sessionId: record.sessionId,
+        createdAt: record.createdAt,
         closedAt: null,
+        closeErrorMessage: null,
       })
     },
-    markClosed: (runId: string, closedAt: number): void => {
+    markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null): void => {
       const existing = byRunId.get(runId)
       if (!existing) {
         return
@@ -215,49 +215,35 @@ const createJobRunSessionsRepositoryStub = () => {
       byRunId.set(runId, {
         ...existing,
         closedAt,
+        closeErrorMessage,
       })
     },
-    getByRunId: (
-      runId: string
-    ): { runId: string; jobId: string; sessionId: string; closedAt: number | null } | null => {
-      const record = byRunId.get(runId)
-      if (!record) {
-        return null
+    markCloseError: (runId: string, closeErrorMessage: string): void => {
+      const existing = byRunId.get(runId)
+      if (!existing || existing.closedAt != null) {
+        return
       }
 
-      return {
-        runId: record.runId,
-        jobId: record.jobId,
-        sessionId: record.sessionId,
-        closedAt: record.closedAt,
-      }
+      byRunId.set(runId, {
+        ...existing,
+        closeErrorMessage,
+      })
     },
-    listActiveByJobId: (
-      jobId: string
-    ): Array<{ runId: string; jobId: string; sessionId: string }> => {
+    getByRunId: (runId: string): JobRunSessionRecord | null => {
+      const record = byRunId.get(runId)
+      return record ?? null
+    },
+    listActiveByJobId: (jobId: string): JobRunSessionRecord[] => {
       return [...byRunId.values()]
         .filter((record) => record.jobId === jobId && record.closedAt == null)
-        .map((record) => ({
-          runId: record.runId,
-          jobId: record.jobId,
-          sessionId: record.sessionId,
-        }))
+        .map((record) => ({ ...record }))
     },
-    getLatestActiveBySessionId: (
-      sessionId: string
-    ): { runId: string; jobId: string; sessionId: string } | null => {
+    getLatestActiveBySessionId: (sessionId: string): JobRunSessionRecord | null => {
       const record = [...byRunId.values()]
         .filter((entry) => entry.sessionId === sessionId && entry.closedAt == null)
         .at(-1)
-      if (!record) {
-        return null
-      }
 
-      return {
-        runId: record.runId,
-        jobId: record.jobId,
-        sessionId: record.sessionId,
-      }
+      return record ?? null
     },
   }
 }
@@ -738,6 +724,236 @@ describe("buildInternalApiServer", () => {
     await app.close()
   })
 
+  it("lists, shows, and cancels background tasks via dedicated endpoints", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "job-background-ctrl-1",
+      type: "interactive_background_oneshot",
+      status: "running",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 5_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: "session-origin-ctrl-1",
+          sourceMessageId: "msg-ctrl-1",
+          chatId: 777,
+        },
+        request: {
+          text: "Investigate build performance regressions",
+          requestedAt: 4_900,
+          rationale: "long-running investigation",
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 5_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: "lock-ctrl-1",
+      lockExpiresAt: 6_000,
+      createdAt: 4_900,
+      updatedAt: 4_900,
+    })
+
+    const commandAuditRepository = createCommandAuditRepositoryStub()
+    const jobRunSessionsRepository = createJobRunSessionsRepositoryStub()
+    jobRunSessionsRepository.insert({
+      runId: "run-ctrl-1",
+      jobId: "job-background-ctrl-1",
+      sessionId: "session-background-ctrl-1",
+      createdAt: 5_000,
+    })
+
+    const closeSession = vi.fn(async () => {})
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository,
+      sessionController: {
+        closeSession,
+      },
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository,
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const listed = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/list",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+      },
+    })
+
+    const shown = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/show",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        jobId: "job-background-ctrl-1",
+      },
+    })
+
+    const cancelled = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/cancel",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        jobId: "job-background-ctrl-1",
+        reason: "operator requested stop",
+      },
+    })
+
+    // Assert
+    expect(listed.statusCode).toBe(200)
+    expect(listed.json()).toMatchObject({
+      total: 1,
+      tasks: [{ jobId: "job-background-ctrl-1" }],
+    })
+
+    expect(shown.statusCode).toBe(200)
+    expect(shown.json()).toMatchObject({
+      job: { id: "job-background-ctrl-1", type: "interactive_background_oneshot" },
+      activeRunSessions: [{ sessionId: "session-background-ctrl-1" }],
+    })
+
+    expect(cancelled.statusCode).toBe(200)
+    expect(cancelled.json()).toMatchObject({
+      jobId: "job-background-ctrl-1",
+      outcome: "cancelled",
+      terminalState: "cancelled",
+    })
+    expect(closeSession).toHaveBeenCalledWith("session-background-ctrl-1")
+    expect(jobsRepository.getById("job-background-ctrl-1")?.terminalState).toBe("cancelled")
+
+    const commands = commandAuditRepository.listRecent() as Array<{ command: string }>
+    expect(commands.map((entry) => entry.command)).toEqual(
+      expect.arrayContaining([
+        "list_background_tasks",
+        "show_background_task",
+        "cancel_background_task",
+      ])
+    )
+
+    await app.close()
+  })
+
+  it("keeps completed background tasks unchanged when cancel is requested", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "job-background-completed-1",
+      type: "interactive_background_oneshot",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 5_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: null,
+          sourceMessageId: null,
+          chatId: null,
+        },
+        request: {
+          text: "Generate architecture proposal",
+          requestedAt: 4_900,
+          rationale: null,
+        },
+      }),
+      lastRunAt: 5_500,
+      nextRunAt: null,
+      terminalState: "completed",
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 4_900,
+      updatedAt: 5_500,
+    })
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/cancel",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        jobId: "job-background-completed-1",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      jobId: "job-background-completed-1",
+      outcome: "already_terminal",
+      terminalState: "completed",
+    })
+    expect(jobsRepository.getById("job-background-completed-1")?.terminalState).toBe("completed")
+
+    await app.close()
+  })
+
   it("reports background milestones via active session context and throttles duplicates", async () => {
     // Arrange
     const previousInterval = process.env.OTTO_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS
@@ -1060,6 +1276,109 @@ describe("buildInternalApiServer", () => {
       error: "missing_task_context",
     })
     expect(repository.enqueueOrIgnoreDedupe).not.toHaveBeenCalled()
+
+    await app.close()
+  })
+
+  it("falls back to session context when provided runId is closed", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "job-background-fallback",
+      type: "interactive_background_oneshot",
+      status: "running",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 4_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: "session-origin-fallback",
+          sourceMessageId: "msg-fallback",
+          chatId: 555,
+        },
+        request: {
+          text: "continue analysis",
+          requestedAt: 4_000,
+          rationale: null,
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 4_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: "lock-fallback",
+      lockExpiresAt: 9_999,
+      createdAt: 3_900,
+      updatedAt: 3_900,
+    })
+
+    const jobRunSessionsRepository = createJobRunSessionsRepositoryStub()
+    jobRunSessionsRepository.insert({
+      runId: "run-fallback-closed",
+      jobId: "job-background-closed",
+      sessionId: "session-active-fallback",
+      createdAt: 3_800,
+    })
+    jobRunSessionsRepository.markClosed("run-fallback-closed", 3_850, null)
+    jobRunSessionsRepository.insert({
+      runId: "run-fallback-active",
+      jobId: "job-background-fallback",
+      sessionId: "session-active-fallback",
+      createdAt: 4_000,
+    })
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository,
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/milestone",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        runId: "run-fallback-closed",
+        sessionId: "session-active-fallback",
+        content: "fallback milestone",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      status: "enqueued",
+      taskId: "job-background-fallback",
+      runId: "run-fallback-active",
+    })
 
     await app.close()
   })

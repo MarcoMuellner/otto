@@ -164,6 +164,8 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   let internalApiServer: { url: string; close: () => Promise<void> } | null = null
   let externalApiServer: { url: string; close: () => Promise<void> } | null = null
   let modelCatalogService: ModelCatalogService | null = null
+  let interactiveSessionController: { closeSession: (sessionId: string) => Promise<void> } | null =
+    null
 
   try {
     internalApiServer = await startInternalApiServer({
@@ -173,6 +175,15 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       outboundMessagesRepository,
       sessionBindingsRepository,
       jobRunSessionsRepository,
+      sessionController: {
+        closeSession: async (sessionId: string): Promise<void> => {
+          if (!interactiveSessionController?.closeSession) {
+            throw new Error("Session close is unavailable")
+          }
+
+          await interactiveSessionController.closeSession(sessionId)
+        },
+      },
       jobsRepository,
       userProfileRepository,
       taskAuditRepository,
@@ -383,6 +394,11 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     )
 
     const schedulerSessionGateway = createOpencodeSessionGateway(server.url, logger, modelResolver)
+    interactiveSessionController = schedulerSessionGateway.closeSession
+      ? {
+          closeSession: schedulerSessionGateway.closeSession,
+        }
+      : null
     const taskExecutionEngine = createTaskExecutionEngine({
       logger,
       ottoHome: config.ottoHome,
