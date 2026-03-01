@@ -780,7 +780,10 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               const systemPrompt = promptResolution.systemPrompt
               runPromptProvenance = promptResolution.provenance
               const serializedPromptProvenance = serializePromptProvenance(runPromptProvenance)
-              dependencies.jobsRepository.setRunPromptProvenance?.(runId, serializedPromptProvenance)
+              dependencies.jobsRepository.setRunPromptProvenance?.(
+                runId,
+                serializedPromptProvenance
+              )
               const tools = resolveTools(assistant?.tools)
 
               const sessionId = await dependencies.sessionGateway.ensureSession(null)

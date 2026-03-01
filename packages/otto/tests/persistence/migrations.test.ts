@@ -113,9 +113,9 @@ describe("openPersistenceDatabase", () => {
     // Act
     const db = openPersistenceDatabase({ dbPath })
     const runColumns = db.prepare("PRAGMA table_info(job_runs)").all() as Array<{ name: string }>
-    const runSessionColumns = db
-      .prepare("PRAGMA table_info(job_run_sessions)")
-      .all() as Array<{ name: string }>
+    const runSessionColumns = db.prepare("PRAGMA table_info(job_run_sessions)").all() as Array<{
+      name: string
+    }>
     db.close()
 
     // Assert
