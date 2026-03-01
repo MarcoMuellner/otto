@@ -4,6 +4,12 @@ import { request as httpRequest } from "node:http"
 import { request as httpsRequest } from "node:https"
 
 import {
+  interactivePromptResponseSchema,
+  interactivePromptSurfaceSchema,
+  type InteractivePromptResponse,
+  type InteractivePromptSurface,
+} from "../features/chat/contracts.js"
+import {
   modelCatalogResponseSchema,
   modelDefaultsResponseSchema,
   modelDefaultsUpdateRequestSchema,
@@ -66,6 +72,7 @@ export type OttoExternalUpdateNotificationProfileResponse = UpdateNotificationPr
 export type OttoExternalModelCatalogResponse = ModelCatalogResponse
 export type OttoExternalModelRefreshResponse = ModelRefreshResponse
 export type OttoExternalModelDefaultsResponse = ModelDefaultsResponse
+export type OttoExternalInteractivePromptResponse = InteractivePromptResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -282,6 +289,15 @@ export const createOttoExternalApiClient = ({
     },
     getModelDefaults: async (): Promise<OttoExternalModelDefaultsResponse> => {
       return request("/external/models/defaults", modelDefaultsResponseSchema)
+    },
+    resolveInteractivePrompt: async (
+      surface: InteractivePromptSurface
+    ): Promise<OttoExternalInteractivePromptResponse> => {
+      const parsedSurface = interactivePromptSurfaceSchema.parse(surface)
+      return request(
+        `/external/prompts/interactive?surface=${encodeURIComponent(parsedSurface)}`,
+        interactivePromptResponseSchema
+      )
     },
     updateModelDefaults: async (
       input: ModelDefaultsUpdateRequest

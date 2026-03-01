@@ -33,15 +33,15 @@ type DynamicSessionApi = {
   message?: (input: { path: { id: string; messageID: string } }) => Promise<unknown>
   prompt?: (input: {
     path: { id: string }
-    body: { parts: Array<{ type: "text"; text: string }> }
+    body: { parts: Array<{ type: "text"; text: string }>; system?: string }
   }) => Promise<unknown>
   promptAsync?: (input: {
     path: { id: string }
-    body: { messageID?: string; parts: Array<{ type: "text"; text: string }> }
+    body: { messageID?: string; parts: Array<{ type: "text"; text: string }>; system?: string }
   }) => Promise<unknown>
   chat?: (input: {
     path: { id: string }
-    body: { parts: Array<{ type: "text"; text: string }> }
+    body: { parts: Array<{ type: "text"; text: string }>; system?: string }
   }) => Promise<unknown>
   create?: (input: { body?: { title?: string } }) => Promise<unknown>
 }
@@ -628,10 +628,17 @@ export const createOpencodeChatClient = ({
         throw mapError(error, endpoint)
       }
     },
-    promptSession: async (sessionId: string, text: string): Promise<OpencodeMessage | null> => {
+    promptSession: async (
+      sessionId: string,
+      text: string,
+      options?: {
+        systemPrompt?: string
+      }
+    ): Promise<OpencodeMessage | null> => {
       const endpoint = `/session/${encodeURIComponent(sessionId)}/message`
       const body = {
         parts: [{ type: "text" as const, text }],
+        ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
       }
 
       try {
@@ -662,12 +669,16 @@ export const createOpencodeChatClient = ({
     promptSessionAsync: async (
       sessionId: string,
       text: string,
-      messageId?: string
+      messageId?: string,
+      options?: {
+        systemPrompt?: string
+      }
     ): Promise<void> => {
       const endpoint = `/session/${encodeURIComponent(sessionId)}/prompt_async`
       const body = {
         ...(messageId ? { messageID: messageId } : {}),
         parts: [{ type: "text" as const, text }],
+        ...(options?.systemPrompt ? { system: options.systemPrompt } : {}),
       }
 
       try {

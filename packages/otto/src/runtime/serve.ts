@@ -30,6 +30,7 @@ import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
 import { createUserProfileRepository } from "../persistence/repositories.js"
+import { resolveInteractiveSystemPrompt } from "../prompt-management/index.js"
 import {
   materializeEffectiveOpencodeConfig,
   syncOpencodeToolsPackageJson,
@@ -287,6 +288,15 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
           return updated.modelManagement.flowDefaults
         },
       },
+      promptManagement: {
+        resolveInteractiveSystemPrompt: async (surface) => {
+          return await resolveInteractiveSystemPrompt({
+            ottoHome: config.ottoHome,
+            surface,
+            logger,
+          })
+        },
+      },
     })
     systemServiceStates.external_api = {
       ...systemServiceStates.external_api,
@@ -438,6 +448,15 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       telegramWorker = await startTelegramWorker(logger, telegramConfig, {
         createSessionGateway: async (baseUrl) => {
           return createOpencodeSessionGateway(baseUrl, logger, modelResolver)
+        },
+        resolveInteractiveSystemPrompt: async () => {
+          const resolved = await resolveInteractiveSystemPrompt({
+            ottoHome: config.ottoHome,
+            surface: "telegram",
+            logger,
+          })
+
+          return resolved.systemPrompt.trim().length > 0 ? resolved.systemPrompt : undefined
         },
       })
       systemServiceStates.telegram_worker = {

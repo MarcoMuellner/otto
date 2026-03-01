@@ -61,6 +61,119 @@ describe("createInboundBridge", () => {
     expect(outboundMessagesRepository.enqueue).toHaveBeenCalledOnce()
   })
 
+  it("injects resolved interactive system prompt into OpenCode chat options", async () => {
+    // Arrange
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger
+    const sendMessage = vi.fn(async () => {})
+    const sessionGateway = {
+      ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => "Hello from Otto"),
+      promptSession: vi.fn(async () => "Hello from Otto"),
+    }
+    const sessionBindingsRepository = {
+      getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+      upsert: vi.fn(),
+    }
+    const inboundMessagesRepository = {
+      insert: vi.fn(),
+    }
+    const outboundMessagesRepository = {
+      enqueue: vi.fn(),
+    }
+
+    const bridge = createInboundBridge({
+      logger,
+      sender: { sendMessage },
+      sessionGateway,
+      resolveInteractiveSystemPrompt: async () =>
+        "# Interactive Prompt\nUse Telegram-first formatting.",
+      sessionBindingsRepository,
+      inboundMessagesRepository,
+      outboundMessagesRepository,
+      promptTimeoutMs: 30_000,
+    })
+
+    // Act
+    await bridge.handleTextMessage({
+      sourceMessageId: "prompt-layer-1",
+      chatId: 7,
+      userId: 9,
+      text: "hi",
+    })
+
+    // Assert
+    expect(sessionGateway.promptSessionParts).toHaveBeenCalledWith(
+      "session-1",
+      [{ type: "text", text: "hi" }],
+      {
+        systemPrompt: "# Interactive Prompt\nUse Telegram-first formatting.",
+        modelContext: {
+          flow: "interactiveAssistant",
+        },
+      }
+    )
+  })
+
+  it("falls back when interactive prompt resolution fails", async () => {
+    // Arrange
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger
+    const sendMessage = vi.fn(async () => {})
+    const sessionGateway = {
+      ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => "Hello from Otto"),
+      promptSession: vi.fn(async () => "Hello from Otto"),
+    }
+    const sessionBindingsRepository = {
+      getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+      upsert: vi.fn(),
+    }
+    const inboundMessagesRepository = {
+      insert: vi.fn(),
+    }
+    const outboundMessagesRepository = {
+      enqueue: vi.fn(),
+    }
+
+    const bridge = createInboundBridge({
+      logger,
+      sender: { sendMessage },
+      sessionGateway,
+      resolveInteractiveSystemPrompt: async () => {
+        throw new Error("mapping parse failed")
+      },
+      sessionBindingsRepository,
+      inboundMessagesRepository,
+      outboundMessagesRepository,
+      promptTimeoutMs: 30_000,
+    })
+
+    // Act
+    await bridge.handleTextMessage({
+      sourceMessageId: "prompt-layer-2",
+      chatId: 7,
+      userId: 9,
+      text: "hi",
+    })
+
+    // Assert
+    expect(sessionGateway.promptSessionParts).toHaveBeenCalledWith(
+      "session-1",
+      [{ type: "text", text: "hi" }],
+      {
+        modelContext: {
+          flow: "interactiveAssistant",
+        },
+      }
+    )
+    expect(logger.error).toHaveBeenCalled()
+  })
+
   it("ignores duplicate inbound messages without prompting", async () => {
     // Arrange
     const logger = {

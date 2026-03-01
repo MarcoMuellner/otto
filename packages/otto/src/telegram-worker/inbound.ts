@@ -74,6 +74,7 @@ export type InboundBridgeDependencies = {
   logger: Logger
   sender: TelegramSender
   sessionGateway: OpencodeSessionGateway
+  resolveInteractiveSystemPrompt?: () => Promise<string | undefined>
   sessionBindingsRepository: SessionBindingsRepository
   inboundMessagesRepository: InboundMessagesRepository
   outboundMessagesRepository: OutboundMessagesRepository
@@ -252,10 +253,26 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
     )
 
     const promptStartedAt = Date.now()
+    let systemPrompt: string | undefined
+
+    try {
+      systemPrompt = await dependencies.resolveInteractiveSystemPrompt?.()
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.error(
+        {
+          error: err.message,
+          chatId: input.chatId,
+          sourceMessageId: input.sourceMessageId,
+        },
+        "Failed to resolve interactive prompt layers; continuing without explicit system prompt"
+      )
+    }
 
     try {
       assistantText = await withTimeout(
         dependencies.sessionGateway.promptSessionParts(resolvedSessionId, input.parts, {
+          ...(systemPrompt ? { systemPrompt } : {}),
           modelContext: {
             flow: "interactiveAssistant",
           },

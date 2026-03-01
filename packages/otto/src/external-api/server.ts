@@ -40,6 +40,10 @@ import {
 } from "../model-management/contracts.js"
 import type { ModelCatalogSnapshot } from "../model-management/types.js"
 import type {
+  InteractivePromptResolution,
+  InteractivePromptSurface,
+} from "../prompt-management/index.js"
+import type {
   CommandAuditRecord,
   JobRecord,
   JobRunRecord,
@@ -146,6 +150,11 @@ type ExternalApiServerDependencies = {
     getFlowDefaults: () => Promise<OttoModelFlowDefaults>
     updateFlowDefaults: (flowDefaults: OttoModelFlowDefaults) => Promise<OttoModelFlowDefaults>
   }
+  promptManagement?: {
+    resolveInteractiveSystemPrompt: (
+      surface: InteractivePromptSurface
+    ) => Promise<InteractivePromptResolution>
+  }
 }
 
 const listJobsQuerySchema = z.object({
@@ -181,6 +190,12 @@ const cancelBackgroundJobParamsSchema = z.object({
 
 const cancelBackgroundJobRequestSchema = z.object({
   reason: z.string().trim().min(1).optional(),
+})
+
+const interactivePromptSurfaceSchema = z.enum(["telegram", "web", "cli"])
+
+const interactivePromptQuerySchema = z.object({
+  surface: interactivePromptSurfaceSchema.optional().default("web"),
 })
 
 const taskListRecordSchema = z.object({
@@ -293,6 +308,21 @@ const backgroundCancelResponseSchema = z.object({
   outcome: z.enum(["cancelled", "already_cancelled", "already_terminal"]),
   terminalState: z.enum(["completed", "expired", "cancelled"]),
   stopSessionResults: z.array(backgroundStopSessionResultSchema),
+})
+
+const interactivePromptWarningSchema = z.object({
+  code: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+})
+
+const interactivePromptResponseSchema = z.object({
+  flow: z.literal("interactive"),
+  surface: interactivePromptSurfaceSchema,
+  media: z.enum(["chatapps", "web", "cli"]),
+  routeKey: z.string().trim().min(1),
+  mappingSource: z.enum(["effective", "system"]),
+  systemPrompt: z.string(),
+  warnings: z.array(interactivePromptWarningSchema),
 })
 
 const serviceStatusSchema = z.enum(["ok", "degraded", "disabled"])
@@ -644,6 +674,42 @@ export const buildExternalApiServer = (
       dependencies.logger.error(
         { error: err.message },
         "External API notification profile set failed"
+      )
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/prompts/interactive", async (request, reply) => {
+    if (!dependencies.promptManagement) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const query = interactivePromptQuerySchema.parse(request.query)
+      const resolved = await dependencies.promptManagement.resolveInteractiveSystemPrompt(
+        query.surface
+      )
+
+      return reply.code(200).send(
+        interactivePromptResponseSchema.parse({
+          flow: resolved.flow,
+          surface: resolved.surface,
+          media: resolved.media,
+          routeKey: resolved.routeKey,
+          mappingSource: resolved.mappingSource,
+          systemPrompt: resolved.systemPrompt,
+          warnings: resolved.warnings,
+        })
+      )
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      dependencies.logger.error(
+        { error: err.message },
+        "External API interactive prompt resolution failed"
       )
       return reply.code(500).send({ error: "internal_error" })
     }

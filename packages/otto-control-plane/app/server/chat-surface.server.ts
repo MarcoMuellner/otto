@@ -19,13 +19,76 @@ import {
   type OpencodeMessage,
   type OpencodeSessionSummary,
 } from "./opencode-chat.server.js"
+import { createOttoExternalApiClientFromEnvironment } from "./otto-external-api.server.js"
 
 type ChatSurfaceServiceDependencies = {
   resolveConfig: typeof resolveCachedControlPlaneChatConfig
   listSessionBindings: typeof listSessionBindings
   insertCommandAudit: typeof insertCommandAudit
   createOpencodeChatClient: typeof createOpencodeChatClient
+  resolveInteractiveSystemPrompt?: () => Promise<string | undefined>
   now?: () => number
+}
+
+const INTERACTIVE_PROMPT_RESOLUTION_TIMEOUT_MS = 2_000
+
+type PromptResolutionStatus = "resolved" | "fallback" | "disabled" | "empty"
+
+const resolveInteractivePromptForSurface = async (
+  dependencies: ChatSurfaceServiceDependencies
+): Promise<{
+  systemPrompt: string | undefined
+  status: PromptResolutionStatus
+}> => {
+  if (!dependencies.resolveInteractiveSystemPrompt) {
+    return {
+      systemPrompt: undefined,
+      status: "disabled",
+    }
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+  try {
+    const resolved = await Promise.race([
+      dependencies.resolveInteractiveSystemPrompt(),
+      new Promise<string | undefined>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error("Interactive prompt resolution timed out"))
+        }, INTERACTIVE_PROMPT_RESOLUTION_TIMEOUT_MS)
+      }),
+    ])
+
+    const trimmed = resolved?.trim() ?? ""
+    if (trimmed.length === 0) {
+      return {
+        systemPrompt: undefined,
+        status: "empty",
+      }
+    }
+
+    return {
+      systemPrompt: resolved,
+      status: "resolved",
+    }
+  } catch {
+    return {
+      systemPrompt: undefined,
+      status: "fallback",
+    }
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+    }
+  }
+}
+
+const resolveInteractiveSystemPromptFromRuntime = async (): Promise<string | undefined> => {
+  const client = await createOttoExternalApiClientFromEnvironment()
+  const resolved = await client.resolveInteractivePrompt("web")
+  const trimmed = resolved.systemPrompt.trim()
+
+  return trimmed.length > 0 ? resolved.systemPrompt : undefined
 }
 
 const defaultDependencies: ChatSurfaceServiceDependencies = {
@@ -33,6 +96,7 @@ const defaultDependencies: ChatSurfaceServiceDependencies = {
   listSessionBindings,
   insertCommandAudit,
   createOpencodeChatClient,
+  resolveInteractiveSystemPrompt: resolveInteractiveSystemPromptFromRuntime,
 }
 
 type BindingContext = {
@@ -253,11 +317,20 @@ export const createChatSurfaceService = (
         },
       })
 
-      return {
+      const response: {
+        threads: ChatThread[]
+        degraded: boolean
+        message?: string
+      } = {
         threads,
         degraded,
-        ...(degradedMessage ? { message: degradedMessage } : {}),
       }
+
+      if (degradedMessage) {
+        response.message = degradedMessage
+      }
+
+      return response
     },
     createThread: async (title?: string): Promise<ChatThread> => {
       const config = await dependencies.resolveConfig()
@@ -334,12 +407,17 @@ export const createChatSurfaceService = (
           },
         })
 
-        return {
+        const response: ChatMessagesResponse = {
           thread,
           messages: messages.map(toChatMessage),
           degraded,
-          ...(degradedMessage ? { message: degradedMessage } : {}),
         }
+
+        if (degradedMessage) {
+          response.message = degradedMessage
+        }
+
+        return response
       } catch (error) {
         writeAudit(dependencies, config.stateDatabasePath, {
           command: "chat.list_messages",
@@ -356,9 +434,16 @@ export const createChatSurfaceService = (
     sendMessage: async (threadId: string, text: string): Promise<{ reply: ChatMessage | null }> => {
       const config = await dependencies.resolveConfig()
       const chatClient = dependencies.createOpencodeChatClient({ baseUrl: config.opencodeApiUrl })
+      const promptResolution = await resolveInteractivePromptForSurface(dependencies)
 
       try {
-        const reply = await chatClient.promptSession(threadId, text)
+        const reply = await chatClient.promptSession(
+          threadId,
+          text,
+          promptResolution.systemPrompt
+            ? { systemPrompt: promptResolution.systemPrompt }
+            : undefined
+        )
 
         writeAudit(dependencies, config.stateDatabasePath, {
           command: "chat.send_message",
@@ -368,6 +453,7 @@ export const createChatSurfaceService = (
             threadId,
             sentChars: text.length,
             hasReply: reply !== null,
+            promptResolutionStatus: promptResolution.status,
           },
         })
 
@@ -382,6 +468,7 @@ export const createChatSurfaceService = (
           metadata: {
             threadId,
             sentChars: text.length,
+            promptResolutionStatus: promptResolution.status,
           },
         })
 
@@ -396,6 +483,7 @@ export const createChatSurfaceService = (
       const chatClient = dependencies.createOpencodeChatClient({ baseUrl: config.opencodeApiUrl })
       const startedAt = (dependencies.now ?? Date.now)()
       const requestMessageId = `cp-${startedAt}-${Math.random().toString(36).slice(2, 10)}`
+      const promptResolution = await resolveInteractivePromptForSurface(dependencies)
 
       const abortController = new AbortController()
       const textParts = new Map<string, string>()
@@ -503,7 +591,14 @@ export const createChatSurfaceService = (
         }
 
         const firstEventPromise = nextEventWithTimeout()
-        await chatClient.promptSessionAsync(threadId, text)
+        await chatClient.promptSessionAsync(
+          threadId,
+          text,
+          undefined,
+          promptResolution.systemPrompt
+            ? { systemPrompt: promptResolution.systemPrompt }
+            : undefined
+        )
 
         let firstEventPending = true
         while (true) {
@@ -679,6 +774,7 @@ export const createChatSurfaceService = (
             sentChars: text.length,
             streamedChars: lastText.length,
             hasReply: reply !== null,
+            promptResolutionStatus: promptResolution.status,
           },
         })
 
@@ -699,6 +795,7 @@ export const createChatSurfaceService = (
             threadId,
             sentChars: text.length,
             streamedChars: lastText.length,
+            promptResolutionStatus: promptResolution.status,
           },
         })
 
