@@ -8,6 +8,11 @@ import {
   interactiveBackgroundJobPayloadSchema,
 } from "../api-services/interactive-background-jobs.js"
 import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
+import {
+  PROMPT_ROUTE_MEDIA_VALUES,
+  resolveJobSystemPrompt,
+  type PromptRouteMedia,
+} from "../prompt-management/index.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import { executeHeartbeatTask, HEARTBEAT_TASK_TYPE } from "./heartbeat.js"
@@ -204,6 +209,84 @@ const resolveTools = (value: unknown): Record<string, boolean> | undefined => {
   }
 
   return Object.fromEntries(toolEntries)
+}
+
+const isPromptRouteMedia = (value: unknown): value is PromptRouteMedia => {
+  return (
+    typeof value === "string" &&
+    PROMPT_ROUTE_MEDIA_VALUES.includes(value as (typeof PROMPT_ROUTE_MEDIA_VALUES)[number])
+  )
+}
+
+const resolvePromptRouteMediaFromPayload = (payload: unknown): PromptRouteMedia | undefined => {
+  const payloadRecord = asRecord(payload)
+  if (!payloadRecord) {
+    return undefined
+  }
+
+  const directMedia = payloadRecord.media
+  if (isPromptRouteMedia(directMedia)) {
+    return directMedia
+  }
+
+  const source = asRecord(payloadRecord.source)
+  if (!source) {
+    return undefined
+  }
+
+  const sourceMedia = source.media
+  if (isPromptRouteMedia(sourceMedia)) {
+    return sourceMedia
+  }
+
+  if (Number.isInteger(source.chatId) && Number(source.chatId) > 0) {
+    return "chatapps"
+  }
+
+  return undefined
+}
+
+const resolveJobExecutionSystemPrompt = async (input: {
+  dependencies: TaskExecutionEngineDependencies
+  jobId: string
+  flow: "scheduled" | "background" | "watchdog"
+  payload: unknown
+  profileId: string | null
+  fallbackSystemPrompt?: string
+}): Promise<string | undefined> => {
+  try {
+    const resolved = await resolveJobSystemPrompt({
+      ottoHome: input.dependencies.ottoHome,
+      flow: input.flow,
+      media: input.flow === "watchdog" ? null : resolvePromptRouteMediaFromPayload(input.payload),
+      profileId: input.profileId,
+      logger: input.dependencies.logger,
+    })
+
+    if (resolved.systemPrompt.trim().length > 0) {
+      return resolved.systemPrompt
+    }
+  } catch (error) {
+    const err = error as Error
+    input.dependencies.logger.error(
+      {
+        jobId: input.jobId,
+        flow: input.flow,
+        profileId: input.profileId,
+        error: err.message,
+      },
+      "Failed to resolve prompt layers for job execution; falling back to task config prompt"
+    )
+  }
+
+  if (
+    typeof input.fallbackSystemPrompt === "string" &&
+    input.fallbackSystemPrompt.trim().length > 0
+  ) {
+    return input.fallbackSystemPrompt
+  }
+
+  return undefined
 }
 
 const parseTaskPayload = (payload: string | null): { parsed: unknown; error: string | null } => {
@@ -514,11 +597,19 @@ const enqueueBackgroundLifecycleMessage = (
   }
 }
 
-const executeWatchdogTask = (
+const executeWatchdogTask = async (
   dependencies: TaskExecutionEngineDependencies,
   job: ClaimedJobRecord,
   nowTimestamp: number
-): TaskExecutionResult => {
+): Promise<TaskExecutionResult> => {
+  await resolveJobExecutionSystemPrompt({
+    dependencies,
+    jobId: job.id,
+    flow: "watchdog",
+    payload: null,
+    profileId: null,
+  })
+
   const payloadParsed = parseTaskPayload(job.payload)
   if (payloadParsed.error) {
     return toFailureResult("invalid_watchdog_payload", payloadParsed.error)
@@ -598,7 +689,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
 
       try {
         if (job.type === WATCHDOG_TASK_TYPE) {
-          result = executeWatchdogTask(dependencies, job, startedAt)
+          result = await executeWatchdogTask(dependencies, job, startedAt)
         } else if (job.type === HEARTBEAT_TASK_TYPE) {
           const heartbeatResult = executeHeartbeatTask(
             {
@@ -643,8 +734,16 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 profile
               )
               const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
-              const systemPrompt =
+              const fallbackSystemPrompt =
                 typeof assistant?.prompt === "string" ? assistant.prompt : undefined
+              const systemPrompt = await resolveJobExecutionSystemPrompt({
+                dependencies,
+                jobId: job.id,
+                flow: "background",
+                payload: validatedPayload.data,
+                profileId: job.profileId,
+                fallbackSystemPrompt,
+              })
               const tools = resolveTools(assistant?.tools)
 
               const sessionId = await dependencies.sessionGateway.ensureSession(null)
@@ -755,8 +854,16 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               profile
             )
             const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
-            const systemPrompt =
+            const fallbackSystemPrompt =
               typeof assistant?.prompt === "string" ? assistant.prompt : undefined
+            const systemPrompt = await resolveJobExecutionSystemPrompt({
+              dependencies,
+              jobId: job.id,
+              flow: "scheduled",
+              payload: payloadParsed.parsed,
+              profileId: job.profileId,
+              fallbackSystemPrompt,
+            })
             const tools = resolveTools(assistant?.tools)
 
             const bindingKey = `scheduler:task:${job.id}:assistant`

@@ -68,6 +68,198 @@ const writeMinimalTaskConfig = async (ottoHome: string): Promise<void> => {
     ),
     "utf8"
   )
+
+  await writeFile(
+    path.join(taskConfigDirectory, "profiles", "general-reminder.jsonc"),
+    JSON.stringify(
+      {
+        version: 1,
+        id: "general-reminder",
+        laneOverrides: {
+          scheduled: {
+            opencode: {},
+          },
+        },
+      },
+      null,
+      2
+    ),
+    "utf8"
+  )
+}
+
+const writeMinimalPromptWorkspace = async (
+  ottoHome: string,
+  input: {
+    userMapping?: Record<string, unknown>
+  } = {}
+): Promise<void> => {
+  const systemPromptsDirectory = path.join(ottoHome, "system-prompts")
+  const userPromptsDirectory = path.join(ottoHome, "prompts")
+
+  await mkdir(path.join(systemPromptsDirectory, "layers"), { recursive: true })
+  await mkdir(path.join(systemPromptsDirectory, "task-profiles"), { recursive: true })
+  await mkdir(path.join(userPromptsDirectory, "layers"), { recursive: true })
+  await mkdir(path.join(userPromptsDirectory, "task-profiles"), { recursive: true })
+
+  await writeFile(
+    path.join(systemPromptsDirectory, "mapping.jsonc"),
+    JSON.stringify(
+      {
+        version: 1,
+        selectors: {
+          interactive: {
+            default: "interactive-cli",
+            media: {
+              chatapps: "interactive-chatapps",
+              web: "interactive-web",
+              cli: "interactive-cli",
+            },
+          },
+          scheduled: {
+            default: "scheduled-cli",
+            media: {
+              chatapps: "scheduled-chatapps",
+              web: "scheduled-web",
+              cli: "scheduled-cli",
+            },
+          },
+          background: {
+            default: "background-cli",
+            media: {
+              chatapps: "background-chatapps",
+              web: "background-web",
+              cli: "background-cli",
+            },
+          },
+          watchdog: {
+            default: "watchdog-default",
+            media: {},
+          },
+        },
+        routes: {
+          "interactive-chatapps": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+            },
+          },
+          "interactive-web": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+            },
+          },
+          "interactive-cli": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+            },
+          },
+          "scheduled-chatapps": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+              surface: { source: "system", path: "layers/surface-scheduled.md" },
+              media: { source: "system", path: "layers/media-chatapps.md" },
+            },
+          },
+          "scheduled-web": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+              surface: { source: "system", path: "layers/surface-scheduled.md" },
+              media: { source: "system", path: "layers/media-web.md" },
+            },
+          },
+          "scheduled-cli": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+              surface: { source: "system", path: "layers/surface-scheduled.md" },
+              media: { source: "system", path: "layers/media-cli.md" },
+            },
+          },
+          "background-chatapps": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+              surface: { source: "system", path: "layers/surface-background.md" },
+              media: { source: "system", path: "layers/media-chatapps.md" },
+            },
+          },
+          "background-web": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+              surface: { source: "system", path: "layers/surface-background.md" },
+              media: { source: "system", path: "layers/media-web.md" },
+            },
+          },
+          "background-cli": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/core.md" },
+              surface: { source: "system", path: "layers/surface-background.md" },
+              media: { source: "system", path: "layers/media-cli.md" },
+            },
+          },
+          "watchdog-default": {
+            layers: {
+              "core-persona": { source: "system", path: "layers/watchdog.md" },
+            },
+          },
+        },
+      },
+      null,
+      2
+    ),
+    "utf8"
+  )
+
+  await writeFile(
+    path.join(userPromptsDirectory, "mapping.jsonc"),
+    JSON.stringify(input.userMapping ?? { version: 1, selectors: {}, routes: {} }, null, 2),
+    "utf8"
+  )
+
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "core.md"),
+    "# Core\nSystem core\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "surface-scheduled.md"),
+    "## Surface\nScheduled surface\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "surface-background.md"),
+    "## Surface\nBackground surface\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "media-cli.md"),
+    "## Media\nCLI media\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "media-web.md"),
+    "## Media\nWeb media\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "media-chatapps.md"),
+    "## Media\nChatapps media\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "watchdog.md"),
+    "# Watchdog\nSystem watchdog\n",
+    "utf8"
+  )
+
+  await writeFile(
+    path.join(systemPromptsDirectory, "task-profiles", "general-reminder.md"),
+    "## Task Profile\nSystem general reminder profile\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(userPromptsDirectory, "task-profiles", "general-reminder.md"),
+    "## Task Profile\nUser general reminder profile\n",
+    "utf8"
+  )
 }
 
 describe("task execution engine", () => {
@@ -81,6 +273,7 @@ describe("task execution engine", () => {
     const sessionBindingsRepository = createSessionBindingsRepository(db)
     const outboundMessagesRepository = createOutboundMessagesRepository(db)
     await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
 
     jobsRepository.createTask({
       id: "job-recurring-1",
@@ -107,8 +300,17 @@ describe("task execution engine", () => {
       throw new Error("Expected due task claim")
     }
 
+    const promptSession = vi.fn(async () =>
+      JSON.stringify({
+        status: "success",
+        summary: "Reminder handled",
+        errors: [],
+      })
+    )
+
+    const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
-      logger: createLoggerStub(),
+      logger,
       ottoHome: tempRoot,
       jobsRepository,
       jobRunSessionsRepository,
@@ -116,12 +318,7 @@ describe("task execution engine", () => {
       outboundMessagesRepository,
       sessionGateway: {
         ensureSession: async () => "session-1",
-        promptSession: async () =>
-          JSON.stringify({
-            status: "success",
-            summary: "Reminder handled",
-            errors: [],
-          }),
+        promptSession,
       },
       defaultWatchdogChatId: 777,
       userProfileRepository: {
@@ -143,6 +340,93 @@ describe("task execution engine", () => {
     expect(task?.status).toBe("idle")
     expect(task?.lockToken).toBeNull()
     expect(task?.nextRunAt).toBe(2_000 + 30 * 60_000)
+    expect(promptSession).toHaveBeenCalledWith(
+      "session-1",
+      expect.stringContaining("Execute this scheduled Otto task now."),
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("## Surface\nScheduled surface"),
+      })
+    )
+
+    db.close()
+  })
+
+  it("applies optional task-profile prompt layer for scheduled jobs", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
+
+    jobsRepository.createTask({
+      id: "job-recurring-profile-1",
+      type: "general-reminder",
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: "general-reminder",
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: JSON.stringify({ message: "Call Alice" }),
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const claimed = jobsRepository.claimDue(1_000, 10, "lock-profile-1", 60_000, 1_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due task claim")
+    }
+
+    const promptSession = vi.fn(async () =>
+      JSON.stringify({
+        status: "success",
+        summary: "Reminder handled",
+        errors: [],
+      })
+    )
+
+    const logger = createLoggerStub()
+    const engine = createTaskExecutionEngine({
+      logger,
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-profile-1",
+        promptSession,
+      },
+      defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => 2_000,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    expect(promptSession).toHaveBeenCalledWith(
+      "session-profile-1",
+      expect.any(String),
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("## Task Profile\nUser general reminder profile"),
+      })
+    )
 
     db.close()
   })
@@ -157,6 +441,7 @@ describe("task execution engine", () => {
     const sessionBindingsRepository = createSessionBindingsRepository(db)
     const outboundMessagesRepository = createOutboundMessagesRepository(db)
     await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
 
     jobsRepository.createTask({
       id: "job-oneshot-1",
@@ -183,8 +468,9 @@ describe("task execution engine", () => {
       throw new Error("Expected due task claim")
     }
 
+    const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
-      logger: createLoggerStub(),
+      logger,
       ottoHome: tempRoot,
       jobsRepository,
       jobRunSessionsRepository,
@@ -228,6 +514,7 @@ describe("task execution engine", () => {
     const sessionBindingsRepository = createSessionBindingsRepository(db)
     const outboundMessagesRepository = createOutboundMessagesRepository(db)
     await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
 
     jobsRepository.createTask({
       id: "job-oneshot-2",
@@ -303,6 +590,7 @@ describe("task execution engine", () => {
     const sessionBindingsRepository = createSessionBindingsRepository(db)
     const outboundMessagesRepository = createOutboundMessagesRepository(db)
     await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
 
     jobsRepository.createTask({
       id: "job-background-1",
@@ -343,8 +631,16 @@ describe("task execution engine", () => {
     }
 
     const closeSession = vi.fn(async () => {})
+    const promptSession = vi.fn(async () =>
+      JSON.stringify({
+        status: "success",
+        summary: "Background execution completed with final deliverable.",
+        errors: [],
+      })
+    )
+    const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
-      logger: createLoggerStub(),
+      logger,
       ottoHome: tempRoot,
       jobsRepository,
       jobRunSessionsRepository,
@@ -353,12 +649,7 @@ describe("task execution engine", () => {
       sessionGateway: {
         ensureSession: async () => "session-background-run-1",
         closeSession,
-        promptSession: async () =>
-          JSON.stringify({
-            status: "success",
-            summary: "Background execution completed with final deliverable.",
-            errors: [],
-          }),
+        promptSession,
       },
       defaultWatchdogChatId: 777,
       userProfileRepository: {
@@ -402,6 +693,20 @@ describe("task execution engine", () => {
     })
     expect(runSession.closedAt).toBe(4_500)
     expect(closeSession).toHaveBeenCalledWith("session-background-run-1")
+    expect(promptSession).toHaveBeenCalledWith(
+      "session-background-run-1",
+      expect.stringContaining("Execute this interactive background request now."),
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("## Surface\nBackground surface"),
+      })
+    )
+    expect(promptSession).toHaveBeenCalledWith(
+      "session-background-run-1",
+      expect.any(String),
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("## Media\nChatapps media"),
+      })
+    )
 
     const task = jobsRepository.getById("job-background-1")
     expect(task?.terminalState).toBe("completed")
@@ -553,8 +858,9 @@ describe("task execution engine", () => {
       throw new Error("Expected due background task claim")
     }
 
+    const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
-      logger: createLoggerStub(),
+      logger,
       ottoHome: tempRoot,
       jobsRepository,
       jobRunSessionsRepository,
@@ -594,6 +900,39 @@ describe("task execution engine", () => {
     const sessionBindingsRepository = createSessionBindingsRepository(db)
     const outboundMessagesRepository = createOutboundMessagesRepository(db)
     await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot, {
+      userMapping: {
+        version: 1,
+        selectors: {
+          watchdog: {
+            default: "watchdog-user",
+          },
+        },
+        routes: {
+          "watchdog-default": {
+            layers: {
+              "core-persona": {
+                source: "user",
+                path: "layers/watchdog-user.md",
+              },
+            },
+          },
+          "watchdog-user": {
+            layers: {
+              "core-persona": {
+                source: "user",
+                path: "layers/watchdog-user.md",
+              },
+            },
+          },
+        },
+      },
+    })
+    await writeFile(
+      path.join(tempRoot, "prompts", "layers", "watchdog-user.md"),
+      "# User\n",
+      "utf8"
+    )
 
     jobsRepository.createTask({
       id: "task-failed-1",
@@ -665,8 +1004,9 @@ describe("task execution engine", () => {
       throw new Error("Expected due watchdog claim")
     }
 
+    const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
-      logger: createLoggerStub(),
+      logger,
       ottoHome: tempRoot,
       jobsRepository,
       jobRunSessionsRepository,
@@ -697,6 +1037,10 @@ describe("task execution engine", () => {
     expect(runs[0]?.status).toBe("success")
     expect(runs[0]?.resultJson).toContain("Watchdog checked")
     expect(outboundMessagesRepository.listDue(10_000)).toHaveLength(1)
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ warningCode: "watchdog_user_override_blocked" }),
+      expect.stringContaining("watchdog")
+    )
 
     db.close()
   })

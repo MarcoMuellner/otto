@@ -4,6 +4,7 @@ export {
   resolvePromptRoute,
 } from "./routing.js"
 export { resolveInteractiveSystemPrompt } from "./interactive-resolution.js"
+export { resolveJobSystemPrompt } from "./job-resolution.js"
 export { resolvePromptComposition } from "./resolver.js"
 export { PROMPT_LAYER_ORDER } from "./types.js"
 export {
@@ -39,3 +40,4 @@ export type {
   InteractivePromptSurface,
   InteractivePromptWarning,
 } from "./interactive-resolution.js"
+export type { JobPromptFlow, JobPromptResolution, JobPromptWarning } from "./job-resolution.js"
