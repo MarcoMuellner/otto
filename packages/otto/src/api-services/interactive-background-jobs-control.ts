@@ -133,7 +133,7 @@ const insertTaskAudit = (
   dependencies.taskAuditRepository.insert({
     id: randomUUID(),
     taskId: input.taskId,
-    action: "delete",
+    action: "update",
     lane: "interactive",
     actor: input.actor,
     beforeJson: input.beforeJson,

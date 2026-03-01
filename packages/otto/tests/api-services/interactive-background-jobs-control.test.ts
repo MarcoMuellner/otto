@@ -242,7 +242,7 @@ describe("interactive background jobs control service", () => {
     expect(closeSession).toHaveBeenCalledWith("session-run-3")
     expect(jobs.get("job-background-3")?.terminalState).toBe("cancelled")
     expect(activeSessions[0]?.closedAt).toBe(9_000)
-    expect(audits[0]?.action).toBe("delete")
+    expect(audits[0]?.action).toBe("update")
     expect(audits[0]?.metadataJson).toContain("cancel_background_task")
   })
 
