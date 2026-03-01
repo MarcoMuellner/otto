@@ -1,0 +1,287 @@
+{
+  "generatedAt": "2026-03-01T14:15:00Z",
+  "evidence": [
+    {
+      "id": "fact-001",
+      "type": "config",
+      "source": "pnpm-workspace.yaml:1",
+      "summary": "Workspace boundaries include root and every directory under packages/*."
+    },
+    {
+      "id": "fact-002",
+      "type": "config",
+      "source": "package.json:15",
+      "summary": "Root build/check scripts orchestrate otto, otto-control-plane, otto-extension-sdk, and otto-extensions from one workspace entrypoint."
+    },
+    {
+      "id": "fact-003",
+      "type": "config",
+      "source": "packages/otto/tsdown.config.ts:4",
+      "summary": "Core runtime package builds three Node entry bundles: src/index.ts, src/extension-cli.ts, src/model-cli.ts."
+    },
+    {
+      "id": "fact-004",
+      "type": "runtime",
+      "source": "packages/otto/src/index.ts:23",
+      "summary": "Runtime command dispatcher routes setup, serve, and telegram-worker through one entry orchestrator."
+    },
+    {
+      "id": "fact-005",
+      "type": "runtime",
+      "source": "packages/otto/src/runtime/serve.ts:97",
+      "summary": "Serve boot mutates/rewrites effective OpenCode config before launching services."
+    },
+    {
+      "id": "fact-006",
+      "type": "runtime",
+      "source": "packages/otto/src/runtime/serve.ts:171",
+      "summary": "Serve boot composes and starts internal API with repositories and audit dependencies."
+    },
+    {
+      "id": "fact-007",
+      "type": "runtime",
+      "source": "packages/otto/src/runtime/serve.ts:208",
+      "summary": "Serve boot composes and starts external API with system status provider and restart hook."
+    },
+    {
+      "id": "fact-008",
+      "type": "runtime",
+      "source": "packages/otto/src/runtime/serve.ts:314",
+      "summary": "Serve boot starts OpenCode server, then model catalog sync/refresh pipeline."
+    },
+    {
+      "id": "fact-009",
+      "type": "runtime",
+      "source": "packages/otto/src/runtime/serve.ts:424",
+      "summary": "Scheduler kernel starts after watchdog/heartbeat task provisioning and execution engine wiring."
+    },
+    {
+      "id": "fact-010",
+      "type": "runtime",
+      "source": "packages/otto/src/runtime/serve.ts:438",
+      "summary": "Telegram worker startup is best-effort and can degrade without stopping serve mode."
+    },
+    {
+      "id": "fact-011",
+      "type": "code",
+      "source": "packages/otto/src/internal-api/server.ts:3",
+      "summary": "Internal API uses Fastify and exposes tool-facing routes."
+    },
+    {
+      "id": "fact-012",
+      "type": "code",
+      "source": "packages/otto/src/internal-api/server.ts:575",
+      "summary": "Internal API rejects unauthorized requests by bearer token check against runtime config token."
+    },
+    {
+      "id": "fact-013",
+      "type": "code",
+      "source": "packages/otto/src/external-api/server.ts:525",
+      "summary": "External API enforces authorization in a global onRequest hook."
+    },
+    {
+      "id": "fact-014",
+      "type": "code",
+      "source": "packages/otto/src/api/token.ts:15",
+      "summary": "Internal and external APIs share one persisted token file under <ottoHome>/secrets/internal-api.token."
+    },
+    {
+      "id": "fact-015",
+      "type": "code",
+      "source": "packages/otto/src/persistence/database.ts:28",
+      "summary": "Runtime persistence boundary is SQLite at <ottoHome>/data/otto-state.db."
+    },
+    {
+      "id": "fact-016",
+      "type": "code",
+      "source": "packages/otto/src/config/otto-config.ts:115",
+      "summary": "Primary runtime config boundary is ~/.config/otto/config.jsonc with validated defaults."
+    },
+    {
+      "id": "fact-017",
+      "type": "code",
+      "source": "packages/otto/scripts/validate-extensions.ts:1",
+      "summary": "Core package delegates extension catalog validation to otto-extension-sdk command entrypoint."
+    },
+    {
+      "id": "fact-018",
+      "type": "code",
+      "source": "packages/otto/src/extensions/registry.ts:48",
+      "summary": "Runtime extension installer defaults to remote registry index hosted from packages/otto-extensions."
+    },
+    {
+      "id": "fact-019",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/routes.ts:3",
+      "summary": "Control-plane route graph includes both UI routes and /api BFF routes in one server process."
+    },
+    {
+      "id": "fact-020",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/server/env.ts:34",
+      "summary": "Control-plane default token file path is ~/.otto/secrets/internal-api.token (shared runtime secret contract)."
+    },
+    {
+      "id": "fact-021",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/server/otto-external-api.server.ts:210",
+      "summary": "Control-plane centralizes runtime HTTP calls in one typed external API adapter/facade."
+    },
+    {
+      "id": "fact-022",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/server/chat-env.server.ts:9",
+      "summary": "Control-plane chat config reads Otto config file path convention (.config/otto/config.jsonc)."
+    },
+    {
+      "id": "fact-023",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/server/chat-env.server.ts:207",
+      "summary": "Control-plane chat defaults include direct runtime DB path construction <ottoHome>/data/otto-state.db."
+    },
+    {
+      "id": "fact-024",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/server/otto-state.server.ts:31",
+      "summary": "Control-plane directly queries runtime-owned SQLite session_bindings table."
+    },
+    {
+      "id": "fact-025",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/routes/system.tsx:72",
+      "summary": "System route loader calls runtime adapter directly on server side."
+    },
+    {
+      "id": "fact-026",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/routes/system.tsx:88",
+      "summary": "Same system route also refreshes via /api/system/status fetch from client side."
+    },
+    {
+      "id": "fact-027",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/routes/jobs.tsx:53",
+      "summary": "jobs.tsx defines INHERIT_MODEL_OPTION and local mutation parsing helpers."
+    },
+    {
+      "id": "fact-028",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/routes/jobs.$jobId.tsx:46",
+      "summary": "jobs.$jobId.tsx repeats the same constants/utility concerns as jobs.tsx."
+    },
+    {
+      "id": "fact-029",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/routes/chat.tsx:41",
+      "summary": "Chat route loader uses server chat-surface service to list threads."
+    },
+    {
+      "id": "fact-030",
+      "type": "code",
+      "source": "packages/otto-control-plane/app/routes/chat.tsx:79",
+      "summary": "Chat route also performs client-side fetch calls against BFF chat endpoints."
+    },
+    {
+      "id": "fact-031",
+      "type": "code",
+      "source": "packages/otto-control-plane/scripts/assert-no-client-secrets.mjs:5",
+      "summary": "Control-plane build adds a post-build client bundle scan for API token markers."
+    },
+    {
+      "id": "fact-032",
+      "type": "code",
+      "source": "packages/otto-extension-sdk/src/catalog.ts:173",
+      "summary": "SDK default catalog root is hardcoded to sibling path ../../otto-extensions/extensions."
+    },
+    {
+      "id": "fact-033",
+      "type": "code",
+      "source": "packages/otto-extension-sdk/src/catalog.ts:375",
+      "summary": "SDK validation runs parse/schema checks first, then cross-entry dependency checks."
+    },
+    {
+      "id": "fact-034",
+      "type": "code",
+      "source": "packages/otto-extension-sdk/src/jsonc.ts:135",
+      "summary": "SDK maintains a custom JSONC parser implementation instead of importing jsonc-parser."
+    },
+    {
+      "id": "fact-035",
+      "type": "code",
+      "source": "packages/otto-extensions/scripts/generate-registry.mjs:37",
+      "summary": "Registry generation shells out to system tar and writes versioned artifacts plus index.json."
+    },
+    {
+      "id": "fact-036",
+      "type": "code",
+      "source": "packages/otto-extensions/README.md:34",
+      "summary": "Extension package docs state validation contract lives in otto-extension-sdk and is invoked through otto."
+    },
+    {
+      "id": "fact-037",
+      "type": "code",
+      "source": "packages/otto-extensions/extensions/anylist/manifest.jsonc:13",
+      "summary": "AnyList extension manifest declares tools and skills payloads plus env requirements."
+    },
+    {
+      "id": "fact-038",
+      "type": "code",
+      "source": "packages/otto-extensions/extensions/anylist/tools/anylist.ts:29",
+      "summary": "AnyList tool runtime uses broad any-typed client adapters and a large switch-based action dispatcher."
+    },
+    {
+      "id": "fact-039",
+      "type": "code",
+      "source": "packages/experiments/src/test-anylist.ts:17",
+      "summary": "Experiments package exposes a single integration script with direct external AnyList login flow."
+    },
+    {
+      "id": "fact-040",
+      "type": "code",
+      "source": "packages/ui-design/prototype/index.html:725",
+      "summary": "ui-design prototype uses one in-file controller object for view routing, command palette, and theme behavior."
+    },
+    {
+      "id": "fact-041",
+      "type": "code",
+      "source": "packages/ui-design/design-language-otto-paper-void.md:24",
+      "summary": "Design specification explicitly mirrors runtime command model (setup/serve/telegram-worker)."
+    },
+    {
+      "id": "fact-042",
+      "type": "code",
+      "source": "packages/otto/src/api-services/tasks-read.ts:36",
+      "summary": "Task lane parameter is explicitly ignored in listTasksForLane (void lane), indicating abstraction leakage."
+    },
+    {
+      "id": "fact-043",
+      "type": "graph",
+      "source": "packages/otto/src/persistence/repositories.ts:1",
+      "summary": "Import-graph scan found no local import cycles across current packages; fan-in hotspots include repositories.ts (23) and otto-external-api.server.ts (31)."
+    },
+    {
+      "id": "fact-044",
+      "type": "history",
+      "source": "packages/otto/src/runtime/serve.ts:76",
+      "summary": "Git churn sample: serve.ts 18 commits, internal-api/server.ts 13, telegram-worker/worker.ts 10."
+    },
+    {
+      "id": "fact-045",
+      "type": "history",
+      "source": "packages/otto-control-plane/app/routes/chat.tsx:1",
+      "summary": "Git churn sample in control-plane: chat.tsx 6 commits, jobs.tsx 7, jobs.$jobId.tsx 9, settings.tsx 5."
+    },
+    {
+      "id": "fact-046",
+      "type": "history",
+      "source": "packages/otto/src/runtime/serve.ts:424",
+      "summary": "Co-change hotspot scan shows large coupling around serve.ts with repositories/internal/external APIs and tests."
+    },
+    {
+      "id": "fact-047",
+      "type": "history",
+      "source": "packages/otto/src/runtime/serve.ts:171",
+      "summary": "Cross-package co-change counts (current packages): otto<->otto-control-plane=8, otto<->otto-extensions=5, otto<->otto-extension-sdk=3."
+    }
+  ]
+}
