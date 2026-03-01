@@ -94,6 +94,7 @@ type InternalApiServerDependencies = {
   jobRunSessionsRepository?: {
     listActiveByJobId: (jobId: string) => JobRunSessionRecord[]
     markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
+    markCloseError?: (runId: string, closeErrorMessage: string) => void
   }
   sessionController?: {
     closeSession: (sessionId: string) => Promise<void>
@@ -437,6 +438,7 @@ export const buildInternalApiServer = (
   const jobRunSessionsRepository = dependencies.jobRunSessionsRepository ?? {
     listActiveByJobId: () => [] as JobRunSessionRecord[],
     markClosed: () => {},
+    markCloseError: () => {},
   }
 
   app.post("/internal/tools/queue-telegram-message", async (request, reply) => {

@@ -288,4 +288,91 @@ describe("interactive background jobs control service", () => {
       terminalState: "completed",
     })
   })
+
+  it("keeps session active when session close fails so cancel can retry", async () => {
+    // Arrange
+    const jobs = new Map<string, JobRecord>([
+      [
+        "job-background-5",
+        createBackgroundJob("job-background-5", {
+          status: "running",
+          terminalState: null,
+          terminalReason: null,
+        }),
+      ],
+    ])
+    const activeSessions: JobRunSessionRecord[] = [
+      {
+        runId: "run-5",
+        jobId: "job-background-5",
+        sessionId: "session-run-5",
+        createdAt: 1_200,
+        closedAt: null,
+        closeErrorMessage: null,
+      },
+    ]
+    const markClosed = vi.fn()
+    const markCloseError = vi.fn((runId: string, closeErrorMessage: string) => {
+      const index = activeSessions.findIndex((entry) => entry.runId === runId)
+      if (index < 0) {
+        return
+      }
+
+      activeSessions[index] = {
+        ...activeSessions[index],
+        closeErrorMessage,
+      }
+    })
+
+    // Act
+    const result = await cancelInteractiveBackgroundJob(
+      {
+        jobsRepository: {
+          getById: (jobId) => jobs.get(jobId) ?? null,
+          cancelTask: (jobId, reason, updatedAt = Date.now()) => {
+            const existing = jobs.get(jobId)
+            if (!existing) {
+              return
+            }
+
+            jobs.set(jobId, {
+              ...existing,
+              status: "idle",
+              nextRunAt: null,
+              terminalState: "cancelled",
+              terminalReason: reason,
+              lockToken: null,
+              lockExpiresAt: null,
+              updatedAt,
+            })
+          },
+        },
+        jobRunSessionsRepository: {
+          listActiveByJobId: () => activeSessions,
+          markClosed,
+          markCloseError,
+        },
+        taskAuditRepository: {
+          insert: () => {},
+        },
+        sessionController: {
+          closeSession: async () => {
+            throw new Error("temporary close failure")
+          },
+        },
+      },
+      {
+        jobId: "job-background-5",
+        actor: "internal_tool",
+        source: "internal_api",
+      }
+    )
+
+    // Assert
+    expect(result?.outcome).toBe("cancelled")
+    expect(markClosed).not.toHaveBeenCalled()
+    expect(markCloseError).toHaveBeenCalledWith("run-5", "temporary close failure")
+    expect(activeSessions[0]?.closedAt).toBeNull()
+    expect(activeSessions[0]?.closeErrorMessage).toBe("temporary close failure")
+  })
 })

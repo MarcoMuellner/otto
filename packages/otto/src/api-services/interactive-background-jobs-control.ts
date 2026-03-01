@@ -30,6 +30,7 @@ type BackgroundJobsRepository = {
 type BackgroundJobRunSessionsRepository = {
   listActiveByJobId: (jobId: string) => JobRunSessionRecord[]
   markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
+  markCloseError?: (runId: string, closeErrorMessage: string) => void
 }
 
 type BackgroundTaskAuditRepository = {
@@ -204,7 +205,7 @@ export const cancelInteractiveBackgroundJob = async (
     jobsRepository: Pick<BackgroundJobsRepository, "getById" | "cancelTask">
     jobRunSessionsRepository: Pick<
       BackgroundJobRunSessionsRepository,
-      "listActiveByJobId" | "markClosed"
+      "listActiveByJobId" | "markClosed" | "markCloseError"
     >
     taskAuditRepository: BackgroundTaskAuditRepository
     sessionController?: BackgroundSessionController
@@ -240,7 +241,12 @@ export const cancelInteractiveBackgroundJob = async (
       errorMessage = err.message
     }
 
-    dependencies.jobRunSessionsRepository.markClosed(session.runId, now, errorMessage)
+    if (!errorMessage) {
+      dependencies.jobRunSessionsRepository.markClosed(session.runId, now, null)
+    } else {
+      dependencies.jobRunSessionsRepository.markCloseError?.(session.runId, errorMessage)
+    }
+
     stopSessionResults.push({
       sessionId: session.sessionId,
       runId: session.runId,

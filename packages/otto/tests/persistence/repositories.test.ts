@@ -113,6 +113,70 @@ describe("persistence repositories", () => {
     db.close()
   })
 
+  it("records close errors without closing active run sessions", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const repository = createJobRunSessionsRepository(db)
+
+    jobsRepository.createTask({
+      id: "job-err-1",
+      type: "interactive_background_oneshot",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 1_000,
+      cadenceMinutes: null,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    jobsRepository.insertRun({
+      id: "run-err-1",
+      jobId: "job-err-1",
+      scheduledFor: 1_000,
+      startedAt: 1_001,
+      finishedAt: null,
+      status: "running",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 1_001,
+    })
+
+    repository.insert({
+      runId: "run-err-1",
+      jobId: "job-err-1",
+      sessionId: "session-err-1",
+      createdAt: 1_001,
+    })
+
+    // Act
+    repository.markCloseError("run-err-1", "temporary close failure")
+
+    // Assert
+    expect(repository.getByRunId("run-err-1")).toEqual({
+      runId: "run-err-1",
+      jobId: "job-err-1",
+      sessionId: "session-err-1",
+      createdAt: 1_001,
+      closedAt: null,
+      closeErrorMessage: "temporary close failure",
+    })
+    expect(repository.listActiveByJobId("job-err-1")).toHaveLength(1)
+
+    db.close()
+  })
+
   it("queues outbound messages and marks delivery", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)

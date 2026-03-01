@@ -1161,6 +1161,13 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
      WHERE run_id = ?`
   )
 
+  const markCloseErrorStatement = database.prepare(
+    `UPDATE job_run_sessions
+     SET close_error_message = ?
+     WHERE run_id = ?
+       AND closed_at IS NULL`
+  )
+
   const getByRunIdStatement = database.prepare(
     `SELECT
       run_id as runId,
@@ -1198,6 +1205,9 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
     },
     markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null): void => {
       markClosedStatement.run(closedAt, closeErrorMessage, runId)
+    },
+    markCloseError: (runId: string, closeErrorMessage: string): void => {
+      markCloseErrorStatement.run(closeErrorMessage, runId)
     },
     getByRunId: (runId: string): JobRunSessionRecord | null => {
       const row = getByRunIdStatement.get(runId) as JobRunSessionRecord | undefined
