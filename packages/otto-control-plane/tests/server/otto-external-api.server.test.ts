@@ -98,6 +98,33 @@ describe("createOttoExternalApiClient", () => {
     expect(payload).toEqual({ jobs: [createListItem()] })
   })
 
+  it("forwards optional jobs lane/type query filters", async () => {
+    // Arrange
+    const seenUrls: string[] = []
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL): Promise<Response> => {
+        seenUrls.push(typeof input === "string" ? input : input.toString())
+        return Response.json({ jobs: [createListItem()] }, { status: 200 })
+      },
+    })
+
+    // Act
+    const payload = await client.listJobs({
+      lane: "interactive",
+      type: "interactive_background_oneshot",
+    })
+
+    // Assert
+    expect(payload.jobs).toHaveLength(1)
+    expect(seenUrls).toEqual([
+      "http://127.0.0.1:4190/external/jobs?lane=interactive&type=interactive_background_oneshot",
+    ])
+  })
+
   it("returns system status payload", async () => {
     // Arrange
     const client = createOttoExternalApiClient({
@@ -551,6 +578,19 @@ describe("createOttoExternalApiClient", () => {
           bodyText: typeof init?.body === "string" ? init.body : null,
         })
 
+        const requestUrl = typeof input === "string" ? input : input.toString()
+        if (requestUrl.includes("/external/background-jobs/")) {
+          return Response.json(
+            {
+              jobId: "job-1",
+              outcome: "cancelled",
+              terminalState: "cancelled",
+              stopSessionResults: [],
+            },
+            { status: 200 }
+          )
+        }
+
         return Response.json(successBody, { status: 200 })
       },
     })
@@ -572,8 +612,12 @@ describe("createOttoExternalApiClient", () => {
 
     await client.runJobNow("job-1")
 
+    await client.cancelBackgroundJob("job-1", {
+      reason: "operator requested stop",
+    })
+
     // Assert
-    expect(seenRequests).toHaveLength(4)
+    expect(seenRequests).toHaveLength(5)
     expect(seenRequests[0]).toMatchObject({
       url: "http://127.0.0.1:4190/external/jobs",
       method: "POST",
@@ -597,6 +641,12 @@ describe("createOttoExternalApiClient", () => {
       method: "POST",
       authorization: "Bearer secret-token",
       contentType: null,
+    })
+    expect(seenRequests[4]).toMatchObject({
+      url: "http://127.0.0.1:4190/external/background-jobs/job-1/cancel",
+      method: "POST",
+      authorization: "Bearer secret-token",
+      contentType: "application/json",
     })
   })
 })

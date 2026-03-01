@@ -4,6 +4,8 @@ import {
 } from "./otto-external-api.server.js"
 import {
   deleteJobMutationRequestSchema,
+  INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+  type ExternalBackgroundJobCancelResponse,
   type ExternalJobMutationResponse,
   type ExternalJobResponse,
   type UpdateJobMutationRequest,
@@ -22,6 +24,10 @@ type ApiJobDetailRouteDependencies = {
     input: UpdateJobMutationRequest
   ) => Promise<ExternalJobMutationResponse>
   deleteJob: (jobId: string, reason?: string) => Promise<ExternalJobMutationResponse>
+  cancelBackgroundJob: (
+    jobId: string,
+    reason?: string
+  ) => Promise<ExternalBackgroundJobCancelResponse>
 }
 
 type ApiJobDetailLoaderArgs = {
@@ -45,6 +51,13 @@ const defaultDependencies: ApiJobDetailRouteDependencies = {
   deleteJob: async (jobId: string, reason?: string): Promise<ExternalJobMutationResponse> => {
     const client = await createOttoExternalApiClientFromEnvironment()
     return client.deleteJob(jobId, reason ? { reason } : undefined)
+  },
+  cancelBackgroundJob: async (
+    jobId: string,
+    reason?: string
+  ): Promise<ExternalBackgroundJobCancelResponse> => {
+    const client = await createOttoExternalApiClientFromEnvironment()
+    return client.cancelBackgroundJob(jobId, reason ? { reason } : undefined)
   },
 }
 
@@ -146,7 +159,12 @@ export const createApiJobDetailAction = (
       }
 
       const payload = deleteJobMutationRequestSchema.parse(bodyResult.body)
-      const result = await dependencies.deleteJob(jobId, payload.reason)
+      const details = await dependencies.loadJob(jobId)
+      const isBackgroundTask = details.job.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+      const result = isBackgroundTask
+        ? await dependencies.cancelBackgroundJob(jobId, payload.reason)
+        : await dependencies.deleteJob(jobId, payload.reason)
+
       return Response.json(result, { status: 200 })
     } catch (error) {
       return mapJobsMutationErrorToResponse(error)

@@ -1,3 +1,5 @@
+import { z } from "zod"
+
 import { createOttoExternalApiClientFromEnvironment } from "./otto-external-api.server.js"
 import {
   createJobMutationRequestSchema,
@@ -13,14 +15,22 @@ import {
 } from "./api-jobs-mutations.server.js"
 
 type ApiJobsRouteDependencies = {
-  loadJobs: () => Promise<ExternalJobsResponse>
+  loadJobs: (input: {
+    lane: "interactive" | "scheduled"
+    type?: string
+  }) => Promise<ExternalJobsResponse>
   createJob: (input: CreateJobMutationRequest) => Promise<ExternalJobMutationResponse>
 }
 
+const listJobsQuerySchema = z.object({
+  lane: z.enum(["interactive", "scheduled"]).optional().default("scheduled"),
+  type: z.string().trim().min(1).optional(),
+})
+
 const defaultDependencies: ApiJobsRouteDependencies = {
-  loadJobs: async (): Promise<ExternalJobsResponse> => {
+  loadJobs: async (input): Promise<ExternalJobsResponse> => {
     const client = await createOttoExternalApiClientFromEnvironment()
-    return client.listJobs()
+    return client.listJobs(input)
   },
   createJob: async (input: CreateJobMutationRequest): Promise<ExternalJobMutationResponse> => {
     const client = await createOttoExternalApiClientFromEnvironment()
@@ -38,9 +48,25 @@ const defaultDependencies: ApiJobsRouteDependencies = {
 export const createApiJobsLoader = (
   dependencies: ApiJobsRouteDependencies = defaultDependencies
 ) => {
-  return async (): Promise<Response> => {
+  return async ({ request }: { request: Request }): Promise<Response> => {
+    const searchParams = new URL(request.url).searchParams
+    const parsedQuery = listJobsQuerySchema.safeParse({
+      lane: searchParams.get("lane") ?? undefined,
+      type: searchParams.get("type") ?? undefined,
+    })
+
+    if (!parsedQuery.success) {
+      return Response.json(
+        {
+          error: "invalid_request",
+          details: parsedQuery.error.issues,
+        },
+        { status: 400 }
+      )
+    }
+
     try {
-      const jobs = await dependencies.loadJobs()
+      const jobs = await dependencies.loadJobs(parsedQuery.data)
       return Response.json(jobs, { status: 200 })
     } catch (error) {
       return mapJobsReadErrorToResponse(error)

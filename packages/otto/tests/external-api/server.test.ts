@@ -855,6 +855,110 @@ describe("buildExternalApiServer", () => {
     await app.close()
   })
 
+  it("filters jobs list by explicit task type", async () => {
+    // Arrange
+    const tasks: TaskListRecord[] = [
+      createTaskListRecord("job-system-1"),
+      {
+        ...createTaskListRecord("job-background-1"),
+        type: "interactive_background_oneshot",
+        scheduleType: "oneshot",
+        runAt: 2_000,
+        cadenceMinutes: null,
+        nextRunAt: 2_000,
+      },
+    ]
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        listTasks: (): TaskListRecord[] => tasks,
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/jobs?lane=interactive&type=interactive_background_oneshot",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      jobs: [{ id: "job-background-1", type: "interactive_background_oneshot" }],
+    })
+
+    await app.close()
+  })
+
+  it("applies lane filtering between scheduled and interactive views", async () => {
+    // Arrange
+    const tasks: TaskListRecord[] = [
+      createTaskListRecord("job-system-1"),
+      {
+        ...createTaskListRecord("job-background-1"),
+        type: "interactive_background_oneshot",
+        scheduleType: "oneshot",
+        runAt: 2_000,
+        cadenceMinutes: null,
+        nextRunAt: 2_000,
+      },
+    ]
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        listTasks: (): TaskListRecord[] => tasks,
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const scheduledResponse = await app.inject({
+      method: "GET",
+      url: "/external/jobs?lane=scheduled",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+    const interactiveResponse = await app.inject({
+      method: "GET",
+      url: "/external/jobs?lane=interactive",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(scheduledResponse.statusCode).toBe(200)
+    expect(scheduledResponse.json()).toMatchObject({
+      jobs: [{ id: "job-system-1", type: "heartbeat" }],
+    })
+
+    expect(interactiveResponse.statusCode).toBe(200)
+    expect(interactiveResponse.json()).toMatchObject({
+      jobs: [{ id: "job-background-1", type: "interactive_background_oneshot" }],
+    })
+
+    await app.close()
+  })
+
   it("returns not found for unknown job details", async () => {
     // Arrange
     const app = buildExternalApiServer({
@@ -881,6 +985,122 @@ describe("buildExternalApiServer", () => {
 
     // Assert
     expect(response.statusCode).toBe(404)
+
+    await app.close()
+  })
+
+  it("cancels interactive background jobs with session-stop parity semantics", async () => {
+    // Arrange
+    const jobs = new Map<string, JobRecord>()
+    jobs.set("job-background-ctrl-1", {
+      ...createJobRecord("job-background-ctrl-1"),
+      type: "interactive_background_oneshot",
+      scheduleType: "oneshot",
+      status: "running",
+      runAt: 5_000,
+      cadenceMinutes: null,
+      nextRunAt: 5_000,
+      lockToken: "lock-1",
+      lockExpiresAt: 6_000,
+    })
+
+    const activeSessions = [
+      {
+        runId: "run-bg-1",
+        jobId: "job-background-ctrl-1",
+        sessionId: "session-bg-1",
+        createdAt: 5_000,
+        closedAt: null,
+        closeErrorMessage: null,
+      },
+    ]
+    const closeSessionCalls: string[] = []
+
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (jobId: string): JobRecord | null => jobs.get(jobId) ?? null,
+        cancelTask: (jobId: string, reason: string | null, updatedAt = Date.now()): void => {
+          const current = jobs.get(jobId)
+          if (!current) {
+            return
+          }
+
+          jobs.set(jobId, {
+            ...current,
+            status: "idle",
+            nextRunAt: null,
+            terminalState: "cancelled",
+            terminalReason: reason,
+            lockToken: null,
+            lockExpiresAt: null,
+            updatedAt,
+          })
+        },
+      }),
+      jobRunSessionsRepository: {
+        listActiveByJobId: (): typeof activeSessions => activeSessions,
+        markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null): void => {
+          const index = activeSessions.findIndex((entry) => entry.runId === runId)
+          if (index < 0) {
+            return
+          }
+
+          activeSessions[index] = {
+            ...activeSessions[index],
+            closedAt,
+            closeErrorMessage,
+          }
+        },
+        markCloseError: (runId: string, closeErrorMessage: string): void => {
+          const index = activeSessions.findIndex((entry) => entry.runId === runId)
+          if (index < 0) {
+            return
+          }
+
+          activeSessions[index] = {
+            ...activeSessions[index],
+            closeErrorMessage,
+          }
+        },
+      },
+      sessionController: {
+        closeSession: async (sessionId: string): Promise<void> => {
+          closeSessionCalls.push(sessionId)
+        },
+      },
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/background-jobs/job-background-ctrl-1/cancel",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        reason: "operator requested stop",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      jobId: "job-background-ctrl-1",
+      outcome: "cancelled",
+      terminalState: "cancelled",
+      stopSessionResults: [{ sessionId: "session-bg-1", status: "stopped" }],
+    })
+    expect(closeSessionCalls).toEqual(["session-bg-1"])
+    expect(jobs.get("job-background-ctrl-1")?.terminalState).toBe("cancelled")
 
     await app.close()
   })

@@ -44,6 +44,9 @@ describe("api.job-detail loader", () => {
       deleteJob: async () => {
         throw new Error("unused in loader test")
       },
+      cancelBackgroundJob: async () => {
+        throw new Error("unused in loader test")
+      },
     })
 
     // Act
@@ -68,6 +71,9 @@ describe("api.job-detail loader", () => {
         throw new Error("unused in loader test")
       },
       deleteJob: async () => {
+        throw new Error("unused in loader test")
+      },
+      cancelBackgroundJob: async () => {
         throw new Error("unused in loader test")
       },
     })
@@ -107,6 +113,9 @@ describe("api.job-detail action", () => {
       deleteJob: async () => {
         throw new Error("unused in patch test")
       },
+      cancelBackgroundJob: async () => {
+        throw new Error("unused in patch test")
+      },
     })
 
     // Act
@@ -136,7 +145,7 @@ describe("api.job-detail action", () => {
     // Arrange
     const action = createApiJobDetailAction({
       loadJob: async () => {
-        throw new Error("unused in action test")
+        return sampleJobResponse
       },
       updateJob: async () => {
         throw new Error("unused in delete test")
@@ -149,6 +158,9 @@ describe("api.job-detail action", () => {
           id: "job-1",
           status: "deleted",
         }
+      },
+      cancelBackgroundJob: async () => {
+        throw new Error("unused in delete test")
       },
     })
 
@@ -183,6 +195,9 @@ describe("api.job-detail action", () => {
       deleteJob: async () => {
         throw new Error("should not run")
       },
+      cancelBackgroundJob: async () => {
+        throw new Error("should not run")
+      },
     })
 
     // Act
@@ -213,6 +228,9 @@ describe("api.job-detail action", () => {
       deleteJob: async () => {
         throw new Error("unused in update test")
       },
+      cancelBackgroundJob: async () => {
+        throw new Error("unused in update test")
+      },
     })
 
     // Act
@@ -235,5 +253,60 @@ describe("api.job-detail action", () => {
       error: "forbidden_mutation",
     })
     expect(updateCallCount).toBe(0)
+  })
+
+  it("routes DELETE to background cancel semantics for interactive background jobs", async () => {
+    // Arrange
+    let deleteCallCount = 0
+    const action = createApiJobDetailAction({
+      loadJob: async () => {
+        return {
+          ...sampleJobResponse,
+          job: {
+            ...sampleJobResponse.job,
+            type: "interactive_background_oneshot",
+          },
+        }
+      },
+      updateJob: async () => {
+        throw new Error("unused in background cancel test")
+      },
+      deleteJob: async () => {
+        deleteCallCount += 1
+        throw new Error("should not run")
+      },
+      cancelBackgroundJob: async (jobId, reason) => {
+        expect(jobId).toBe("job-1")
+        expect(reason).toBe("Operator cancelled")
+
+        return {
+          jobId,
+          outcome: "cancelled",
+          terminalState: "cancelled",
+          stopSessionResults: [],
+        }
+      },
+    })
+
+    // Act
+    const response = await action({
+      params: {
+        jobId: "job-1",
+      },
+      request: new Request("http://localhost/api/jobs/job-1", {
+        method: "DELETE",
+        body: JSON.stringify({ reason: "Operator cancelled" }),
+      }),
+    })
+
+    // Assert
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      jobId: "job-1",
+      outcome: "cancelled",
+      terminalState: "cancelled",
+      stopSessionResults: [],
+    })
+    expect(deleteCallCount).toBe(0)
   })
 })

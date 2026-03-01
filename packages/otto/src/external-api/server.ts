@@ -4,6 +4,8 @@ import Fastify, { type FastifyInstance } from "fastify"
 import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
+import { cancelInteractiveBackgroundJob } from "../api-services/interactive-background-jobs-control.js"
+import { INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE } from "../api-services/interactive-background-jobs.js"
 import {
   applyNotificationProfileUpdate,
   diffNotificationProfileFields,
@@ -41,6 +43,7 @@ import type {
   CommandAuditRecord,
   JobRecord,
   JobRunRecord,
+  JobRunSessionRecord,
   TaskAuditRecord,
   TaskListRecord,
   UserProfileRecord,
@@ -118,6 +121,14 @@ type ExternalApiServerDependencies = {
     cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
     runTaskNow: (jobId: string, scheduledFor: number, updatedAt?: number) => void
   }
+  jobRunSessionsRepository?: {
+    listActiveByJobId: (jobId: string) => JobRunSessionRecord[]
+    markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
+    markCloseError: (runId: string, closeErrorMessage: string) => void
+  }
+  sessionController?: {
+    closeSession: (sessionId: string) => Promise<void>
+  }
   taskAuditRepository: {
     listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
     insert: (record: TaskAuditRecord) => void
@@ -138,7 +149,8 @@ type ExternalApiServerDependencies = {
 }
 
 const listJobsQuerySchema = z.object({
-  lane: z.literal("scheduled").optional().default("scheduled"),
+  lane: z.enum(["interactive", "scheduled"]).optional().default("scheduled"),
+  type: z.string().trim().min(1).optional(),
 })
 
 const getJobParamsSchema = z.object({
@@ -161,6 +173,14 @@ const getRunParamsSchema = z.object({
 
 const mutateJobParamsSchema = z.object({
   id: z.string().trim().min(1),
+})
+
+const cancelBackgroundJobParamsSchema = z.object({
+  id: z.string().trim().min(1),
+})
+
+const cancelBackgroundJobRequestSchema = z.object({
+  reason: z.string().trim().min(1).optional(),
 })
 
 const taskListRecordSchema = z.object({
@@ -259,6 +279,20 @@ const taskMutationResponseSchema = z.object({
   id: z.string().min(1),
   status: z.enum(["created", "updated", "deleted", "run_now_scheduled"]),
   scheduledFor: z.number().int().optional(),
+})
+
+const backgroundStopSessionResultSchema = z.object({
+  sessionId: z.string().trim().min(1),
+  runId: z.string().trim().min(1),
+  status: z.enum(["stopped", "stop_failed"]),
+  errorMessage: z.string().nullable(),
+})
+
+const backgroundCancelResponseSchema = z.object({
+  jobId: z.string().trim().min(1),
+  outcome: z.enum(["cancelled", "already_cancelled", "already_terminal"]),
+  terminalState: z.enum(["completed", "expired", "cancelled"]),
+  stopSessionResults: z.array(backgroundStopSessionResultSchema),
 })
 
 const serviceStatusSchema = z.enum(["ok", "degraded", "disabled"])
@@ -763,9 +797,22 @@ export const buildExternalApiServer = (
   app.get("/external/jobs", async (request, reply) => {
     try {
       const query = listJobsQuerySchema.parse(request.query)
-      const jobs = listTasksForLane(dependencies.jobsRepository, query.lane).map(
-        mapTaskListForExternal
-      )
+      const jobs = listTasksForLane(dependencies.jobsRepository, query.lane)
+        .filter((job) => {
+          if (query.lane === "interactive") {
+            return job.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+          }
+
+          return job.type !== INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+        })
+        .map(mapTaskListForExternal)
+        .filter((job) => {
+          if (!query.type) {
+            return true
+          }
+
+          return job.type === query.type
+        })
 
       return reply.code(200).send(
         listJobsResponseSchema.parse({
@@ -779,6 +826,55 @@ export const buildExternalApiServer = (
 
       const err = error as Error
       dependencies.logger.error({ error: err.message }, "External API job list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/external/background-jobs/:id/cancel", async (request, reply) => {
+    try {
+      const params = cancelBackgroundJobParamsSchema.parse(request.params)
+      const payload = cancelBackgroundJobRequestSchema.parse(request.body ?? {})
+
+      if (!dependencies.jobRunSessionsRepository) {
+        return reply.code(503).send({
+          error: "service_unavailable",
+          message: "Background cancellation controls are unavailable",
+        })
+      }
+
+      const result = await cancelInteractiveBackgroundJob(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          jobRunSessionsRepository: dependencies.jobRunSessionsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+          sessionController: dependencies.sessionController,
+        },
+        {
+          jobId: params.id,
+          reason: payload.reason,
+          actor: "control_plane",
+          source: "external_api",
+        }
+      )
+
+      if (!result) {
+        return reply.code(404).send({ error: "not_found", message: "Task not found" })
+      }
+
+      return reply.code(200).send(backgroundCancelResponseSchema.parse(result))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      dependencies.logger.error(
+        {
+          error: err.message,
+          taskType: INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+        },
+        "External API background cancel failed"
+      )
       return reply.code(500).send({ error: "internal_error" })
     }
   })

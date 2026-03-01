@@ -3,6 +3,7 @@ import { z } from "zod"
 import { modelRefSchema } from "../models/contracts.js"
 
 export const taskManagedBySchema = z.enum(["system", "operator"])
+export const INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE = "interactive_background_oneshot"
 
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
@@ -186,6 +187,20 @@ export const externalJobMutationResponseSchema = z.object({
   scheduledFor: z.number().int().optional(),
 })
 
+export const externalBackgroundCancelStopSessionSchema = z.object({
+  sessionId: z.string().trim().min(1),
+  runId: z.string().trim().min(1),
+  status: z.enum(["stopped", "stop_failed"]),
+  errorMessage: z.string().nullable(),
+})
+
+export const externalBackgroundJobCancelResponseSchema = z.object({
+  jobId: z.string().trim().min(1),
+  outcome: z.enum(["cancelled", "already_cancelled", "already_terminal"]),
+  terminalState: z.enum(["completed", "expired", "cancelled"]),
+  stopSessionResults: z.array(externalBackgroundCancelStopSessionSchema),
+})
+
 export type ExternalJobListItem = z.infer<typeof externalJobListItemSchema>
 export type ExternalJobDetail = z.infer<typeof externalJobDetailSchema>
 export type ExternalJobAuditEntry = z.infer<typeof externalJobAuditEntrySchema>
@@ -203,3 +218,6 @@ export type CreateJobMutationRequest = z.infer<typeof createJobMutationRequestSc
 export type UpdateJobMutationRequest = z.infer<typeof updateJobMutationRequestSchema>
 export type DeleteJobMutationRequest = z.infer<typeof deleteJobMutationRequestSchema>
 export type ExternalJobMutationResponse = z.infer<typeof externalJobMutationResponseSchema>
+export type ExternalBackgroundJobCancelResponse = z.infer<
+  typeof externalBackgroundJobCancelResponseSchema
+>

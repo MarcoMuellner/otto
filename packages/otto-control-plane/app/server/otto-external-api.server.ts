@@ -16,6 +16,7 @@ import {
 import {
   createJobMutationRequestSchema,
   deleteJobMutationRequestSchema,
+  externalBackgroundJobCancelResponseSchema,
   externalJobMutationResponseSchema,
   externalSystemRestartResponseSchema,
   externalSystemStatusResponseSchema,
@@ -26,6 +27,7 @@ import {
   externalJobsResponseSchema,
   healthResponseSchema,
   type ExternalJobAuditResponse,
+  type ExternalBackgroundJobCancelResponse,
   type CreateJobMutationRequest,
   type DeleteJobMutationRequest,
   type ExternalJobMutationResponse,
@@ -56,6 +58,7 @@ export type OttoExternalJobAuditResponse = ExternalJobAuditResponse
 export type OttoExternalJobRunsResponse = ExternalJobRunsResponse
 export type OttoExternalJobRunDetailResponse = ExternalJobRunDetailResponse
 export type OttoExternalJobMutationResponse = ExternalJobMutationResponse
+export type OttoExternalBackgroundJobCancelResponse = ExternalBackgroundJobCancelResponse
 export type OttoExternalSystemStatusResponse = ExternalSystemStatusResponse
 export type OttoExternalSystemRestartResponse = ExternalSystemRestartResponse
 export type OttoExternalNotificationProfileResponse = NotificationProfileResponse
@@ -95,6 +98,11 @@ type OttoExternalApiClientInput = {
   config: ControlPlaneServerConfig
   fetchImpl?: FetchLike
   requestImpl?: RequestLike
+}
+
+type ListJobsInput = {
+  lane?: "interactive" | "scheduled"
+  type?: string
 }
 
 const buildRequestHeaders = (token: string, includeJsonBody: boolean): Record<string, string> => {
@@ -284,8 +292,14 @@ export const createOttoExternalApiClient = ({
         body: payload,
       })
     },
-    listJobs: async (): Promise<OttoExternalJobsResponse> => {
-      return request("/external/jobs?lane=scheduled", externalJobsResponseSchema)
+    listJobs: async (input: ListJobsInput = {}): Promise<OttoExternalJobsResponse> => {
+      const searchParams = new URLSearchParams()
+      searchParams.set("lane", input.lane ?? "scheduled")
+      if (input.type?.trim()) {
+        searchParams.set("type", input.type.trim())
+      }
+
+      return request(`/external/jobs?${searchParams.toString()}`, externalJobsResponseSchema)
     },
     getJob: async (jobId: string): Promise<OttoExternalJobResponse> => {
       return request(`/external/jobs/${encodeURIComponent(jobId)}`, externalJobResponseSchema)
@@ -358,6 +372,20 @@ export const createOttoExternalApiClient = ({
         externalJobMutationResponseSchema,
         {
           method: "DELETE",
+          body: payload,
+        }
+      )
+    },
+    cancelBackgroundJob: async (
+      jobId: string,
+      input?: DeleteJobMutationRequest
+    ): Promise<OttoExternalBackgroundJobCancelResponse> => {
+      const payload = deleteJobMutationRequestSchema.parse(input ?? {})
+      return request(
+        `/external/background-jobs/${encodeURIComponent(jobId)}/cancel`,
+        externalBackgroundJobCancelResponseSchema,
+        {
+          method: "POST",
           body: payload,
         }
       )
