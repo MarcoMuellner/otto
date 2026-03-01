@@ -154,6 +154,41 @@ describe("createOpencodeChatClient", () => {
     })
   })
 
+  it("forwards system prompt when sending session prompt", async () => {
+    // Arrange
+    let capturedSystemPrompt: string | undefined
+    const client = createOpencodeChatClient({
+      baseUrl: "http://127.0.0.1:4096",
+      sessionApi: {
+        prompt: async (input) => {
+          capturedSystemPrompt = input.body.system
+          return {
+            data: {
+              info: {
+                id: "m-4",
+                role: "assistant",
+                createdAt: 3_000,
+              },
+              parts: [{ type: "text", text: "layered reply" }],
+            },
+          }
+        },
+      },
+    })
+
+    // Act
+    const reply = await client.promptSession("session-1", "hello", {
+      systemPrompt: "# Layered prompt",
+    })
+
+    // Assert
+    expect(capturedSystemPrompt).toBe("# Layered prompt")
+    expect(reply).toMatchObject({
+      id: "m-4",
+      text: "layered reply",
+    })
+  })
+
   it("throws OpencodeChatApiError when fallback HTTP endpoint fails", async () => {
     // Arrange
     const client = createOpencodeChatClient({
@@ -180,6 +215,27 @@ describe("createOpencodeChatClient", () => {
 
     // Act + Assert
     await expect(client.promptSessionAsync("session-1", "hello", "req-1")).resolves.toBeUndefined()
+  })
+
+  it("forwards system prompt for async prompt calls", async () => {
+    // Arrange
+    let capturedSystemPrompt: string | undefined
+    const client = createOpencodeChatClient({
+      baseUrl: "http://127.0.0.1:4096",
+      sessionApi: {
+        promptAsync: async (input) => {
+          capturedSystemPrompt = input.body.system
+        },
+      },
+    })
+
+    // Act
+    await client.promptSessionAsync("session-1", "hello", "req-1", {
+      systemPrompt: "# Layered async prompt",
+    })
+
+    // Assert
+    expect(capturedSystemPrompt).toBe("# Layered async prompt")
   })
 
   it("subscribes to events through event API", async () => {

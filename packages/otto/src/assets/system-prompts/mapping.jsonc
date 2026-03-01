@@ -37,6 +37,14 @@
         "core-persona": {
           "source": "system",
           "path": "layers/core-persona.md"
+        },
+        "surface": {
+          "source": "system",
+          "path": "layers/surface-interactive.md"
+        },
+        "media": {
+          "source": "system",
+          "path": "layers/media-chatapps.md"
         }
       }
     },
@@ -45,6 +53,14 @@
         "core-persona": {
           "source": "system",
           "path": "layers/core-persona.md"
+        },
+        "surface": {
+          "source": "system",
+          "path": "layers/surface-interactive.md"
+        },
+        "media": {
+          "source": "system",
+          "path": "layers/media-web.md"
         }
       }
     },
@@ -53,6 +69,14 @@
         "core-persona": {
           "source": "system",
           "path": "layers/core-persona.md"
+        },
+        "surface": {
+          "source": "system",
+          "path": "layers/surface-interactive.md"
+        },
+        "media": {
+          "source": "system",
+          "path": "layers/media-cli.md"
         }
       }
     },

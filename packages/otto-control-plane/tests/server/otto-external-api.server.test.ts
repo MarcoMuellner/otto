@@ -206,6 +206,40 @@ describe("createOttoExternalApiClient", () => {
     ])
   })
 
+  it("resolves interactive prompt payload for web surface", async () => {
+    // Arrange
+    const seenUrls: string[] = []
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL): Promise<Response> => {
+        seenUrls.push(typeof input === "string" ? input : input.toString())
+        return Response.json(
+          {
+            flow: "interactive",
+            surface: "web",
+            media: "web",
+            routeKey: "interactive-web",
+            mappingSource: "effective",
+            systemPrompt: "# Prompt\nUse web layering.",
+            warnings: [],
+          },
+          { status: 200 }
+        )
+      },
+    })
+
+    // Act
+    const payload = await client.resolveInteractivePrompt("web")
+
+    // Assert
+    expect(payload.routeKey).toBe("interactive-web")
+    expect(payload.systemPrompt).toContain("Use web layering")
+    expect(seenUrls).toEqual(["http://127.0.0.1:4190/external/prompts/interactive?surface=web"])
+  })
+
   it("gets and updates notification profile settings", async () => {
     // Arrange
     const seenRequests: Array<{ url: string; method: string; bodyText: string | null }> = []

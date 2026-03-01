@@ -586,6 +586,91 @@ describe("buildExternalApiServer", () => {
     await app.close()
   })
 
+  it("resolves interactive prompt chain through external API", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      promptManagement: {
+        resolveInteractiveSystemPrompt: async (surface) => {
+          return {
+            flow: "interactive",
+            surface,
+            media: "web",
+            routeKey: "interactive-web",
+            mappingSource: "effective",
+            systemPrompt: "# Core\nTest prompt",
+            warnings: [],
+          }
+        },
+      },
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/prompts/interactive?surface=web",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      flow: "interactive",
+      surface: "web",
+      media: "web",
+      routeKey: "interactive-web",
+      mappingSource: "effective",
+      systemPrompt: "# Core\nTest prompt",
+      warnings: [],
+    })
+
+    await app.close()
+  })
+
+  it("returns service unavailable when prompt management is not configured", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/prompts/interactive?surface=web",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toEqual({
+      error: "service_unavailable",
+    })
+
+    await app.close()
+  })
+
   it("returns model catalog snapshot when authorized", async () => {
     // Arrange
     const app = buildExternalApiServer({

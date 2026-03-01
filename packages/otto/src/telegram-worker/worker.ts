@@ -103,6 +103,7 @@ export type TelegramWorkerDependencies = {
   createSessionGateway?: (
     baseUrl: string
   ) => Promise<OpencodeSessionGateway> | OpencodeSessionGateway
+  resolveInteractiveSystemPrompt?: () => Promise<string | undefined>
   createTranscriptionGateway?: (
     config: TelegramWorkerConfig["transcription"]
   ) => Promise<TranscriptionGateway> | TranscriptionGateway
@@ -439,6 +440,7 @@ export const startTelegramWorker = async (
       sendChatAction: bot.sendChatAction,
     },
     sessionGateway,
+    resolveInteractiveSystemPrompt: dependencies.resolveInteractiveSystemPrompt,
     sessionBindingsRepository,
     inboundMessagesRepository,
     outboundMessagesRepository,

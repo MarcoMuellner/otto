@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { createChatSurfaceService } from "../../app/server/chat-surface.server.js"
 
@@ -115,6 +115,255 @@ describe("createChatSurfaceService", () => {
       degraded: true,
       message: "Could not load persisted session bindings",
     })
+  })
+
+  it("injects resolved interactive system prompt when sending a message", async () => {
+    // Arrange
+    const promptSession = vi.fn(async () => {
+      return {
+        id: "reply-1",
+        role: "assistant" as const,
+        text: "done",
+        createdAt: 2_000,
+        partTypes: ["text"],
+      }
+    })
+
+    const service = createChatSurfaceService({
+      resolveConfig: async () => ({
+        opencodeApiUrl: "http://127.0.0.1:4096",
+        stateDatabasePath: "/tmp/otto-state.db",
+      }),
+      listSessionBindings: () => [],
+      insertCommandAudit: () => true,
+      resolveInteractiveSystemPrompt: async () => "# Prompt\nUse web layering.",
+      createOpencodeChatClient: () => ({
+        listSessions: async () => [],
+        getSession: async () => {
+          throw new Error("unused in this test")
+        },
+        createSession: async () => {
+          throw new Error("unused in this test")
+        },
+        listMessages: async () => {
+          throw new Error("unused in this test")
+        },
+        getMessage: async () => {
+          throw new Error("unused in this test")
+        },
+        promptSession,
+        promptSessionAsync: async () => {
+          throw new Error("unused in this test")
+        },
+        subscribeEvents: async function* () {
+          yield* []
+          throw new Error("unused in this test")
+        },
+      }),
+      now: () => 1_000,
+    })
+
+    // Act
+    const payload = await service.sendMessage("session-1", "hello")
+
+    // Assert
+    expect(payload.reply?.id).toBe("reply-1")
+    expect(promptSession).toHaveBeenCalledWith("session-1", "hello", {
+      systemPrompt: "# Prompt\nUse web layering.",
+    })
+  })
+
+  it("continues sending messages when prompt resolution fails", async () => {
+    // Arrange
+    const promptSession = vi.fn(async () => {
+      return {
+        id: "reply-2",
+        role: "assistant" as const,
+        text: "fallback",
+        createdAt: 2_100,
+        partTypes: ["text"],
+      }
+    })
+
+    const service = createChatSurfaceService({
+      resolveConfig: async () => ({
+        opencodeApiUrl: "http://127.0.0.1:4096",
+        stateDatabasePath: "/tmp/otto-state.db",
+      }),
+      listSessionBindings: () => [],
+      insertCommandAudit: () => true,
+      resolveInteractiveSystemPrompt: async () => {
+        throw new Error("runtime endpoint unavailable")
+      },
+      createOpencodeChatClient: () => ({
+        listSessions: async () => [],
+        getSession: async () => {
+          throw new Error("unused in this test")
+        },
+        createSession: async () => {
+          throw new Error("unused in this test")
+        },
+        listMessages: async () => {
+          throw new Error("unused in this test")
+        },
+        getMessage: async () => {
+          throw new Error("unused in this test")
+        },
+        promptSession,
+        promptSessionAsync: async () => {
+          throw new Error("unused in this test")
+        },
+        subscribeEvents: async function* () {
+          yield* []
+          throw new Error("unused in this test")
+        },
+      }),
+      now: () => 1_100,
+    })
+
+    // Act
+    const payload = await service.sendMessage("session-1", "hello")
+
+    // Assert
+    expect(payload.reply?.id).toBe("reply-2")
+    expect(promptSession).toHaveBeenCalledWith("session-1", "hello", undefined)
+  })
+
+  it("treats blank resolved prompts as empty and avoids prompt injection", async () => {
+    // Arrange
+    const promptSession = vi.fn(async () => {
+      return {
+        id: "reply-blank",
+        role: "assistant" as const,
+        text: "fallback",
+        createdAt: 2_100,
+        partTypes: ["text"],
+      }
+    })
+    const insertCommandAudit = vi.fn(() => true)
+
+    const service = createChatSurfaceService({
+      resolveConfig: async () => ({
+        opencodeApiUrl: "http://127.0.0.1:4096",
+        stateDatabasePath: "/tmp/otto-state.db",
+      }),
+      listSessionBindings: () => [],
+      insertCommandAudit,
+      resolveInteractiveSystemPrompt: async () => "   ",
+      createOpencodeChatClient: () => ({
+        listSessions: async () => [],
+        getSession: async () => {
+          throw new Error("unused in this test")
+        },
+        createSession: async () => {
+          throw new Error("unused in this test")
+        },
+        listMessages: async () => {
+          throw new Error("unused in this test")
+        },
+        getMessage: async () => {
+          throw new Error("unused in this test")
+        },
+        promptSession,
+        promptSessionAsync: async () => {
+          throw new Error("unused in this test")
+        },
+        subscribeEvents: async function* () {
+          yield* []
+          throw new Error("unused in this test")
+        },
+      }),
+      now: () => 1_200,
+    })
+
+    // Act
+    const payload = await service.sendMessage("session-1", "hello")
+
+    // Assert
+    expect(payload.reply?.id).toBe("reply-blank")
+    expect(promptSession).toHaveBeenCalledWith("session-1", "hello", undefined)
+    expect(insertCommandAudit).toHaveBeenLastCalledWith(
+      "/tmp/otto-state.db",
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          promptResolutionStatus: "empty",
+        }),
+      })
+    )
+  })
+
+  it("falls back when prompt resolution times out", async () => {
+    // Arrange
+    vi.useFakeTimers()
+
+    try {
+      const promptSession = vi.fn(async () => {
+        return {
+          id: "reply-timeout",
+          role: "assistant" as const,
+          text: "fallback",
+          createdAt: 2_200,
+          partTypes: ["text"],
+        }
+      })
+      const insertCommandAudit = vi.fn(() => true)
+
+      const service = createChatSurfaceService({
+        resolveConfig: async () => ({
+          opencodeApiUrl: "http://127.0.0.1:4096",
+          stateDatabasePath: "/tmp/otto-state.db",
+        }),
+        listSessionBindings: () => [],
+        insertCommandAudit,
+        resolveInteractiveSystemPrompt: async () => {
+          await new Promise(() => {})
+          return "# never"
+        },
+        createOpencodeChatClient: () => ({
+          listSessions: async () => [],
+          getSession: async () => {
+            throw new Error("unused in this test")
+          },
+          createSession: async () => {
+            throw new Error("unused in this test")
+          },
+          listMessages: async () => {
+            throw new Error("unused in this test")
+          },
+          getMessage: async () => {
+            throw new Error("unused in this test")
+          },
+          promptSession,
+          promptSessionAsync: async () => {
+            throw new Error("unused in this test")
+          },
+          subscribeEvents: async function* () {
+            yield* []
+            throw new Error("unused in this test")
+          },
+        }),
+        now: () => 1_300,
+      })
+
+      // Act
+      const payloadPromise = service.sendMessage("session-1", "hello")
+      await vi.advanceTimersByTimeAsync(2_000)
+      const payload = await payloadPromise
+
+      // Assert
+      expect(payload.reply?.id).toBe("reply-timeout")
+      expect(promptSession).toHaveBeenCalledWith("session-1", "hello", undefined)
+      expect(insertCommandAudit).toHaveBeenLastCalledWith(
+        "/tmp/otto-state.db",
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            promptResolutionStatus: "fallback",
+          }),
+        })
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("streams assistant deltas and ignores user part events", async () => {

@@ -83,6 +83,25 @@ export const chatStreamEventSchema = z.union([
   chatStreamErrorEventSchema,
 ])
 
+export const interactivePromptSurfaceSchema = z.enum(["telegram", "web", "cli"])
+
+export const interactivePromptMediaSchema = z.enum(["chatapps", "web", "cli"])
+
+export const interactivePromptWarningSchema = z.object({
+  code: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+})
+
+export const interactivePromptResponseSchema = z.object({
+  flow: z.literal("interactive"),
+  surface: interactivePromptSurfaceSchema,
+  media: interactivePromptMediaSchema,
+  routeKey: z.string().trim().min(1),
+  mappingSource: z.enum(["effective", "system"]),
+  systemPrompt: z.string(),
+  warnings: z.array(interactivePromptWarningSchema),
+})
+
 export type ChatThreadBinding = z.infer<typeof chatThreadBindingSchema>
 export type ChatThread = z.infer<typeof chatThreadSchema>
 export type ChatThreadsResponse = z.infer<typeof chatThreadsResponseSchema>
@@ -97,3 +116,7 @@ export type ChatStreamDeltaEvent = z.infer<typeof chatStreamDeltaEventSchema>
 export type ChatStreamCompletedEvent = z.infer<typeof chatStreamCompletedEventSchema>
 export type ChatStreamErrorEvent = z.infer<typeof chatStreamErrorEventSchema>
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>
+export type InteractivePromptSurface = z.infer<typeof interactivePromptSurfaceSchema>
+export type InteractivePromptMedia = z.infer<typeof interactivePromptMediaSchema>
+export type InteractivePromptWarning = z.infer<typeof interactivePromptWarningSchema>
+export type InteractivePromptResponse = z.infer<typeof interactivePromptResponseSchema>

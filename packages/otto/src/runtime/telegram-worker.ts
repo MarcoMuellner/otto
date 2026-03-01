@@ -6,6 +6,7 @@ import {
   createOpencodeModelClient,
   createRuntimeModelResolver,
 } from "../model-management/index.js"
+import { resolveInteractiveSystemPrompt } from "../prompt-management/index.js"
 import { resolveTelegramWorkerConfig } from "../telegram-worker/config.js"
 import { createOpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { startTelegramWorker } from "../telegram-worker/worker.js"
@@ -64,6 +65,15 @@ export const runTelegramWorker = async (logger: Logger): Promise<void> => {
     worker = await startTelegramWorker(logger, telegramConfig, {
       createSessionGateway: async (baseUrl) => {
         return createOpencodeSessionGateway(baseUrl, logger, modelResolver)
+      },
+      resolveInteractiveSystemPrompt: async () => {
+        const resolved = await resolveInteractiveSystemPrompt({
+          ottoHome: ottoConfig.ottoHome,
+          surface: "telegram",
+          logger,
+        })
+
+        return resolved.systemPrompt.trim().length > 0 ? resolved.systemPrompt : undefined
       },
     })
 
