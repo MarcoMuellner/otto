@@ -4,6 +4,7 @@ import {
   loadPromptLayerInputFromReference,
   loadPromptLayerInputFromRelativePath,
 } from "./layer-loader.js"
+import { buildPromptProvenance, type PromptProvenance } from "./provenance.js"
 import { resolvePromptComposition } from "./resolver.js"
 import { loadPromptRoutingMapping, resolvePromptRoute } from "./routing.js"
 import type { PromptLayerReference, PromptRouteFlow, PromptRouteMedia } from "./routing-types.js"
@@ -31,6 +32,7 @@ export type JobPromptResolution = {
   mappingSource: "effective" | "system"
   profileId: string | null
   systemPrompt: string
+  provenance: PromptProvenance
   warnings: JobPromptWarning[]
 }
 
@@ -267,6 +269,12 @@ export const resolveJobSystemPrompt = async (input: {
     ...compositionWarnings.map((warning) => toWarning(warning.code, warning.message)),
   ]
 
+  const provenance = buildPromptProvenance({
+    resolvedRoute,
+    layers: composition.layers,
+    warnings,
+  })
+
   return {
     flow: input.flow,
     media: resolvedRoute.media,
@@ -274,6 +282,7 @@ export const resolveJobSystemPrompt = async (input: {
     mappingSource: resolvedRoute.mappingSource,
     profileId,
     systemPrompt: composition.markdown,
+    provenance,
     warnings,
   }
 }

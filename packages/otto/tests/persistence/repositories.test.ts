@@ -107,6 +107,7 @@ describe("persistence repositories", () => {
       createdAt: 1_001,
       closedAt: 1_050,
       closeErrorMessage: null,
+      promptProvenanceJson: null,
     })
     expect(repository.listActiveByJobId("job-1")).toHaveLength(0)
     expect(repository.getLatestActiveBySessionId("session-1")).toBeNull()
@@ -137,7 +138,82 @@ describe("persistence repositories", () => {
       createdAt: 1_100,
       closedAt: null,
       closeErrorMessage: null,
+      promptProvenanceJson: null,
     })
+
+    db.close()
+  })
+
+  it("persists prompt provenance for runs and run sessions", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const runSessionsRepository = createJobRunSessionsRepository(db)
+
+    jobsRepository.createTask({
+      id: "job-prov-1",
+      type: "interactive_background_oneshot",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 1_000,
+      cadenceMinutes: null,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    jobsRepository.insertRun({
+      id: "run-prov-1",
+      jobId: "job-prov-1",
+      scheduledFor: 1_000,
+      startedAt: 1_001,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      promptProvenanceJson: null,
+      createdAt: 1_001,
+    })
+
+    runSessionsRepository.insert({
+      runId: "run-prov-1",
+      jobId: "job-prov-1",
+      sessionId: "session-prov-1",
+      createdAt: 1_001,
+      promptProvenanceJson: null,
+    })
+
+    const provenanceJson = JSON.stringify({
+      version: 1,
+      flow: "background",
+      media: "chatapps",
+      routeKey: "background-chatapps",
+      mappingSource: "effective",
+      layers: [],
+      warnings: [],
+    })
+
+    // Act
+    jobsRepository.setRunPromptProvenance?.("run-prov-1", provenanceJson)
+    runSessionsRepository.setPromptProvenance?.("run-prov-1", provenanceJson)
+
+    // Assert
+    const run = jobsRepository.getRunById("job-prov-1", "run-prov-1")
+    expect(run?.promptProvenanceJson).toBe(provenanceJson)
+
+    const runSession = runSessionsRepository.getByRunId("run-prov-1")
+    expect(runSession?.promptProvenanceJson).toBe(provenanceJson)
 
     db.close()
   })
@@ -200,6 +276,7 @@ describe("persistence repositories", () => {
       createdAt: 1_001,
       closedAt: null,
       closeErrorMessage: "temporary close failure",
+      promptProvenanceJson: null,
     })
     expect(repository.listActiveByJobId("job-err-1")).toHaveLength(1)
 
