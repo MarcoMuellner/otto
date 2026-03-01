@@ -85,6 +85,30 @@ export const externalJobAuditEntrySchema = z.object({
   createdAt: z.number().int(),
 })
 
+export const promptProvenanceLayerSchema = z.object({
+  layer: z.enum(["core-persona", "surface", "media", "task-profile"]),
+  source: z.enum(["system", "user", "inline"]).nullable(),
+  path: z.string().nullable(),
+  status: z.enum(["resolved", "missing", "invalid"]),
+  applied: z.boolean(),
+  reason: z.string().nullable(),
+})
+
+export const promptProvenanceWarningSchema = z.object({
+  code: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+})
+
+export const promptProvenanceSchema = z.object({
+  version: z.literal(1),
+  flow: z.enum(["interactive", "scheduled", "background", "watchdog"]),
+  media: z.enum(["chatapps", "web", "cli"]).nullable(),
+  routeKey: z.string().trim().min(1),
+  mappingSource: z.enum(["effective", "system"]),
+  layers: z.array(promptProvenanceLayerSchema),
+  warnings: z.array(promptProvenanceWarningSchema),
+})
+
 export const externalJobRunSchema = z.object({
   id: z.string().min(1),
   jobId: z.string().min(1),
@@ -95,6 +119,7 @@ export const externalJobRunSchema = z.object({
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   resultJson: z.string().nullable(),
+  promptProvenance: promptProvenanceSchema.nullable(),
   createdAt: z.number().int(),
 })
 

@@ -7,6 +7,7 @@ import {
   INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
   interactiveBackgroundJobPayloadSchema,
 } from "../api-services/interactive-background-jobs.js"
+import { resolveJobSystemPrompt, type PromptProvenance } from "../prompt-management/index.js"
 import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
@@ -70,6 +71,7 @@ type TaskExecutionEngineDependencies = {
       errorCode: string | null
       errorMessage: string | null
       resultJson: string | null
+      promptProvenanceJson?: string | null
       createdAt: number
     }) => void
     markRunFinished: (
@@ -80,6 +82,7 @@ type TaskExecutionEngineDependencies = {
       errorMessage: string | null,
       resultJson: string | null
     ) => void
+    setRunPromptProvenance?: (runId: string, promptProvenanceJson: string | null) => void
     rescheduleRecurring: (
       jobId: string,
       lockToken: string,
@@ -123,8 +126,15 @@ type TaskExecutionEngineDependencies = {
     }>
   }
   jobRunSessionsRepository: {
-    insert: (record: { runId: string; jobId: string; sessionId: string; createdAt: number }) => void
+    insert: (record: {
+      runId: string
+      jobId: string
+      sessionId: string
+      createdAt: number
+      promptProvenanceJson?: string | null
+    }) => void
     markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
+    setPromptProvenance?: (runId: string, promptProvenanceJson: string | null) => void
   }
   sessionBindingsRepository: {
     getByBindingKey: (bindingKey: string) => { sessionId: string } | null
@@ -204,6 +214,32 @@ const resolveTools = (value: unknown): Record<string, boolean> | undefined => {
   }
 
   return Object.fromEntries(toolEntries)
+}
+
+const serializePromptProvenance = (provenance: PromptProvenance | null): string | null => {
+  if (!provenance) {
+    return null
+  }
+
+  return JSON.stringify(provenance)
+}
+
+const resolveBackgroundJobPromptMedia = (payload: unknown): "chatapps" | "web" | "cli" => {
+  const parsed = interactiveBackgroundJobPayloadSchema.safeParse(payload)
+  if (!parsed.success) {
+    return "cli"
+  }
+
+  const surface = parsed.data.source.surface
+  if (surface === "telegram") {
+    return "chatapps"
+  }
+
+  if (surface === "web") {
+    return "web"
+  }
+
+  return "cli"
 }
 
 const parseTaskPayload = (payload: string | null): { parsed: unknown; error: string | null } => {
@@ -590,11 +626,13 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
         errorCode: null,
         errorMessage: null,
         resultJson: null,
+        promptProvenanceJson: null,
         createdAt: startedAt,
       })
 
       let result: TaskExecutionResult
       let persistedRawOutput: string | null = null
+      let runPromptProvenance: PromptProvenance | null = null
 
       try {
         if (job.type === WATCHDOG_TASK_TYPE) {
@@ -643,8 +681,38 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 profile
               )
               const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
-              const systemPrompt =
+              const inlineTaskProfilePrompt =
                 typeof assistant?.prompt === "string" ? assistant.prompt : undefined
+              let systemPrompt = inlineTaskProfilePrompt
+
+              try {
+                const promptResolution = await resolveJobSystemPrompt({
+                  ottoHome: dependencies.ottoHome,
+                  flow: "background",
+                  media: resolveBackgroundJobPromptMedia(payloadParsed.parsed),
+                  taskProfileMarkdown: inlineTaskProfilePrompt,
+                  logger: dependencies.logger,
+                })
+                runPromptProvenance = promptResolution.provenance
+                systemPrompt =
+                  promptResolution.systemPrompt.trim().length > 0
+                    ? promptResolution.systemPrompt
+                    : undefined
+              } catch (error) {
+                const err = error as Error
+                dependencies.logger.error(
+                  {
+                    runId,
+                    jobId: job.id,
+                    flow: "background",
+                    error: err.message,
+                  },
+                  "Background prompt provenance resolution failed; continuing with fallback prompt"
+                )
+              }
+
+              const serializedPromptProvenance = serializePromptProvenance(runPromptProvenance)
+              dependencies.jobsRepository.setRunPromptProvenance?.(runId, serializedPromptProvenance)
               const tools = resolveTools(assistant?.tools)
 
               const sessionId = await dependencies.sessionGateway.ensureSession(null)
@@ -653,7 +721,14 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 jobId: job.id,
                 sessionId,
                 createdAt: startedAt,
+                ...(serializedPromptProvenance
+                  ? { promptProvenanceJson: serializedPromptProvenance }
+                  : {}),
               })
+              dependencies.jobRunSessionsRepository.setPromptProvenance?.(
+                runId,
+                serializedPromptProvenance
+              )
 
               enqueueBackgroundLifecycleMessage(dependencies, lifecycleContext, {
                 phase: "started",
@@ -755,8 +830,41 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               profile
             )
             const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
-            const systemPrompt =
+            const inlineTaskProfilePrompt =
               typeof assistant?.prompt === "string" ? assistant.prompt : undefined
+            let systemPrompt = inlineTaskProfilePrompt
+
+            try {
+              const promptResolution = await resolveJobSystemPrompt({
+                ottoHome: dependencies.ottoHome,
+                flow: "scheduled",
+                media: "cli",
+                taskProfileMarkdown: inlineTaskProfilePrompt,
+                logger: dependencies.logger,
+              })
+
+              runPromptProvenance = promptResolution.provenance
+              systemPrompt =
+                promptResolution.systemPrompt.trim().length > 0
+                  ? promptResolution.systemPrompt
+                  : undefined
+            } catch (error) {
+              const err = error as Error
+              dependencies.logger.error(
+                {
+                  runId,
+                  jobId: job.id,
+                  flow: "scheduled",
+                  error: err.message,
+                },
+                "Scheduled prompt provenance resolution failed; continuing with fallback prompt"
+              )
+            }
+
+            dependencies.jobsRepository.setRunPromptProvenance?.(
+              runId,
+              serializePromptProvenance(runPromptProvenance)
+            )
             const tools = resolveTools(assistant?.tools)
 
             const bindingKey = `scheduler:task:${job.id}:assistant`

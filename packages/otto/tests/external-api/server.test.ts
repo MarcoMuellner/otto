@@ -608,6 +608,48 @@ describe("buildExternalApiServer", () => {
             routeKey: "interactive-web",
             mappingSource: "effective",
             systemPrompt: "# Core\nTest prompt",
+            provenance: {
+              version: 1,
+              flow: "interactive",
+              media: "web",
+              routeKey: "interactive-web",
+              mappingSource: "effective",
+              layers: [
+                {
+                  layer: "core-persona",
+                  source: "system",
+                  path: "layers/core-persona.md",
+                  status: "resolved",
+                  applied: true,
+                  reason: null,
+                },
+                {
+                  layer: "surface",
+                  source: "system",
+                  path: "layers/surface-interactive.md",
+                  status: "resolved",
+                  applied: true,
+                  reason: null,
+                },
+                {
+                  layer: "media",
+                  source: "system",
+                  path: "layers/media-web.md",
+                  status: "resolved",
+                  applied: true,
+                  reason: null,
+                },
+                {
+                  layer: "task-profile",
+                  source: null,
+                  path: null,
+                  status: "missing",
+                  applied: false,
+                  reason: null,
+                },
+              ],
+              warnings: [],
+            },
             warnings: [],
           }
         },
@@ -632,6 +674,10 @@ describe("buildExternalApiServer", () => {
       routeKey: "interactive-web",
       mappingSource: "effective",
       systemPrompt: "# Core\nTest prompt",
+      provenance: expect.objectContaining({
+        flow: "interactive",
+        routeKey: "interactive-web",
+      }),
       warnings: [],
     })
 

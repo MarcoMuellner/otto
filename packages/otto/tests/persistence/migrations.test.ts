@@ -103,4 +103,23 @@ describe("openPersistenceDatabase", () => {
     // Assert
     expect(columns.map((column) => column.name)).toContain("model_ref")
   })
+
+  it("adds prompt provenance columns for job runs and run sessions", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const dbPath = path.join(tempRoot, "state.db")
+
+    // Act
+    const db = openPersistenceDatabase({ dbPath })
+    const runColumns = db.prepare("PRAGMA table_info(job_runs)").all() as Array<{ name: string }>
+    const runSessionColumns = db
+      .prepare("PRAGMA table_info(job_run_sessions)")
+      .all() as Array<{ name: string }>
+    db.close()
+
+    // Assert
+    expect(runColumns.map((column) => column.name)).toContain("prompt_provenance_json")
+    expect(runSessionColumns.map((column) => column.name)).toContain("prompt_provenance_json")
+  })
 })

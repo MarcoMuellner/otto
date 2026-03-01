@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises"
 
 import type { Logger } from "pino"
 
+import { buildPromptProvenance, type PromptProvenance } from "./provenance.js"
 import { resolvePromptComposition } from "./resolver.js"
 import { loadPromptRoutingMapping, resolvePromptRoute } from "./routing.js"
 import type { PromptLayerInput, PromptLayerType } from "./types.js"
@@ -37,6 +38,7 @@ export type InteractivePromptResolution = {
   routeKey: string
   mappingSource: "effective" | "system"
   systemPrompt: string
+  provenance: PromptProvenance
   warnings: InteractivePromptWarning[]
 }
 
@@ -182,6 +184,12 @@ export const resolveInteractiveSystemPrompt = async (input: {
       .map((warning) => toWarning(warning.code, warning.message)),
   ]
 
+  const provenance = buildPromptProvenance({
+    resolvedRoute,
+    layers: composition.layers,
+    warnings,
+  })
+
   return {
     flow: "interactive",
     surface: input.surface,
@@ -189,6 +197,7 @@ export const resolveInteractiveSystemPrompt = async (input: {
     routeKey: resolvedRoute.routeKey,
     mappingSource: resolvedRoute.mappingSource,
     systemPrompt: composition.markdown,
+    provenance,
     warnings,
   }
 }
