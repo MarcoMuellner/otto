@@ -28,6 +28,7 @@ describe("api.job-runs loader", () => {
               errorCode: null,
               errorMessage: null,
               resultJson: '{"status":"success","summary":"done","errors":[]}',
+              promptProvenance: null,
               createdAt: 2_001,
             },
           ],

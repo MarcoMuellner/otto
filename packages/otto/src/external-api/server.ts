@@ -41,6 +41,7 @@ import {
 import type { ModelCatalogSnapshot } from "../model-management/types.js"
 import type {
   InteractivePromptResolution,
+  PromptProvenance,
   InteractivePromptSurface,
 } from "../prompt-management/index.js"
 import type {
@@ -247,6 +248,48 @@ const taskAuditEntrySchema = z.object({
   createdAt: z.number().int(),
 })
 
+const promptProvenanceLayerSchema = z.object({
+  layer: z.enum(["core-persona", "surface", "media", "task-profile"]),
+  source: z.enum(["system", "user", "inline"]).nullable(),
+  path: z.string().nullable(),
+  status: z.enum(["resolved", "missing", "invalid"]),
+  applied: z.boolean(),
+  reason: z.string().nullable(),
+})
+
+const promptProvenanceWarningSchema = z.object({
+  code: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+})
+
+const promptProvenanceSchema = z.object({
+  version: z.literal(1),
+  flow: z.enum(["interactive", "scheduled", "background", "watchdog"]),
+  media: z.enum(["chatapps", "web", "cli"]).nullable(),
+  routeKey: z.string().trim().min(1),
+  mappingSource: z.enum(["effective", "system"]),
+  layers: z.array(promptProvenanceLayerSchema),
+  warnings: z.array(promptProvenanceWarningSchema),
+})
+
+const parsePromptProvenanceJson = (value: string | null | undefined): PromptProvenance | null => {
+  if (!value) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    const validated = promptProvenanceSchema.safeParse(parsed)
+    if (!validated.success) {
+      return null
+    }
+
+    return validated.data
+  } catch {
+    return null
+  }
+}
+
 const jobRunEntrySchema = z.object({
   id: z.string().min(1),
   jobId: z.string().min(1),
@@ -257,6 +300,7 @@ const jobRunEntrySchema = z.object({
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   resultJson: z.string().nullable(),
+  promptProvenance: promptProvenanceSchema.nullable(),
   createdAt: z.number().int(),
 })
 
@@ -322,6 +366,7 @@ const interactivePromptResponseSchema = z.object({
   routeKey: z.string().trim().min(1),
   mappingSource: z.enum(["effective", "system"]),
   systemPrompt: z.string(),
+  provenance: promptProvenanceSchema,
   warnings: z.array(interactivePromptWarningSchema),
 })
 
@@ -698,6 +743,7 @@ export const buildExternalApiServer = (
           routeKey: resolved.routeKey,
           mappingSource: resolved.mappingSource,
           systemPrompt: resolved.systemPrompt,
+          provenance: resolved.provenance,
           warnings: resolved.warnings,
         })
       )
@@ -1155,10 +1201,15 @@ export const buildExternalApiServer = (
         return reply.code(404).send({ error: "not_found", message: "Task not found" })
       }
 
-      const runs = dependencies.jobsRepository.listRunsByJobId(params.id, {
-        limit: query.limit,
-        offset: query.offset,
-      })
+      const runs = dependencies.jobsRepository
+        .listRunsByJobId(params.id, {
+          limit: query.limit,
+          offset: query.offset,
+        })
+        .map((run) => ({
+          ...run,
+          promptProvenance: parsePromptProvenanceJson(run.promptProvenanceJson ?? null),
+        }))
       const total = dependencies.jobsRepository.countRunsByJobId(params.id)
 
       return reply.code(200).send(
@@ -1195,10 +1246,15 @@ export const buildExternalApiServer = (
         return reply.code(404).send({ error: "not_found", message: "Run not found" })
       }
 
+      const runWithProvenance = {
+        ...run,
+        promptProvenance: parsePromptProvenanceJson(run.promptProvenanceJson ?? null),
+      }
+
       return reply.code(200).send(
         jobRunDetailResponseSchema.parse({
           taskId: params.id,
-          run,
+          run: runWithProvenance,
         })
       )
     } catch (error) {

@@ -7,12 +7,13 @@ import {
   INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
   interactiveBackgroundJobPayloadSchema,
 } from "../api-services/interactive-background-jobs.js"
-import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
 import {
   PROMPT_ROUTE_MEDIA_VALUES,
   resolveJobSystemPrompt,
+  type PromptProvenance,
   type PromptRouteMedia,
 } from "../prompt-management/index.js"
+import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import { executeHeartbeatTask, HEARTBEAT_TASK_TYPE } from "./heartbeat.js"
@@ -75,6 +76,7 @@ type TaskExecutionEngineDependencies = {
       errorCode: string | null
       errorMessage: string | null
       resultJson: string | null
+      promptProvenanceJson?: string | null
       createdAt: number
     }) => void
     markRunFinished: (
@@ -85,6 +87,7 @@ type TaskExecutionEngineDependencies = {
       errorMessage: string | null,
       resultJson: string | null
     ) => void
+    setRunPromptProvenance?: (runId: string, promptProvenanceJson: string | null) => void
     rescheduleRecurring: (
       jobId: string,
       lockToken: string,
@@ -128,8 +131,15 @@ type TaskExecutionEngineDependencies = {
     }>
   }
   jobRunSessionsRepository: {
-    insert: (record: { runId: string; jobId: string; sessionId: string; createdAt: number }) => void
+    insert: (record: {
+      runId: string
+      jobId: string
+      sessionId: string
+      createdAt: number
+      promptProvenanceJson?: string | null
+    }) => void
     markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
+    setPromptProvenance?: (runId: string, promptProvenanceJson: string | null) => void
   }
   sessionBindingsRepository: {
     getByBindingKey: (bindingKey: string) => { sessionId: string } | null
@@ -211,6 +221,14 @@ const resolveTools = (value: unknown): Record<string, boolean> | undefined => {
   return Object.fromEntries(toolEntries)
 }
 
+const serializePromptProvenance = (provenance: PromptProvenance | null): string | null => {
+  if (!provenance) {
+    return null
+  }
+
+  return JSON.stringify(provenance)
+}
+
 const isPromptRouteMedia = (value: unknown): value is PromptRouteMedia => {
   return (
     typeof value === "string" &&
@@ -253,7 +271,7 @@ const resolveJobExecutionSystemPrompt = async (input: {
   payload: unknown
   profileId: string | null
   fallbackSystemPrompt?: string
-}): Promise<string | undefined> => {
+}): Promise<{ systemPrompt: string | undefined; provenance: PromptProvenance | null }> => {
   try {
     const resolved = await resolveJobSystemPrompt({
       ottoHome: input.dependencies.ottoHome,
@@ -264,7 +282,10 @@ const resolveJobExecutionSystemPrompt = async (input: {
     })
 
     if (resolved.systemPrompt.trim().length > 0) {
-      return resolved.systemPrompt
+      return {
+        systemPrompt: resolved.systemPrompt,
+        provenance: resolved.provenance,
+      }
     }
   } catch (error) {
     const err = error as Error
@@ -283,10 +304,16 @@ const resolveJobExecutionSystemPrompt = async (input: {
     typeof input.fallbackSystemPrompt === "string" &&
     input.fallbackSystemPrompt.trim().length > 0
   ) {
-    return input.fallbackSystemPrompt
+    return {
+      systemPrompt: input.fallbackSystemPrompt,
+      provenance: null,
+    }
   }
 
-  return undefined
+  return {
+    systemPrompt: undefined,
+    provenance: null,
+  }
 }
 
 const parseTaskPayload = (payload: string | null): { parsed: unknown; error: string | null } => {
@@ -602,14 +629,6 @@ const executeWatchdogTask = async (
   job: ClaimedJobRecord,
   nowTimestamp: number
 ): Promise<TaskExecutionResult> => {
-  await resolveJobExecutionSystemPrompt({
-    dependencies,
-    jobId: job.id,
-    flow: "watchdog",
-    payload: null,
-    profileId: null,
-  })
-
   const payloadParsed = parseTaskPayload(job.payload)
   if (payloadParsed.error) {
     return toFailureResult("invalid_watchdog_payload", payloadParsed.error)
@@ -681,14 +700,28 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
         errorCode: null,
         errorMessage: null,
         resultJson: null,
+        promptProvenanceJson: null,
         createdAt: startedAt,
       })
 
       let result: TaskExecutionResult
       let persistedRawOutput: string | null = null
+      let runPromptProvenance: PromptProvenance | null = null
 
       try {
         if (job.type === WATCHDOG_TASK_TYPE) {
+          const promptResolution = await resolveJobExecutionSystemPrompt({
+            dependencies,
+            jobId: job.id,
+            flow: "watchdog",
+            payload: null,
+            profileId: null,
+          })
+          runPromptProvenance = promptResolution.provenance
+          dependencies.jobsRepository.setRunPromptProvenance?.(
+            runId,
+            serializePromptProvenance(runPromptProvenance)
+          )
           result = await executeWatchdogTask(dependencies, job, startedAt)
         } else if (job.type === HEARTBEAT_TASK_TYPE) {
           const heartbeatResult = executeHeartbeatTask(
@@ -736,7 +769,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
               const fallbackSystemPrompt =
                 typeof assistant?.prompt === "string" ? assistant.prompt : undefined
-              const systemPrompt = await resolveJobExecutionSystemPrompt({
+              const promptResolution = await resolveJobExecutionSystemPrompt({
                 dependencies,
                 jobId: job.id,
                 flow: "background",
@@ -744,6 +777,10 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 profileId: job.profileId,
                 fallbackSystemPrompt,
               })
+              const systemPrompt = promptResolution.systemPrompt
+              runPromptProvenance = promptResolution.provenance
+              const serializedPromptProvenance = serializePromptProvenance(runPromptProvenance)
+              dependencies.jobsRepository.setRunPromptProvenance?.(runId, serializedPromptProvenance)
               const tools = resolveTools(assistant?.tools)
 
               const sessionId = await dependencies.sessionGateway.ensureSession(null)
@@ -752,7 +789,14 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 jobId: job.id,
                 sessionId,
                 createdAt: startedAt,
+                ...(serializedPromptProvenance
+                  ? { promptProvenanceJson: serializedPromptProvenance }
+                  : {}),
               })
+              dependencies.jobRunSessionsRepository.setPromptProvenance?.(
+                runId,
+                serializedPromptProvenance
+              )
 
               enqueueBackgroundLifecycleMessage(dependencies, lifecycleContext, {
                 phase: "started",
@@ -856,7 +900,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
             const fallbackSystemPrompt =
               typeof assistant?.prompt === "string" ? assistant.prompt : undefined
-            const systemPrompt = await resolveJobExecutionSystemPrompt({
+            const promptResolution = await resolveJobExecutionSystemPrompt({
               dependencies,
               jobId: job.id,
               flow: "scheduled",
@@ -864,6 +908,12 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               profileId: job.profileId,
               fallbackSystemPrompt,
             })
+            const systemPrompt = promptResolution.systemPrompt
+            runPromptProvenance = promptResolution.provenance
+            dependencies.jobsRepository.setRunPromptProvenance?.(
+              runId,
+              serializePromptProvenance(runPromptProvenance)
+            )
             const tools = resolveTools(assistant?.tools)
 
             const bindingKey = `scheduler:task:${job.id}:assistant`

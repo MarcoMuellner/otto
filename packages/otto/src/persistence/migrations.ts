@@ -297,4 +297,11 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_job_run_sessions_session_id ON job_run_sessions (session_id)`,
     ],
   },
+  {
+    id: "017_prompt_provenance",
+    statements: [
+      `ALTER TABLE job_runs ADD COLUMN prompt_provenance_json TEXT`,
+      `ALTER TABLE job_run_sessions ADD COLUMN prompt_provenance_json TEXT`,
+    ],
+  },
 ]

@@ -92,6 +92,30 @@ export const interactivePromptWarningSchema = z.object({
   message: z.string().trim().min(1),
 })
 
+export const promptProvenanceLayerSchema = z.object({
+  layer: z.enum(["core-persona", "surface", "media", "task-profile"]),
+  source: z.enum(["system", "user", "inline"]).nullable(),
+  path: z.string().nullable(),
+  status: z.enum(["resolved", "missing", "invalid"]),
+  applied: z.boolean(),
+  reason: z.string().nullable(),
+})
+
+export const promptProvenanceWarningSchema = z.object({
+  code: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+})
+
+export const promptProvenanceSchema = z.object({
+  version: z.literal(1),
+  flow: z.enum(["interactive", "scheduled", "background", "watchdog"]),
+  media: interactivePromptMediaSchema.nullable(),
+  routeKey: z.string().trim().min(1),
+  mappingSource: z.enum(["effective", "system"]),
+  layers: z.array(promptProvenanceLayerSchema),
+  warnings: z.array(promptProvenanceWarningSchema),
+})
+
 export const interactivePromptResponseSchema = z.object({
   flow: z.literal("interactive"),
   surface: interactivePromptSurfaceSchema,
@@ -99,6 +123,7 @@ export const interactivePromptResponseSchema = z.object({
   routeKey: z.string().trim().min(1),
   mappingSource: z.enum(["effective", "system"]),
   systemPrompt: z.string(),
+  provenance: promptProvenanceSchema,
   warnings: z.array(interactivePromptWarningSchema),
 })
 
@@ -119,4 +144,5 @@ export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>
 export type InteractivePromptSurface = z.infer<typeof interactivePromptSurfaceSchema>
 export type InteractivePromptMedia = z.infer<typeof interactivePromptMediaSchema>
 export type InteractivePromptWarning = z.infer<typeof interactivePromptWarningSchema>
+export type PromptProvenance = z.infer<typeof promptProvenanceSchema>
 export type InteractivePromptResponse = z.infer<typeof interactivePromptResponseSchema>

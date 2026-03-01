@@ -33,6 +33,7 @@ import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbou
 import { enqueueTelegramFile } from "../telegram-worker/outbound-enqueue.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import { stageOutboundTelegramFile } from "../telegram-worker/outbound-file-staging.js"
+import type { PromptProvenance } from "../prompt-management/index.js"
 import type {
   CommandAuditRecord,
   FailedJobRunRecord,
@@ -321,6 +322,19 @@ const parseInteractiveBackgroundPayloadSource = (
       sourceSessionId: null,
       sourceChatId: null,
     }
+  }
+}
+
+const parsePromptProvenanceJson = (value: string | null | undefined): PromptProvenance | null => {
+  if (!value) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(value) as PromptProvenance
+    return parsed
+  } catch {
+    return null
   }
 }
 
@@ -1238,7 +1252,17 @@ export const buildInternalApiServer = (
         }),
       })
 
-      return reply.code(200).send(details)
+      return reply.code(200).send({
+        ...details,
+        latestRun: details.latestRun
+          ? {
+              ...details.latestRun,
+              promptProvenance: parsePromptProvenanceJson(
+                details.latestRun.promptProvenanceJson ?? null
+              ),
+            }
+          : null,
+      })
     } catch (error) {
       if (error instanceof ZodError) {
         writeCommandAudit(dependencies, {

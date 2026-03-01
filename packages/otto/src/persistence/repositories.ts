@@ -120,6 +120,7 @@ export type JobRunRecord = {
   errorCode: string | null
   errorMessage: string | null
   resultJson: string | null
+  promptProvenanceJson?: string | null
   createdAt: number
 }
 
@@ -130,6 +131,7 @@ export type JobRunSessionRecord = {
   createdAt: number
   closedAt: number | null
   closeErrorMessage: string | null
+  promptProvenanceJson?: string | null
 }
 
 export type FailedJobRunRecord = {
@@ -813,9 +815,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
 
   const insertRunStatement = database.prepare(
     `INSERT INTO job_runs
-      (id, job_id, scheduled_for, started_at, finished_at, status, error_code, error_message, result_json, created_at)
+      (id, job_id, scheduled_for, started_at, finished_at, status, error_code, error_message, result_json, prompt_provenance_json, created_at)
      VALUES
-      (@id, @jobId, @scheduledFor, @startedAt, @finishedAt, @status, @errorCode, @errorMessage, @resultJson, @createdAt)`
+      (@id, @jobId, @scheduledFor, @startedAt, @finishedAt, @status, @errorCode, @errorMessage, @resultJson, @promptProvenanceJson, @createdAt)`
   )
 
   const markRunFinishedStatement = database.prepare(
@@ -825,6 +827,12 @@ export const createJobsRepository = (database: DatabaseSync) => {
          error_code = ?,
          error_message = ?,
          result_json = ?
+     WHERE id = ?`
+  )
+
+  const setRunPromptProvenanceStatement = database.prepare(
+    `UPDATE job_runs
+     SET prompt_provenance_json = ?
      WHERE id = ?`
   )
 
@@ -863,12 +871,13 @@ export const createJobsRepository = (database: DatabaseSync) => {
       scheduled_for as scheduledFor,
       started_at as startedAt,
       finished_at as finishedAt,
-      status,
-      error_code as errorCode,
-      error_message as errorMessage,
-      result_json as resultJson,
-      created_at as createdAt
-      FROM job_runs
+       status,
+       error_code as errorCode,
+       error_message as errorMessage,
+       result_json as resultJson,
+       prompt_provenance_json as promptProvenanceJson,
+       created_at as createdAt
+       FROM job_runs
       WHERE job_id = ?
       ORDER BY started_at DESC`
   )
@@ -880,11 +889,12 @@ export const createJobsRepository = (database: DatabaseSync) => {
       scheduled_for as scheduledFor,
       started_at as startedAt,
       finished_at as finishedAt,
-      status,
-      error_code as errorCode,
-      error_message as errorMessage,
-      result_json as resultJson,
-      created_at as createdAt
+       status,
+       error_code as errorCode,
+       error_message as errorMessage,
+       result_json as resultJson,
+       prompt_provenance_json as promptProvenanceJson,
+       created_at as createdAt
      FROM job_runs
      WHERE job_id = ?
      ORDER BY started_at DESC
@@ -904,11 +914,12 @@ export const createJobsRepository = (database: DatabaseSync) => {
       scheduled_for as scheduledFor,
       started_at as startedAt,
       finished_at as finishedAt,
-      status,
-      error_code as errorCode,
-      error_message as errorMessage,
-      result_json as resultJson,
-      created_at as createdAt
+       status,
+       error_code as errorCode,
+       error_message as errorMessage,
+       result_json as resultJson,
+       prompt_provenance_json as promptProvenanceJson,
+       created_at as createdAt
      FROM job_runs
      WHERE job_id = ?
        AND id = ?`
@@ -937,11 +948,12 @@ export const createJobsRepository = (database: DatabaseSync) => {
       j.type as jobType,
       r.started_at as startedAt,
       r.finished_at as finishedAt,
-      r.status,
-      r.error_code as errorCode,
-      r.error_message as errorMessage,
-      r.result_json as resultJson
-     FROM job_runs r
+       r.status,
+       r.error_code as errorCode,
+       r.error_message as errorMessage,
+       r.result_json as resultJson,
+       r.prompt_provenance_json as promptProvenanceJson
+      FROM job_runs r
      JOIN jobs j ON j.id = r.job_id
      WHERE r.started_at >= ?
      ORDER BY r.started_at DESC
@@ -1019,7 +1031,10 @@ export const createJobsRepository = (database: DatabaseSync) => {
       releaseLockStatement.run(updatedAt, jobId, lockToken)
     },
     insertRun: (record: JobRunRecord): void => {
-      insertRunStatement.run(record)
+      insertRunStatement.run({
+        ...record,
+        promptProvenanceJson: record.promptProvenanceJson ?? null,
+      })
     },
     markRunFinished: (
       runId: string,
@@ -1030,6 +1045,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
       resultJson: string | null
     ): void => {
       markRunFinishedStatement.run(finishedAt, status, errorCode, errorMessage, resultJson, runId)
+    },
+    setRunPromptProvenance: (runId: string, promptProvenanceJson: string | null): void => {
+      setRunPromptProvenanceStatement.run(promptProvenanceJson, runId)
     },
     rescheduleRecurring: (
       jobId: string,
@@ -1149,9 +1167,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
 export const createJobRunSessionsRepository = (database: DatabaseSync) => {
   const insertStatement = database.prepare(
     `INSERT INTO job_run_sessions
-      (run_id, job_id, session_id, created_at, closed_at, close_error_message)
+      (run_id, job_id, session_id, created_at, closed_at, close_error_message, prompt_provenance_json)
      VALUES
-      (?, ?, ?, ?, NULL, NULL)`
+      (?, ?, ?, ?, NULL, NULL, ?)`
   )
 
   const markClosedStatement = database.prepare(
@@ -1172,10 +1190,11 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
     `SELECT
       run_id as runId,
       job_id as jobId,
-      session_id as sessionId,
-      created_at as createdAt,
-      closed_at as closedAt,
-      close_error_message as closeErrorMessage
+       session_id as sessionId,
+       created_at as createdAt,
+       closed_at as closedAt,
+       close_error_message as closeErrorMessage,
+       prompt_provenance_json as promptProvenanceJson
      FROM job_run_sessions
      WHERE run_id = ?`
   )
@@ -1184,10 +1203,11 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
     `SELECT
       run_id as runId,
       job_id as jobId,
-      session_id as sessionId,
-      created_at as createdAt,
-      closed_at as closedAt,
-      close_error_message as closeErrorMessage
+       session_id as sessionId,
+       created_at as createdAt,
+       closed_at as closedAt,
+       close_error_message as closeErrorMessage,
+       prompt_provenance_json as promptProvenanceJson
      FROM job_run_sessions
      WHERE job_id = ?
        AND closed_at IS NULL
@@ -1198,15 +1218,22 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
     `SELECT
       run_id as runId,
       job_id as jobId,
-      session_id as sessionId,
-      created_at as createdAt,
-      closed_at as closedAt,
-      close_error_message as closeErrorMessage
+       session_id as sessionId,
+       created_at as createdAt,
+       closed_at as closedAt,
+       close_error_message as closeErrorMessage,
+       prompt_provenance_json as promptProvenanceJson
      FROM job_run_sessions
      WHERE session_id = ?
        AND closed_at IS NULL
      ORDER BY created_at DESC
      LIMIT 1`
+  )
+
+  const setPromptProvenanceStatement = database.prepare(
+    `UPDATE job_run_sessions
+     SET prompt_provenance_json = ?
+     WHERE run_id = ?`
   )
 
   return {
@@ -1215,8 +1242,15 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
       jobId: string
       sessionId: string
       createdAt: number
+      promptProvenanceJson?: string | null
     }): void => {
-      insertStatement.run(record.runId, record.jobId, record.sessionId, record.createdAt)
+      insertStatement.run(
+        record.runId,
+        record.jobId,
+        record.sessionId,
+        record.createdAt,
+        record.promptProvenanceJson ?? null
+      )
     },
     markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null): void => {
       markClosedStatement.run(closedAt, closeErrorMessage, runId)
@@ -1236,6 +1270,9 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
         | JobRunSessionRecord
         | undefined
       return row ?? null
+    },
+    setPromptProvenance: (runId: string, promptProvenanceJson: string | null): void => {
+      setPromptProvenanceStatement.run(promptProvenanceJson, runId)
     },
   }
 }
