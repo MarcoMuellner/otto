@@ -35,7 +35,9 @@ describe("api.jobs loader", () => {
     })
 
     // Act
-    const response = await loader()
+    const response = await loader({
+      request: new Request("http://localhost/api/jobs"),
+    })
     const body = await response.json()
 
     // Assert
@@ -55,7 +57,9 @@ describe("api.jobs loader", () => {
     })
 
     // Act
-    const response = await loader()
+    const response = await loader({
+      request: new Request("http://localhost/api/jobs"),
+    })
     const body = await response.json()
 
     // Assert
@@ -63,6 +67,36 @@ describe("api.jobs loader", () => {
     expect(body).toMatchObject({
       error: "runtime_unavailable",
     })
+  })
+
+  it("forwards optional lane/type query filters", async () => {
+    // Arrange
+    const loader = createApiJobsLoader({
+      loadJobs: async (input) => {
+        expect(input).toEqual({
+          lane: "interactive",
+          type: "interactive_background_oneshot",
+        })
+
+        return {
+          jobs: [],
+        }
+      },
+      createJob: async () => {
+        throw new Error("unused in loader test")
+      },
+    })
+
+    // Act
+    const response = await loader({
+      request: new Request(
+        "http://localhost/api/jobs?lane=interactive&type=interactive_background_oneshot"
+      ),
+    })
+
+    // Assert
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ jobs: [] })
   })
 })
 
