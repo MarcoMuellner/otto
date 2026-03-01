@@ -7,7 +7,12 @@ import {
   INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
   interactiveBackgroundJobPayloadSchema,
 } from "../api-services/interactive-background-jobs.js"
-import { resolveJobSystemPrompt, type PromptProvenance } from "../prompt-management/index.js"
+import {
+  PROMPT_ROUTE_MEDIA_VALUES,
+  resolveJobSystemPrompt,
+  type PromptProvenance,
+  type PromptRouteMedia,
+} from "../prompt-management/index.js"
 import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
@@ -224,22 +229,91 @@ const serializePromptProvenance = (provenance: PromptProvenance | null): string 
   return JSON.stringify(provenance)
 }
 
-const resolveBackgroundJobPromptMedia = (payload: unknown): "chatapps" | "web" | "cli" => {
-  const parsed = interactiveBackgroundJobPayloadSchema.safeParse(payload)
-  if (!parsed.success) {
-    return "cli"
+const isPromptRouteMedia = (value: unknown): value is PromptRouteMedia => {
+  return (
+    typeof value === "string" &&
+    PROMPT_ROUTE_MEDIA_VALUES.includes(value as (typeof PROMPT_ROUTE_MEDIA_VALUES)[number])
+  )
+}
+
+const resolvePromptRouteMediaFromPayload = (payload: unknown): PromptRouteMedia | undefined => {
+  const payloadRecord = asRecord(payload)
+  if (!payloadRecord) {
+    return undefined
   }
 
-  const surface = parsed.data.source.surface
-  if (surface === "telegram") {
+  const directMedia = payloadRecord.media
+  if (isPromptRouteMedia(directMedia)) {
+    return directMedia
+  }
+
+  const source = asRecord(payloadRecord.source)
+  if (!source) {
+    return undefined
+  }
+
+  const sourceMedia = source.media
+  if (isPromptRouteMedia(sourceMedia)) {
+    return sourceMedia
+  }
+
+  if (Number.isInteger(source.chatId) && Number(source.chatId) > 0) {
     return "chatapps"
   }
 
-  if (surface === "web") {
-    return "web"
+  return undefined
+}
+
+const resolveJobExecutionSystemPrompt = async (input: {
+  dependencies: TaskExecutionEngineDependencies
+  jobId: string
+  flow: "scheduled" | "background" | "watchdog"
+  payload: unknown
+  profileId: string | null
+  fallbackSystemPrompt?: string
+}): Promise<{ systemPrompt: string | undefined; provenance: PromptProvenance | null }> => {
+  try {
+    const resolved = await resolveJobSystemPrompt({
+      ottoHome: input.dependencies.ottoHome,
+      flow: input.flow,
+      media: input.flow === "watchdog" ? null : resolvePromptRouteMediaFromPayload(input.payload),
+      profileId: input.profileId,
+      logger: input.dependencies.logger,
+    })
+
+    if (resolved.systemPrompt.trim().length > 0) {
+      return {
+        systemPrompt: resolved.systemPrompt,
+        provenance: resolved.provenance,
+      }
+    }
+  } catch (error) {
+    const err = error as Error
+    input.dependencies.logger.error(
+      {
+        jobId: input.jobId,
+        flow: input.flow,
+        profileId: input.profileId,
+        error: err.message,
+      },
+      "Failed to resolve prompt layers for job execution; falling back to task config prompt"
+    )
   }
 
-  return "cli"
+  if (
+    typeof input.fallbackSystemPrompt === "string" &&
+    input.fallbackSystemPrompt.trim().length > 0
+  ) {
+    return {
+      systemPrompt: input.fallbackSystemPrompt,
+      provenance: null,
+    }
+  }
+
+  return {
+    systemPrompt: undefined,
+    provenance: null,
+  }
 }
 
 const parseTaskPayload = (payload: string | null): { parsed: unknown; error: string | null } => {
@@ -550,11 +624,11 @@ const enqueueBackgroundLifecycleMessage = (
   }
 }
 
-const executeWatchdogTask = (
+const executeWatchdogTask = async (
   dependencies: TaskExecutionEngineDependencies,
   job: ClaimedJobRecord,
   nowTimestamp: number
-): TaskExecutionResult => {
+): Promise<TaskExecutionResult> => {
   const payloadParsed = parseTaskPayload(job.payload)
   if (payloadParsed.error) {
     return toFailureResult("invalid_watchdog_payload", payloadParsed.error)
@@ -636,7 +710,19 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
 
       try {
         if (job.type === WATCHDOG_TASK_TYPE) {
-          result = executeWatchdogTask(dependencies, job, startedAt)
+          const promptResolution = await resolveJobExecutionSystemPrompt({
+            dependencies,
+            jobId: job.id,
+            flow: "watchdog",
+            payload: null,
+            profileId: null,
+          })
+          runPromptProvenance = promptResolution.provenance
+          dependencies.jobsRepository.setRunPromptProvenance?.(
+            runId,
+            serializePromptProvenance(runPromptProvenance)
+          )
+          result = await executeWatchdogTask(dependencies, job, startedAt)
         } else if (job.type === HEARTBEAT_TASK_TYPE) {
           const heartbeatResult = executeHeartbeatTask(
             {
@@ -681,36 +767,18 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 profile
               )
               const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
-              const inlineTaskProfilePrompt =
+              const fallbackSystemPrompt =
                 typeof assistant?.prompt === "string" ? assistant.prompt : undefined
-              let systemPrompt = inlineTaskProfilePrompt
-
-              try {
-                const promptResolution = await resolveJobSystemPrompt({
-                  ottoHome: dependencies.ottoHome,
-                  flow: "background",
-                  media: resolveBackgroundJobPromptMedia(payloadParsed.parsed),
-                  taskProfileMarkdown: inlineTaskProfilePrompt,
-                  logger: dependencies.logger,
-                })
-                runPromptProvenance = promptResolution.provenance
-                systemPrompt =
-                  promptResolution.systemPrompt.trim().length > 0
-                    ? promptResolution.systemPrompt
-                    : undefined
-              } catch (error) {
-                const err = error as Error
-                dependencies.logger.error(
-                  {
-                    runId,
-                    jobId: job.id,
-                    flow: "background",
-                    error: err.message,
-                  },
-                  "Background prompt provenance resolution failed; continuing with fallback prompt"
-                )
-              }
-
+              const promptResolution = await resolveJobExecutionSystemPrompt({
+                dependencies,
+                jobId: job.id,
+                flow: "background",
+                payload: validatedPayload.data,
+                profileId: job.profileId,
+                fallbackSystemPrompt,
+              })
+              const systemPrompt = promptResolution.systemPrompt
+              runPromptProvenance = promptResolution.provenance
               const serializedPromptProvenance = serializePromptProvenance(runPromptProvenance)
               dependencies.jobsRepository.setRunPromptProvenance?.(runId, serializedPromptProvenance)
               const tools = resolveTools(assistant?.tools)
@@ -830,37 +898,18 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               profile
             )
             const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
-            const inlineTaskProfilePrompt =
+            const fallbackSystemPrompt =
               typeof assistant?.prompt === "string" ? assistant.prompt : undefined
-            let systemPrompt = inlineTaskProfilePrompt
-
-            try {
-              const promptResolution = await resolveJobSystemPrompt({
-                ottoHome: dependencies.ottoHome,
-                flow: "scheduled",
-                media: "cli",
-                taskProfileMarkdown: inlineTaskProfilePrompt,
-                logger: dependencies.logger,
-              })
-
-              runPromptProvenance = promptResolution.provenance
-              systemPrompt =
-                promptResolution.systemPrompt.trim().length > 0
-                  ? promptResolution.systemPrompt
-                  : undefined
-            } catch (error) {
-              const err = error as Error
-              dependencies.logger.error(
-                {
-                  runId,
-                  jobId: job.id,
-                  flow: "scheduled",
-                  error: err.message,
-                },
-                "Scheduled prompt provenance resolution failed; continuing with fallback prompt"
-              )
-            }
-
+            const promptResolution = await resolveJobExecutionSystemPrompt({
+              dependencies,
+              jobId: job.id,
+              flow: "scheduled",
+              payload: payloadParsed.parsed,
+              profileId: job.profileId,
+              fallbackSystemPrompt,
+            })
+            const systemPrompt = promptResolution.systemPrompt
+            runPromptProvenance = promptResolution.provenance
             dependencies.jobsRepository.setRunPromptProvenance?.(
               runId,
               serializePromptProvenance(runPromptProvenance)

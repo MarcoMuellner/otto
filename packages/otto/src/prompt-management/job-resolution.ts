@@ -1,171 +1,143 @@
-import path from "node:path"
-import { readFile } from "node:fs/promises"
-
 import type { Logger } from "pino"
 
+import {
+  loadPromptLayerInputFromReference,
+  loadPromptLayerInputFromRelativePath,
+} from "./layer-loader.js"
 import { buildPromptProvenance, type PromptProvenance } from "./provenance.js"
-import { loadPromptRoutingMapping, resolvePromptRoute } from "./routing.js"
-import type {
-  PromptLayerReference,
-  PromptRouteFlow,
-  PromptRouteMedia,
-  PromptRouteResolution,
-} from "./routing-types.js"
 import { resolvePromptComposition } from "./resolver.js"
+import { loadPromptRoutingMapping, resolvePromptRoute } from "./routing.js"
+import type { PromptLayerReference, PromptRouteFlow, PromptRouteMedia } from "./routing-types.js"
 import type { PromptLayerInput, PromptLayerType } from "./types.js"
 
-const SYSTEM_PROMPTS_DIRECTORY_NAME = "system-prompts"
-const USER_PROMPTS_DIRECTORY_NAME = "prompts"
+const JOB_ROUTE_LAYER_TYPES = [
+  "core-persona",
+  "surface",
+  "media",
+] as const satisfies ReadonlyArray<PromptLayerType>
+const TASK_PROFILE_DIRECTORY_NAME = "task-profiles"
+const TASK_PROFILE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
-const JOB_LAYER_TYPES = ["core-persona", "surface", "media", "task-profile"] as const satisfies
-  ReadonlyArray<PromptLayerType>
+export type JobPromptFlow = Exclude<PromptRouteFlow, "interactive">
 
-const resolvePromptRootDirectory = (
-  ottoHome: string,
-  source: PromptLayerReference["source"]
-): string => {
-  return path.join(
-    ottoHome,
-    source === "system" ? SYSTEM_PROMPTS_DIRECTORY_NAME : USER_PROMPTS_DIRECTORY_NAME
-  )
+export type JobPromptWarning = {
+  code: string
+  message: string
 }
 
-const toWarning = (code: string, message: string): { code: string; message: string } => {
+export type JobPromptResolution = {
+  flow: JobPromptFlow
+  media: PromptRouteMedia | null
+  routeKey: string
+  mappingSource: "effective" | "system"
+  profileId: string | null
+  systemPrompt: string
+  provenance: PromptProvenance
+  warnings: JobPromptWarning[]
+}
+
+const toWarning = (code: string, message: string): JobPromptWarning => {
   return {
     code,
     message,
   }
 }
 
-const loadRouteLayerInput = async (input: {
-  ottoHome: string
-  reference: PromptLayerReference
-}): Promise<PromptLayerInput> => {
-  const rootDirectory = resolvePromptRootDirectory(input.ottoHome, input.reference.source)
-  const absolutePath = path.join(rootDirectory, input.reference.path)
-
-  try {
-    const markdown = await readFile(absolutePath, "utf8")
-
-    return {
-      status: "resolved",
-      markdown,
-    }
-  } catch (error) {
-    const fileError = error as NodeJS.ErrnoException
-    if (fileError.code === "ENOENT") {
-      return {
-        status: "missing",
-      }
-    }
-
-    const errorMessage = error instanceof Error ? error.message : String(error)
-
-    return {
-      status: "invalid",
-      reason: `Unable to read prompt layer file at '${absolutePath}': ${errorMessage}`,
-    }
-  }
-}
-
-const logJobLayerWarning = (input: {
-  logger?: Pick<Logger, "warn" | "error">
-  ottoHome: string
-  reference: PromptLayerReference | null
-  layer: PromptLayerType
-  warningCode: string
-  message: string
-}): void => {
-  if (!input.reference) {
-    input.logger?.warn(
-      {
-        layer: input.layer,
-        warningCode: input.warningCode,
-      },
-      input.message
-    )
-    return
-  }
-
-  const rootDirectory = resolvePromptRootDirectory(input.ottoHome, input.reference.source)
-  const absolutePath = path.join(rootDirectory, input.reference.path)
-
-  if (input.reference.source === "user") {
-    input.logger?.error(
-      {
-        layer: input.layer,
-        source: input.reference.source,
-        path: input.reference.path,
-        absolutePath,
-        warningCode: input.warningCode,
-      },
-      "User prompt layer issue detected during job resolution; continuing with empty layer"
-    )
-    return
-  }
-
-  input.logger?.warn(
-    {
-      layer: input.layer,
-      source: input.reference.source,
-      path: input.reference.path,
-      absolutePath,
-      warningCode: input.warningCode,
-    },
-    "System prompt layer issue detected during job resolution; continuing with empty layer"
-  )
-}
-
-const resolveInlineTaskProfileLayerInput = (taskProfileMarkdown?: string): {
-  applied: boolean
-  layerInput?: PromptLayerInput
+const normalizeTaskProfileId = (
+  profileId: string | null | undefined
+): {
+  profileId: string | null
+  warning: JobPromptWarning | null
 } => {
-  if (typeof taskProfileMarkdown !== "string") {
+  const trimmed = typeof profileId === "string" ? profileId.trim() : ""
+  if (trimmed.length === 0) {
     return {
-      applied: false,
+      profileId: null,
+      warning: null,
+    }
+  }
+
+  if (TASK_PROFILE_ID_PATTERN.test(trimmed)) {
+    return {
+      profileId: trimmed,
+      warning: null,
     }
   }
 
   return {
-    applied: true,
-    layerInput: {
-      status: "resolved",
-      markdown: taskProfileMarkdown,
-    },
+    profileId: null,
+    warning: toWarning(
+      "invalid_task_profile_id",
+      `Ignoring task profile '${trimmed}': profile id must match ${String(TASK_PROFILE_ID_PATTERN)}`
+    ),
   }
 }
 
-const resolveLayerReferences = (
-  resolvedRoute: PromptRouteResolution
-): Partial<Record<PromptLayerType, PromptLayerReference>> => {
-  const references: Partial<Record<PromptLayerType, PromptLayerReference>> = {}
+const resolveTaskProfileRelativePath = (profileId: string): string => {
+  return `${TASK_PROFILE_DIRECTORY_NAME}/${profileId}.md`
+}
 
-  for (const layer of JOB_LAYER_TYPES) {
-    const reference = resolvedRoute.route.layers[layer]
-    if (!reference) {
-      continue
+const loadTaskProfilePromptLayer = async (input: {
+  ottoHome: string
+  profileId: string
+}): Promise<{
+  reference: PromptLayerReference
+  absolutePath: string
+  layerInput: PromptLayerInput
+} | null> => {
+  const relativePath = resolveTaskProfileRelativePath(input.profileId)
+
+  const user = await loadPromptLayerInputFromRelativePath({
+    ottoHome: input.ottoHome,
+    source: "user",
+    relativePath,
+  })
+
+  if (user.input.status !== "missing") {
+    return {
+      reference: {
+        source: "user",
+        path: relativePath,
+      },
+      absolutePath: user.absolutePath,
+      layerInput: user.input,
     }
-
-    references[layer] = reference
   }
 
-  return references
+  const system = await loadPromptLayerInputFromRelativePath({
+    ottoHome: input.ottoHome,
+    source: "system",
+    relativePath,
+  })
+
+  if (system.input.status !== "missing") {
+    return {
+      reference: {
+        source: "system",
+        path: relativePath,
+      },
+      absolutePath: system.absolutePath,
+      layerInput: system.input,
+    }
+  }
+
+  return null
 }
 
 /**
- * Resolves one deterministic job execution system prompt chain and provenance payload so
- * scheduled/background/watchdog runs can persist auditable prompt metadata.
+ * Resolves one deterministic job/watchdog prompt chain from mapping + layered files while
+ * keeping watchdog system-only and task-profile prompts job-specific.
  *
- * @param input Otto home path, flow/media context, optional inline task-profile, and logger.
- * @returns Resolved system prompt markdown plus provenance diagnostics.
+ * @param input Otto workspace root and route context for scheduled/background/watchdog flows.
+ * @returns Resolved system prompt markdown plus route diagnostics.
  */
 export const resolveJobSystemPrompt = async (input: {
   ottoHome: string
-  flow: Exclude<PromptRouteFlow, "interactive">
+  flow: JobPromptFlow
   media?: PromptRouteMedia | null
-  taskProfileMarkdown?: string
+  profileId?: string | null
   logger?: Pick<Logger, "warn" | "error">
-}): Promise<{ systemPrompt: string; provenance: PromptProvenance }> => {
+}): Promise<JobPromptResolution> => {
   const mapping = await loadPromptRoutingMapping({
     ottoHome: input.ottoHome,
     logger: input.logger,
@@ -180,27 +152,57 @@ export const resolveJobSystemPrompt = async (input: {
   })
 
   const layerInputs: Partial<Record<PromptLayerType, PromptLayerInput>> = {}
-  const layerReferences = resolveLayerReferences(resolvedRoute)
+  const layerReferences: Partial<Record<PromptLayerType, PromptLayerReference>> = {}
+  const layerAbsolutePaths: Partial<Record<PromptLayerType, string>> = {}
 
-  for (const layer of JOB_LAYER_TYPES) {
-    if (layer === "task-profile") {
-      continue
-    }
-
-    const reference = layerReferences[layer]
+  for (const layer of JOB_ROUTE_LAYER_TYPES) {
+    const reference = resolvedRoute.route.layers[layer]
     if (!reference) {
       continue
     }
 
-    layerInputs[layer] = await loadRouteLayerInput({
+    const loaded = await loadPromptLayerInputFromReference({
       ottoHome: input.ottoHome,
       reference,
     })
+
+    layerReferences[layer] = reference
+    layerAbsolutePaths[layer] = loaded.absolutePath
+    layerInputs[layer] = loaded.input
   }
 
-  const inlineTaskProfile = resolveInlineTaskProfileLayerInput(input.taskProfileMarkdown)
-  if (inlineTaskProfile.layerInput) {
-    layerInputs["task-profile"] = inlineTaskProfile.layerInput
+  let taskProfileReference: PromptLayerReference | null = null
+  let taskProfileAbsolutePath: string | null = null
+
+  const profileIdParsing =
+    input.flow === "watchdog"
+      ? { profileId: null, warning: null }
+      : normalizeTaskProfileId(input.profileId)
+  const profileId = profileIdParsing.profileId
+
+  if (profileIdParsing.warning) {
+    input.logger?.warn(
+      {
+        flow: input.flow,
+        media: resolvedRoute.media,
+        routeKey: resolvedRoute.routeKey,
+        warningCode: profileIdParsing.warning.code,
+      },
+      profileIdParsing.warning.message
+    )
+  }
+
+  if (profileId) {
+    const taskProfileLayer = await loadTaskProfilePromptLayer({
+      ottoHome: input.ottoHome,
+      profileId,
+    })
+
+    if (taskProfileLayer) {
+      layerInputs["task-profile"] = taskProfileLayer.layerInput
+      taskProfileReference = taskProfileLayer.reference
+      taskProfileAbsolutePath = taskProfileLayer.absolutePath
+    }
   }
 
   const composition = resolvePromptComposition({
@@ -208,34 +210,62 @@ export const resolveJobSystemPrompt = async (input: {
   })
 
   const compositionWarnings = composition.warnings.filter((warning) => {
-    return !(warning.layer === "task-profile" && warning.code === "missing_layer")
+    if (warning.layer === "task-profile") {
+      return Boolean(taskProfileReference)
+    }
+
+    return Boolean(layerReferences[warning.layer])
   })
 
   for (const warning of compositionWarnings) {
-    if (warning.layer === "task-profile" && inlineTaskProfile.applied) {
-      input.logger?.warn(
+    const reference =
+      warning.layer === "task-profile" ? taskProfileReference : layerReferences[warning.layer]
+    const absolutePath =
+      warning.layer === "task-profile"
+        ? taskProfileAbsolutePath
+        : (layerAbsolutePaths[warning.layer] ?? null)
+
+    if (!reference || !absolutePath) {
+      continue
+    }
+
+    if (reference.source === "user") {
+      input.logger?.error(
         {
+          flow: input.flow,
+          media: resolvedRoute.media,
+          routeKey: resolvedRoute.routeKey,
+          profileId,
           layer: warning.layer,
+          source: reference.source,
+          path: reference.path,
+          absolutePath,
           warningCode: warning.code,
         },
-        "Inline task-profile prompt issue detected during job resolution; continuing with empty layer"
+        "User prompt layer issue detected for job execution; continuing with empty layer"
       )
       continue
     }
 
-    const reference = layerReferences[warning.layer] ?? null
-    logJobLayerWarning({
-      logger: input.logger,
-      ottoHome: input.ottoHome,
-      reference,
-      layer: warning.layer,
-      warningCode: warning.code,
-      message: warning.message,
-    })
+    input.logger?.warn(
+      {
+        flow: input.flow,
+        media: resolvedRoute.media,
+        routeKey: resolvedRoute.routeKey,
+        profileId,
+        layer: warning.layer,
+        source: reference.source,
+        path: reference.path,
+        absolutePath,
+        warningCode: warning.code,
+      },
+      "System prompt layer issue detected for job execution; continuing with empty layer"
+    )
   }
 
-  const warnings = [
+  const warnings: JobPromptWarning[] = [
     ...resolvedRoute.warnings.map((warning) => toWarning(warning.code, warning.message)),
+    ...(profileIdParsing.warning ? [profileIdParsing.warning] : []),
     ...compositionWarnings.map((warning) => toWarning(warning.code, warning.message)),
   ]
 
@@ -243,11 +273,16 @@ export const resolveJobSystemPrompt = async (input: {
     resolvedRoute,
     layers: composition.layers,
     warnings,
-    inlineTaskProfileApplied: inlineTaskProfile.applied,
   })
 
   return {
+    flow: input.flow,
+    media: resolvedRoute.media,
+    routeKey: resolvedRoute.routeKey,
+    mappingSource: resolvedRoute.mappingSource,
+    profileId,
     systemPrompt: composition.markdown,
     provenance,
+    warnings,
   }
 }

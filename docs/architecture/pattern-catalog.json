@@ -1,0 +1,163 @@
+{
+  "generatedAt": "2026-03-01T14:15:00Z",
+  "patterns": [
+    {
+      "id": "pattern-001",
+      "name": "other",
+      "scope": "packages/otto/src/runtime/serve.ts",
+      "locations": [
+        "packages/otto/src/runtime/serve.ts:76",
+        "packages/otto/src/runtime/serve.ts:171",
+        "packages/otto/src/runtime/serve.ts:424"
+      ],
+      "evidence": [
+        "fact-004",
+        "fact-006",
+        "fact-009"
+      ],
+      "confidence": 0.93,
+      "notes": "Composition-root style startup: one module wires APIs, persistence, scheduler, model services, and worker lifecycles."
+    },
+    {
+      "id": "pattern-002",
+      "name": "repository",
+      "scope": "packages/otto/src/persistence",
+      "locations": [
+        "packages/otto/src/persistence/database.ts:38",
+        "packages/otto/src/persistence/repositories.ts:1",
+        "packages/otto/src/runtime/serve.ts:109"
+      ],
+      "evidence": [
+        "fact-015",
+        "fact-006",
+        "fact-043"
+      ],
+      "confidence": 0.94,
+      "notes": "Persistence access is encapsulated behind repository factories and typed records over one SQLite boundary."
+    },
+    {
+      "id": "pattern-003",
+      "name": "adapter",
+      "scope": "packages/otto-control-plane/app/server/otto-external-api.server.ts",
+      "locations": [
+        "packages/otto-control-plane/app/server/otto-external-api.server.ts:210",
+        "packages/otto-control-plane/app/server/otto-external-api.server.ts:247"
+      ],
+      "evidence": [
+        "fact-021",
+        "fact-013"
+      ],
+      "confidence": 0.92,
+      "notes": "BFF isolates runtime HTTP/token concerns and applies schema validation before route modules consume data."
+    },
+    {
+      "id": "pattern-004",
+      "name": "service_layer",
+      "scope": "packages/otto/src/api-services",
+      "locations": [
+        "packages/otto/src/internal-api/server.ts:7",
+        "packages/otto/src/external-api/server.ts:7",
+        "packages/otto/src/api-services/tasks-read.ts:32"
+      ],
+      "evidence": [
+        "fact-011",
+        "fact-013",
+        "fact-042"
+      ],
+      "confidence": 0.87,
+      "notes": "Route layers delegate task and profile behaviors to api-services modules, separating transport from business mutations."
+    },
+    {
+      "id": "pattern-005",
+      "name": "facade",
+      "scope": "packages/otto-control-plane/app/server",
+      "locations": [
+        "packages/otto-control-plane/app/server/env.ts:152",
+        "packages/otto-control-plane/app/server/otto-external-api.server.ts:210"
+      ],
+      "evidence": [
+        "fact-020",
+        "fact-021"
+      ],
+      "confidence": 0.9,
+      "notes": "Server config + external API client combine into a stable control-plane facade for runtime operations."
+    },
+    {
+      "id": "pattern-006",
+      "name": "other",
+      "scope": "packages/otto-extension-sdk/src/catalog.ts",
+      "locations": [
+        "packages/otto-extension-sdk/src/catalog.ts:346",
+        "packages/otto-extension-sdk/src/catalog.ts:375",
+        "packages/otto-extension-sdk/src/catalog.ts:503"
+      ],
+      "evidence": [
+        "fact-033"
+      ],
+      "confidence": 0.9,
+      "notes": "Two-pass contract validation: manifest parse/schema pass followed by cross-catalog consistency checks."
+    },
+    {
+      "id": "pattern-007",
+      "name": "adapter",
+      "scope": "packages/otto-extensions/extensions/*/manifest.jsonc",
+      "locations": [
+        "packages/otto-extensions/CONTRACT.md:46",
+        "packages/otto-extensions/extensions/anylist/manifest.jsonc:13",
+        "packages/otto-extensions/scripts/generate-registry.mjs:129"
+      ],
+      "evidence": [
+        "fact-035",
+        "fact-037"
+      ],
+      "confidence": 0.89,
+      "notes": "Manifest payload descriptors adapt extension assets into runtime-consumable tools/skills/MCP entries."
+    },
+    {
+      "id": "pattern-008",
+      "name": "event_driven",
+      "scope": "packages/otto/src/scheduler + telegram-worker",
+      "locations": [
+        "packages/otto/src/runtime/serve.ts:424",
+        "packages/otto/src/runtime/serve.ts:438",
+        "packages/otto/src/internal-api/server.ts:571"
+      ],
+      "evidence": [
+        "fact-009",
+        "fact-010",
+        "fact-011"
+      ],
+      "confidence": 0.78,
+      "notes": "Job execution, outbound queues, and worker loops coordinate asynchronously across scheduler and messaging boundaries."
+    },
+    {
+      "id": "pattern-009",
+      "name": "other",
+      "scope": "packages/ui-design/prototype/index.html",
+      "locations": [
+        "packages/ui-design/prototype/index.html:725",
+        "packages/ui-design/prototype/index.html:795",
+        "packages/ui-design/prototype/index.html:922"
+      ],
+      "evidence": [
+        "fact-040"
+      ],
+      "confidence": 0.84,
+      "notes": "Single-controller static prototype pattern with DOM-driven transitions and command palette interactions."
+    },
+    {
+      "id": "pattern-010",
+      "name": "other",
+      "scope": "packages/otto/src/index.ts",
+      "locations": [
+        "packages/otto/src/index.ts:20",
+        "packages/otto/src/index.ts:23"
+      ],
+      "evidence": [
+        "fact-004"
+      ],
+      "confidence": 0.9,
+      "notes": "Command-dispatcher pattern keeps runtime mode selection in a single predictable boot path."
+    }
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "generatedAt": "2026-03-01T14:15:00Z",
+  "contracts": [
+    {
+      "id": "contract-001",
+      "rule": "Runtime command routing must stay centralized in packages/otto/src/index.ts and explicitly map setup, serve, and telegram-worker handlers.",
+      "scope": [
+        "packages/otto/src/index.ts",
+        "packages/otto/src/runtime"
+      ],
+      "derivedFrom": [
+        "pattern-001",
+        "pattern-010"
+      ],
+      "evidence": [
+        "fact-004"
+      ],
+      "severityIfViolated": "high"
+    },
+    {
+      "id": "contract-002",
+      "rule": "Internal and external Otto APIs must share one persisted bearer token boundary under <ottoHome>/secrets/internal-api.token.",
+      "scope": [
+        "packages/otto/src/internal-api/server.ts",
+        "packages/otto/src/external-api/server.ts",
+        "packages/otto/src/api/token.ts"
+      ],
+      "derivedFrom": [
+        "pattern-003",
+        "pattern-005"
+      ],
+      "evidence": [
+        "fact-012",
+        "fact-013",
+        "fact-014"
+      ],
+      "severityIfViolated": "high"
+    },
+    {
+      "id": "contract-003",
+      "rule": "Serve mode must remain the composition root that wires APIs, model services, scheduler, and Telegram worker in startup order.",
+      "scope": [
+        "packages/otto/src/runtime/serve.ts"
+      ],
+      "derivedFrom": [
+        "pattern-001",
+        "pattern-008"
+      ],
+      "evidence": [
+        "fact-006",
+        "fact-007",
+        "fact-008",
+        "fact-009",
+        "fact-010"
+      ],
+      "severityIfViolated": "high"
+    },
+    {
+      "id": "contract-004",
+      "rule": "Runtime data access should be mediated by persistence repositories; transport layers should avoid direct SQL coupling.",
+      "scope": [
+        "packages/otto/src/persistence",
+        "packages/otto/src/internal-api/server.ts",
+        "packages/otto/src/external-api/server.ts"
+      ],
+      "derivedFrom": [
+        "pattern-002",
+        "pattern-004"
+      ],
+      "evidence": [
+        "fact-006",
+        "fact-007",
+        "fact-015"
+      ],
+      "severityIfViolated": "medium"
+    },
+    {
+      "id": "contract-005",
+      "rule": "Control-plane route handlers should consume runtime data through the shared server adapter/facade and avoid duplicated request logic.",
+      "scope": [
+        "packages/otto-control-plane/app/server/otto-external-api.server.ts",
+        "packages/otto-control-plane/app/routes"
+      ],
+      "derivedFrom": [
+        "pattern-003",
+        "pattern-005"
+      ],
+      "evidence": [
+        "fact-021",
+        "fact-025",
+        "fact-026",
+        "fact-027",
+        "fact-028"
+      ],
+      "severityIfViolated": "medium"
+    },
+    {
+      "id": "contract-006",
+      "rule": "Extension manifests and payload references must pass SDK catalog validation before registry generation/release.",
+      "scope": [
+        "packages/otto-extension-sdk/src/catalog.ts",
+        "packages/otto-extensions"
+      ],
+      "derivedFrom": [
+        "pattern-006",
+        "pattern-007"
+      ],
+      "evidence": [
+        "fact-017",
+        "fact-033",
+        "fact-035",
+        "fact-036"
+      ],
+      "severityIfViolated": "high"
+    },
+    {
+      "id": "contract-007",
+      "rule": "Cross-package catalog paths must be configurable; SDK should not rely on fixed sibling-directory assumptions outside monorepo context.",
+      "scope": [
+        "packages/otto-extension-sdk/src/catalog.ts"
+      ],
+      "derivedFrom": [
+        "pattern-006"
+      ],
+      "evidence": [
+        "fact-032"
+      ],
+      "severityIfViolated": "medium"
+    },
+    {
+      "id": "contract-008",
+      "rule": "Runtime secrets and auth markers must remain server-only in control-plane builds.",
+      "scope": [
+        "packages/otto-control-plane/app/server/env.ts",
+        "packages/otto-control-plane/scripts/assert-no-client-secrets.mjs"
+      ],
+      "derivedFrom": [
+        "pattern-005"
+      ],
+      "evidence": [
+        "fact-020",
+        "fact-031"
+      ],
+      "severityIfViolated": "high"
+    },
+    {
+      "id": "contract-009",
+      "rule": "Control-plane chat/session features should prefer runtime API contracts over direct runtime SQLite table coupling.",
+      "scope": [
+        "packages/otto-control-plane/app/server/chat-env.server.ts",
+        "packages/otto-control-plane/app/server/otto-state.server.ts",
+        "packages/otto/src/external-api/server.ts"
+      ],
+      "derivedFrom": [
+        "pattern-003",
+        "pattern-005"
+      ],
+      "evidence": [
+        "fact-023",
+        "fact-024",
+        "fact-013"
+      ],
+      "severityIfViolated": "high"
+    }
+  ]
+}

@@ -1,0 +1,567 @@
+{
+  "generatedAt": "2026-03-01T14:15:00Z",
+  "packages": [
+    {
+      "id": "pkg-otto",
+      "name": "otto",
+      "path": "packages/otto",
+      "role": "Core runtime process, APIs, scheduler, Telegram worker, and operator CLIs",
+      "runtimeSurfaces": [
+        "runtime-cli",
+        "internal-api",
+        "external-api",
+        "scheduler-kernel",
+        "telegram-worker",
+        "extension-cli",
+        "model-cli"
+      ],
+      "confidence": 0.94,
+      "evidence": [
+        "fact-003",
+        "fact-004",
+        "fact-005",
+        "fact-006",
+        "fact-007",
+        "fact-008",
+        "fact-009",
+        "fact-010",
+        "fact-011",
+        "fact-013",
+        "fact-015"
+      ]
+    },
+    {
+      "id": "pkg-otto-control-plane",
+      "name": "otto-control-plane",
+      "path": "packages/otto-control-plane",
+      "role": "React Router web UI and BFF for runtime control/inspection",
+      "runtimeSurfaces": [
+        "react-router-ssr",
+        "bff-api",
+        "chat-surface"
+      ],
+      "confidence": 0.93,
+      "evidence": [
+        "fact-019",
+        "fact-020",
+        "fact-021",
+        "fact-022",
+        "fact-023",
+        "fact-024",
+        "fact-031"
+      ]
+    },
+    {
+      "id": "pkg-otto-extension-sdk",
+      "name": "otto-extension-sdk",
+      "path": "packages/otto-extension-sdk",
+      "role": "Shared extension contract validation and JSONC parsing",
+      "runtimeSurfaces": [
+        "validation-library",
+        "validation-cli-helper"
+      ],
+      "confidence": 0.91,
+      "evidence": [
+        "fact-032",
+        "fact-033",
+        "fact-034"
+      ]
+    },
+    {
+      "id": "pkg-otto-extensions",
+      "name": "otto-extensions",
+      "path": "packages/otto-extensions",
+      "role": "Manifest-driven extension catalog and generated registry artifacts",
+      "runtimeSurfaces": [
+        "registry-generator",
+        "extension-payloads"
+      ],
+      "confidence": 0.9,
+      "evidence": [
+        "fact-035",
+        "fact-036",
+        "fact-037",
+        "fact-038"
+      ]
+    },
+    {
+      "id": "pkg-experiments",
+      "name": "experiments",
+      "path": "packages/experiments",
+      "role": "Isolated third-party integration probes",
+      "runtimeSurfaces": [
+        "script-entrypoints"
+      ],
+      "confidence": 0.86,
+      "evidence": [
+        "fact-039"
+      ]
+    },
+    {
+      "id": "pkg-ui-design",
+      "name": "ui-design",
+      "path": "packages/ui-design",
+      "role": "Design specs and static prototypes, not production runtime code",
+      "runtimeSurfaces": [
+        "static-prototype"
+      ],
+      "confidence": 0.82,
+      "evidence": [
+        "fact-040",
+        "fact-041"
+      ]
+    }
+  ],
+  "entrypoints": [
+    {
+      "id": "entry-001",
+      "package": "otto",
+      "kind": "cli",
+      "path": "packages/otto/src/index.ts",
+      "commandSurface": [
+        "setup",
+        "serve",
+        "telegram-worker"
+      ],
+      "evidence": [
+        "fact-004"
+      ]
+    },
+    {
+      "id": "entry-002",
+      "package": "otto",
+      "kind": "service",
+      "path": "packages/otto/src/runtime/serve.ts",
+      "commandSurface": [
+        "serve"
+      ],
+      "evidence": [
+        "fact-005",
+        "fact-006",
+        "fact-007",
+        "fact-008",
+        "fact-009",
+        "fact-010"
+      ]
+    },
+    {
+      "id": "entry-003",
+      "package": "otto",
+      "kind": "cli",
+      "path": "packages/otto/src/extension-cli.ts",
+      "commandSurface": [
+        "list",
+        "install",
+        "update",
+        "disable",
+        "remove"
+      ],
+      "evidence": [
+        "fact-003",
+        "fact-018"
+      ]
+    },
+    {
+      "id": "entry-004",
+      "package": "otto",
+      "kind": "cli",
+      "path": "packages/otto/src/model-cli.ts",
+      "commandSurface": [
+        "model list",
+        "model refresh",
+        "model defaults",
+        "task set-model"
+      ],
+      "evidence": [
+        "fact-003",
+        "fact-020"
+      ]
+    },
+    {
+      "id": "entry-005",
+      "package": "otto-control-plane",
+      "kind": "web",
+      "path": "packages/otto-control-plane/app/routes.ts",
+      "commandSurface": [
+        "ui routes",
+        "api routes"
+      ],
+      "evidence": [
+        "fact-019"
+      ]
+    },
+    {
+      "id": "entry-006",
+      "package": "otto-extension-sdk",
+      "kind": "library",
+      "path": "packages/otto-extension-sdk/src/catalog.ts",
+      "commandSurface": [
+        "validateExtensionCatalog"
+      ],
+      "evidence": [
+        "fact-033"
+      ]
+    },
+    {
+      "id": "entry-007",
+      "package": "otto-extensions",
+      "kind": "build-script",
+      "path": "packages/otto-extensions/scripts/generate-registry.mjs",
+      "commandSurface": [
+        "registry:generate"
+      ],
+      "evidence": [
+        "fact-035"
+      ]
+    },
+    {
+      "id": "entry-008",
+      "package": "experiments",
+      "kind": "script",
+      "path": "packages/experiments/src/test-anylist.ts",
+      "commandSurface": [
+        "test:anylist"
+      ],
+      "evidence": [
+        "fact-039"
+      ]
+    },
+    {
+      "id": "entry-009",
+      "package": "ui-design",
+      "kind": "prototype",
+      "path": "packages/ui-design/prototype/index.html",
+      "commandSurface": [
+        "in-browser prototype"
+      ],
+      "evidence": [
+        "fact-040"
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "otto",
+      "to": "otto-extension-sdk",
+      "type": "workspace-library",
+      "description": "Runtime config parsing and extension validation command depend on SDK exports.",
+      "evidence": [
+        "fact-017",
+        "fact-032"
+      ]
+    },
+    {
+      "from": "otto",
+      "to": "otto-extensions",
+      "type": "registry-contract",
+      "description": "Runtime installs/updates extensions from registry index generated by otto-extensions.",
+      "evidence": [
+        "fact-018",
+        "fact-035",
+        "fact-036"
+      ]
+    },
+    {
+      "from": "otto-control-plane",
+      "to": "otto",
+      "type": "runtime-http",
+      "description": "Control-plane BFF calls runtime external API using shared token contract.",
+      "evidence": [
+        "fact-013",
+        "fact-020",
+        "fact-021"
+      ]
+    },
+    {
+      "from": "otto-control-plane",
+      "to": "otto",
+      "type": "filesystem-contract",
+      "description": "Control-plane chat path reads runtime config and runtime SQLite state DB directly.",
+      "evidence": [
+        "fact-022",
+        "fact-023",
+        "fact-024"
+      ]
+    },
+    {
+      "from": "otto-extensions",
+      "to": "otto-extension-sdk",
+      "type": "validation-contract",
+      "description": "Catalog contract ownership is in SDK; extension package follows that validation pipeline.",
+      "evidence": [
+        "fact-033",
+        "fact-036"
+      ]
+    },
+    {
+      "from": "ui-design",
+      "to": "otto",
+      "type": "design-spec-reference",
+      "description": "Design spec references runtime command model directly.",
+      "evidence": [
+        "fact-041"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow-001",
+      "name": "Serve Boot and Runtime Composition",
+      "entrypoint": "packages/otto/src/runtime/serve.ts",
+      "steps": [
+        "Validate/read runtime config and workspace assets",
+        "Materialize effective OpenCode config",
+        "Open persistence DB and repositories",
+        "Start internal API then external API",
+        "Start OpenCode server and model catalog refresh",
+        "Ensure watchdog/heartbeat and start scheduler kernel",
+        "Start Telegram worker best-effort"
+      ],
+      "evidence": [
+        "fact-005",
+        "fact-006",
+        "fact-007",
+        "fact-008",
+        "fact-009",
+        "fact-010"
+      ]
+    },
+    {
+      "id": "flow-002",
+      "name": "Control-Plane Request to Runtime",
+      "entrypoint": "packages/otto-control-plane/app/routes.ts",
+      "steps": [
+        "Route loader/action invokes server adapter",
+        "Adapter adds bearer auth and validates payload with zod",
+        "Request hits /external/* runtime API",
+        "Route returns normalized response to UI"
+      ],
+      "evidence": [
+        "fact-019",
+        "fact-021",
+        "fact-025",
+        "fact-013"
+      ]
+    },
+    {
+      "id": "flow-003",
+      "name": "Extension Catalog Build and Runtime Install",
+      "entrypoint": "packages/otto-extensions/scripts/generate-registry.mjs",
+      "steps": [
+        "Read extension manifests and package tarballs",
+        "Generate registry/index.json with checksums",
+        "Runtime resolves registry entry from remote index",
+        "Runtime downloads archive, verifies SHA256, and extracts to extension store"
+      ],
+      "evidence": [
+        "fact-035",
+        "fact-018",
+        "fact-037"
+      ]
+    },
+    {
+      "id": "flow-004",
+      "name": "Chat Session Binding Read Path",
+      "entrypoint": "packages/otto-control-plane/app/server/chat-env.server.ts",
+      "steps": [
+        "Control-plane resolves runtime DB path from Otto config/home",
+        "Control-plane opens runtime SQLite directly",
+        "Session bindings are read for chat thread/session mapping"
+      ],
+      "evidence": [
+        "fact-022",
+        "fact-023",
+        "fact-024"
+      ]
+    }
+  ],
+  "stateBoundaries": [
+    {
+      "id": "state-001",
+      "name": "Runtime Config",
+      "owner": "otto",
+      "storage": "jsonc-file",
+      "location": "~/.config/otto/config.jsonc",
+      "consumers": [
+        "otto",
+        "otto-control-plane(chat-env)"
+      ],
+      "evidence": [
+        "fact-016",
+        "fact-022"
+      ]
+    },
+    {
+      "id": "state-002",
+      "name": "Runtime State DB",
+      "owner": "otto",
+      "storage": "sqlite",
+      "location": "<ottoHome>/data/otto-state.db",
+      "consumers": [
+        "otto",
+        "otto-control-plane(otto-state.server)"
+      ],
+      "evidence": [
+        "fact-015",
+        "fact-023",
+        "fact-024"
+      ]
+    },
+    {
+      "id": "state-003",
+      "name": "API Token",
+      "owner": "otto",
+      "storage": "file-secret",
+      "location": "<ottoHome>/secrets/internal-api.token",
+      "consumers": [
+        "otto-internal-api",
+        "otto-external-api",
+        "otto-control-plane"
+      ],
+      "evidence": [
+        "fact-014",
+        "fact-020"
+      ]
+    },
+    {
+      "id": "state-004",
+      "name": "Extension Catalog Registry",
+      "owner": "otto-extensions",
+      "storage": "json-and-tar-artifacts",
+      "location": "packages/otto-extensions/registry",
+      "consumers": [
+        "otto"
+      ],
+      "evidence": [
+        "fact-018",
+        "fact-035",
+        "fact-036"
+      ]
+    },
+    {
+      "id": "state-005",
+      "name": "Prototype UI State",
+      "owner": "ui-design",
+      "storage": "in-memory-browser-state",
+      "location": "packages/ui-design/prototype/index.html",
+      "consumers": [
+        "prototype-page-only"
+      ],
+      "evidence": [
+        "fact-040"
+      ]
+    }
+  ],
+  "hotspots": [
+    {
+      "id": "hotspot-001",
+      "kind": "unstable-central-module",
+      "area": "packages/otto/src/runtime/serve.ts",
+      "signals": {
+        "commitCount": 18,
+        "coChangePartners": 163,
+        "role": "runtime composition root"
+      },
+      "confidence": 0.88,
+      "impact": 0.86,
+      "priority": 0.87,
+      "evidence": [
+        "fact-004",
+        "fact-044",
+        "fact-046"
+      ]
+    },
+    {
+      "id": "hotspot-002",
+      "kind": "unstable-central-module",
+      "area": "packages/otto/src/persistence/repositories.ts",
+      "signals": {
+        "fanIn": 23,
+        "commitCount": 11,
+        "coChangePartners": 147
+      },
+      "confidence": 0.84,
+      "impact": 0.82,
+      "priority": 0.79,
+      "evidence": [
+        "fact-043",
+        "fact-046"
+      ]
+    },
+    {
+      "id": "hotspot-003",
+      "kind": "god-module-risk",
+      "area": "packages/otto/src/internal-api/server.ts",
+      "signals": {
+        "lineCountApprox": 1806,
+        "commitCount": 13,
+        "coChangePartners": 139
+      },
+      "confidence": 0.9,
+      "impact": 0.85,
+      "priority": 0.88,
+      "evidence": [
+        "fact-011",
+        "fact-012",
+        "fact-044",
+        "fact-046"
+      ]
+    },
+    {
+      "id": "hotspot-004",
+      "kind": "shotgun-surgery-risk",
+      "area": "packages/otto-control-plane/app/routes/jobs.tsx + jobs.$jobId.tsx",
+      "signals": {
+        "duplicatedConcerns": [
+          "INHERIT_MODEL_OPTION",
+          "isSystemReservedJobType",
+          "parseMutationResponse"
+        ],
+        "commitCount": {
+          "jobs": 7,
+          "jobDetail": 9
+        }
+      },
+      "confidence": 0.81,
+      "impact": 0.71,
+      "priority": 0.61,
+      "evidence": [
+        "fact-027",
+        "fact-028",
+        "fact-045"
+      ]
+    },
+    {
+      "id": "hotspot-005",
+      "kind": "boundary-leak-risk",
+      "area": "packages/otto-control-plane/app/server/chat-env.server.ts + otto-state.server.ts",
+      "signals": {
+        "runtimeOwnedStorageReadDirectly": true,
+        "crossPackageCoupling": "filesystem path + sqlite table contract"
+      },
+      "confidence": 0.86,
+      "impact": 0.8,
+      "priority": 0.72,
+      "evidence": [
+        "fact-022",
+        "fact-023",
+        "fact-024",
+        "fact-047"
+      ]
+    },
+    {
+      "id": "hotspot-006",
+      "kind": "abstraction-leak-risk",
+      "area": "packages/otto/src/api-services/tasks-read.ts",
+      "signals": {
+        "laneParameterIgnored": true
+      },
+      "confidence": 0.92,
+      "impact": 0.6,
+      "priority": 0.55,
+      "evidence": [
+        "fact-042"
+      ]
+    }
+  ]
+}
