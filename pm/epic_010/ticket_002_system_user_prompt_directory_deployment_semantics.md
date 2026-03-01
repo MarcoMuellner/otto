@@ -2,7 +2,7 @@
 
 ## Status
 
-- `state`: `planned`
+- `state`: `done`
 
 ## Objective
 

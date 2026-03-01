@@ -1,0 +1,6 @@
+{
+  // System-owned prompt routing baseline.
+  // Ticket 003 introduces mapping schema + runtime resolution.
+  "version": 1,
+  "routes": {}
+}

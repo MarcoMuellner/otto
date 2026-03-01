@@ -6,11 +6,16 @@ This is the Otto personal assistant workspace.
 
 ```
 ~/.otto/
+├── .opencode/      # OpenCode tools + local runtime package
 ├── data/           # Local assistant data
+├── extensions/     # Extension state + runtime activation
 ├── inbox/          # Shared drop folder
 ├── logs/           # Runtime logs
+├── prompts/        # User-owned prompt files (preserved on update)
 ├── scripts/        # Scheduled scripts
-└── secrets/        # Local credentials
+├── secrets/        # Local credentials
+├── system-prompts/ # System-owned prompt files (refreshed on setup/update)
+└── task-config/    # Task runtime config + profiles
 ```
 
 ## Conventions

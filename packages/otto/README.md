@@ -17,6 +17,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - `src/`: application source code
 - `src/assets/`: deployable OpenCode assets (including `opencode.jsonc`)
 - `src/assets/.opencode/`: shipped OpenCode local tools and tool runtime dependencies
+- `src/assets/system-prompts/`: system-owned prompt templates and mapping baseline
+- `src/assets/prompts/`: user-owned prompt templates seeded on first setup
 - `src/assets/task-config/`: deployable task runtime base config and task profiles
 - `dist/`: transpiled JavaScript output
 - `tests/`: test suite (outside `src/`)
@@ -38,6 +40,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - External API env (optional): `OTTO_EXTERNAL_API_HOST` (default `0.0.0.0`), `OTTO_EXTERNAL_API_PORT` (default `4190`)
 - Internal API token: persisted in `~/.otto/secrets/internal-api.token` and exported at runtime as `OTTO_INTERNAL_API_URL` + `OTTO_INTERNAL_API_TOKEN` for OpenCode tools
 - External API token: reuses `~/.otto/secrets/internal-api.token`; runtime exports `OTTO_EXTERNAL_API_URL`
+- System prompts root: `~/.otto/system-prompts` (always refreshed by `otto setup`/`ottoctl update`)
+- User prompts root: `~/.otto/prompts` (seeded when missing, then preserved on `otto setup`/`ottoctl update`)
 - API boundary: `/internal/*` is OpenCode-tool/internal runtime integration, `/external/*` is authenticated LAN-facing control-plane/app integration
 - External jobs endpoints currently exposed:
   - System: `GET /external/system/status`, `POST /external/system/restart`

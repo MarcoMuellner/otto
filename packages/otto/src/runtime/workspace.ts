@@ -11,9 +11,12 @@ const WORKSPACE_SUBDIRECTORIES = [
   "task-config",
   "extensions",
   "extensions/store",
+  "system-prompts",
+  "prompts",
 ] as const
 const ASSET_FILES = ["opencode.jsonc", "AGENTS.md"] as const
-const ASSET_DIRECTORIES = [".opencode", "task-config"] as const
+const OVERWRITE_ASSET_DIRECTORIES = [".opencode", "task-config", "system-prompts"] as const
+const PRESERVE_ASSET_DIRECTORIES = ["prompts"] as const
 
 /**
  * Resolves assets relative to the active runtime entry so setup can locate bundled assets
@@ -57,8 +60,8 @@ export const ensureWorkspaceDirectories = async (ottoHome: string): Promise<stri
 }
 
 /**
- * Deploys shipped assets into Otto home so runtime uses a deterministic local config that
- * can still be edited by the user after setup.
+ * Deploys shipped assets into Otto home so setup/update can safely refresh system-owned
+ * runtime files while preserving user-owned prompt customizations.
  *
  * @param assetDirectory Directory containing deployable assets.
  * @param ottoHome Otto workspace root path.
@@ -80,12 +83,26 @@ export const deployWorkspaceAssets = async (
     deployedFiles.push(targetPath)
   }
 
-  for (const assetDirectoryName of ASSET_DIRECTORIES) {
+  for (const assetDirectoryName of OVERWRITE_ASSET_DIRECTORIES) {
     const sourcePath = path.join(assetDirectory, assetDirectoryName)
     const targetPath = path.join(ottoHome, assetDirectoryName)
 
     await access(sourcePath, constants.F_OK)
     await cp(sourcePath, targetPath, { recursive: true, force: true })
+
+    deployedFiles.push(targetPath)
+  }
+
+  for (const assetDirectoryName of PRESERVE_ASSET_DIRECTORIES) {
+    const sourcePath = path.join(assetDirectory, assetDirectoryName)
+    const targetPath = path.join(ottoHome, assetDirectoryName)
+
+    await access(sourcePath, constants.F_OK)
+    await cp(sourcePath, targetPath, {
+      recursive: true,
+      force: false,
+      errorOnExist: false,
+    })
 
     deployedFiles.push(targetPath)
   }
