@@ -4,6 +4,11 @@ import Fastify, { type FastifyInstance } from "fastify"
 import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
+import {
+  cancelInteractiveBackgroundJob,
+  getInteractiveBackgroundJobById,
+  listInteractiveBackgroundJobs,
+} from "../api-services/interactive-background-jobs-control.js"
 import { listTasksForLane } from "../api-services/tasks-read.js"
 import {
   createTaskMutation,
@@ -28,6 +33,8 @@ import type {
   CommandAuditRecord,
   FailedJobRunRecord,
   JobRecord,
+  JobRunRecord,
+  JobRunSessionRecord,
   JobScheduleType,
   TaskAuditRecord,
   TaskListRecord,
@@ -75,7 +82,21 @@ type InternalApiServerDependencies = {
     cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
     runTaskNow: (jobId: string, scheduledFor: number, updatedAt?: number) => void
     listTasks: () => TaskListRecord[]
+    listRunsByJobId?: (
+      jobId: string,
+      options?: {
+        limit?: number
+        offset?: number
+      }
+    ) => JobRunRecord[]
     listRecentFailedRuns: (sinceTimestamp: number, limit?: number) => FailedJobRunRecord[]
+  }
+  jobRunSessionsRepository?: {
+    listActiveByJobId: (jobId: string) => JobRunSessionRecord[]
+    markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
+  }
+  sessionController?: {
+    closeSession: (sessionId: string) => Promise<void>
   }
   taskAuditRepository: {
     insert: (record: TaskAuditRecord) => void
@@ -216,6 +237,22 @@ const spawnBackgroundJobApiSchema = z.object({
   sourceMessageId: z.string().trim().min(1).optional(),
 })
 
+const listBackgroundJobsApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  limit: z.number().int().min(1).max(200).optional(),
+})
+
+const showBackgroundJobApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  jobId: z.string().trim().min(1),
+})
+
+const cancelBackgroundJobApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  jobId: z.string().trim().min(1),
+  reason: z.string().trim().min(1).optional(),
+})
+
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
 }
@@ -245,6 +282,35 @@ const assertTaskMutationLane = (
     body: {
       error: "lane_forbidden",
       message: "Task mutation is only allowed in interactive lane",
+    },
+  }
+}
+
+const assertInteractiveBackgroundLane = (
+  logger: Logger,
+  lane: "interactive" | "scheduled",
+  action: "list" | "show" | "cancel"
+):
+  | { allowed: true }
+  | { allowed: false; statusCode: 403; body: { error: "lane_forbidden"; message: string } } => {
+  if (lane === "interactive") {
+    return { allowed: true }
+  }
+
+  logger.warn(
+    {
+      lane,
+      action,
+    },
+    "Denied background control request for execution lane"
+  )
+
+  return {
+    allowed: false,
+    statusCode: 403,
+    body: {
+      error: "lane_forbidden",
+      message: "Background task controls are only allowed in interactive lane",
     },
   }
 }
@@ -368,6 +434,10 @@ export const buildInternalApiServer = (
   dependencies: InternalApiServerDependencies
 ): FastifyInstance => {
   const app = Fastify({ logger: false })
+  const jobRunSessionsRepository = dependencies.jobRunSessionsRepository ?? {
+    listActiveByJobId: () => [] as JobRunSessionRecord[],
+    markClosed: () => {},
+  }
 
   app.post("/internal/tools/queue-telegram-message", async (request, reply) => {
     const authorization = request.headers.authorization
@@ -758,6 +828,261 @@ export const buildInternalApiServer = (
         errorMessage: err.message,
       })
       dependencies.logger.error({ error: err.message }, "Internal API background job spawn failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/background-jobs/list", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = listBackgroundJobsApiSchema.parse(request.body)
+      const laneDecision = assertInteractiveBackgroundLane(
+        dependencies.logger,
+        payload.lane,
+        "list"
+      )
+      if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "list_background_tasks",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
+        return reply.code(laneDecision.statusCode).send(laneDecision.body)
+      }
+
+      const tasks = listInteractiveBackgroundJobs({
+        jobsRepository: dependencies.jobsRepository,
+      })
+      const limit = payload.limit ?? 50
+      const limitedTasks = tasks.slice(0, limit)
+
+      writeCommandAudit(dependencies, {
+        command: "list_background_tasks",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          total: tasks.length,
+          returned: limitedTasks.length,
+        }),
+      })
+
+      return reply.code(200).send({
+        tasks: limitedTasks,
+        total: tasks.length,
+      })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "list_background_tasks",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "list_background_tasks",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API background list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/background-jobs/show", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = showBackgroundJobApiSchema.parse(request.body)
+      const laneDecision = assertInteractiveBackgroundLane(
+        dependencies.logger,
+        payload.lane,
+        "show"
+      )
+      if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "show_background_task",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
+        return reply.code(laneDecision.statusCode).send(laneDecision.body)
+      }
+
+      const details = getInteractiveBackgroundJobById(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          jobRunSessionsRepository,
+        },
+        payload.jobId
+      )
+
+      if (!details) {
+        writeCommandAudit(dependencies, {
+          command: "show_background_task",
+          lane: payload.lane,
+          status: "failed",
+          errorMessage: "Background task not found",
+          metadataJson: JSON.stringify({ jobId: payload.jobId }),
+        })
+        return reply.code(404).send({
+          error: "not_found",
+          message: "Background task not found",
+        })
+      }
+
+      writeCommandAudit(dependencies, {
+        command: "show_background_task",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          jobId: payload.jobId,
+          status: details.job.status,
+          terminalState: details.job.terminalState,
+          activeSessions: details.activeRunSessions.length,
+        }),
+      })
+
+      return reply.code(200).send(details)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "show_background_task",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "show_background_task",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API background show failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/background-jobs/cancel", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = cancelBackgroundJobApiSchema.parse(request.body)
+      const laneDecision = assertInteractiveBackgroundLane(
+        dependencies.logger,
+        payload.lane,
+        "cancel"
+      )
+      if (!laneDecision.allowed) {
+        writeCommandAudit(dependencies, {
+          command: "cancel_background_task",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: laneDecision.body.message,
+        })
+        return reply.code(laneDecision.statusCode).send(laneDecision.body)
+      }
+
+      const result = await cancelInteractiveBackgroundJob(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          jobRunSessionsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+          sessionController: dependencies.sessionController,
+        },
+        {
+          jobId: payload.jobId,
+          reason: payload.reason,
+          actor: "internal_tool",
+          source: "internal_api",
+        }
+      )
+
+      if (!result) {
+        writeCommandAudit(dependencies, {
+          command: "cancel_background_task",
+          lane: payload.lane,
+          status: "failed",
+          errorMessage: "Background task not found",
+          metadataJson: JSON.stringify({ jobId: payload.jobId }),
+        })
+        return reply.code(404).send({
+          error: "not_found",
+          message: "Background task not found",
+        })
+      }
+
+      writeCommandAudit(dependencies, {
+        command: "cancel_background_task",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          jobId: result.jobId,
+          outcome: result.outcome,
+          terminalState: result.terminalState,
+          stopFailureCount: result.stopSessionResults.filter(
+            (entry) => entry.status === "stop_failed"
+          ).length,
+        }),
+      })
+
+      return reply.code(200).send(result)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "cancel_background_task",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "cancel_background_task",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API background cancel failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })
