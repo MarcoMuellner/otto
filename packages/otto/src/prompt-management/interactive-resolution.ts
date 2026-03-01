@@ -1,15 +1,10 @@
-import path from "node:path"
-import { readFile } from "node:fs/promises"
-
 import type { Logger } from "pino"
 
+import { loadPromptLayerInputFromReference } from "./layer-loader.js"
 import { resolvePromptComposition } from "./resolver.js"
 import { loadPromptRoutingMapping, resolvePromptRoute } from "./routing.js"
 import type { PromptLayerInput, PromptLayerType } from "./types.js"
 import type { PromptLayerReference, PromptRouteMedia } from "./routing-types.js"
-
-const SYSTEM_PROMPTS_DIRECTORY_NAME = "system-prompts"
-const USER_PROMPTS_DIRECTORY_NAME = "prompts"
 
 const INTERACTIVE_LAYER_TYPES = [
   "core-persona",
@@ -44,51 +39,10 @@ const resolveInteractiveMedia = (surface: InteractivePromptSurface): PromptRoute
   return INTERACTIVE_SURFACE_TO_MEDIA[surface]
 }
 
-const resolvePromptRootDirectory = (
-  ottoHome: string,
-  source: PromptLayerReference["source"]
-): string => {
-  return path.join(
-    ottoHome,
-    source === "system" ? SYSTEM_PROMPTS_DIRECTORY_NAME : USER_PROMPTS_DIRECTORY_NAME
-  )
-}
-
 const toWarning = (code: string, message: string): InteractivePromptWarning => {
   return {
     code,
     message,
-  }
-}
-
-const loadRouteLayerInput = async (input: {
-  ottoHome: string
-  reference: PromptLayerReference
-}): Promise<PromptLayerInput> => {
-  const rootDirectory = resolvePromptRootDirectory(input.ottoHome, input.reference.source)
-  const absolutePath = path.join(rootDirectory, input.reference.path)
-
-  try {
-    const markdown = await readFile(absolutePath, "utf8")
-
-    return {
-      status: "resolved",
-      markdown,
-    }
-  } catch (error) {
-    const fileError = error as NodeJS.ErrnoException
-    if (fileError.code === "ENOENT") {
-      return {
-        status: "missing",
-      }
-    }
-
-    const errorMessage = error instanceof Error ? error.message : String(error)
-
-    return {
-      status: "invalid",
-      reason: `Unable to read prompt layer file at '${absolutePath}': ${errorMessage}`,
-    }
   }
 }
 
@@ -120,6 +74,7 @@ export const resolveInteractiveSystemPrompt = async (input: {
 
   const layerInputs: Partial<Record<PromptLayerType, PromptLayerInput>> = {}
   const layerReferences: Partial<Record<PromptLayerType, PromptLayerReference>> = {}
+  const layerAbsolutePaths: Partial<Record<PromptLayerType, string>> = {}
   for (const layer of INTERACTIVE_LAYER_TYPES) {
     const reference = resolvedRoute.route.layers[layer]
     if (!reference) {
@@ -127,10 +82,12 @@ export const resolveInteractiveSystemPrompt = async (input: {
     }
 
     layerReferences[layer] = reference
-    layerInputs[layer] = await loadRouteLayerInput({
+    const loaded = await loadPromptLayerInputFromReference({
       ottoHome: input.ottoHome,
       reference,
     })
+    layerInputs[layer] = loaded.input
+    layerAbsolutePaths[layer] = loaded.absolutePath
   }
 
   const composition = resolvePromptComposition({
@@ -147,8 +104,7 @@ export const resolveInteractiveSystemPrompt = async (input: {
       continue
     }
 
-    const rootDirectory = resolvePromptRootDirectory(input.ottoHome, reference.source)
-    const absolutePath = path.join(rootDirectory, reference.path)
+    const absolutePath = layerAbsolutePaths[warning.layer] ?? reference.path
 
     if (reference.source === "user") {
       input.logger?.error(
