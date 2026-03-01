@@ -1,31 +1,101 @@
 import {
   PROMPT_LAYER_ORDER,
   type PromptCompositionResult,
-  type PromptLayerInput,
   type PromptLayerResolution,
   type PromptLayerType,
   type PromptResolutionWarning,
   type ResolvePromptCompositionInput,
 } from "./types.js"
 
-const normalizeLayerInputs = (
-  layers: unknown
-): Partial<Record<PromptLayerType, PromptLayerInput>> => {
+const normalizeLayerInputs = (layers: unknown): Partial<Record<PromptLayerType, unknown>> => {
   if (typeof layers !== "object" || layers === null || Array.isArray(layers)) {
     return {}
   }
 
-  return layers as Partial<Record<PromptLayerType, PromptLayerInput>>
+  return layers as Partial<Record<PromptLayerType, unknown>>
+}
+
+const parseLayerInput = (
+  layer: PromptLayerType,
+  input: unknown
+):
+  | {
+      status: "resolved"
+      markdown: string
+    }
+  | {
+      status: "missing"
+    }
+  | {
+      status: "invalid"
+      reason: string
+    } => {
+  if (input === undefined) {
+    return {
+      status: "missing",
+    }
+  }
+
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return {
+      status: "invalid",
+      reason: `Layer input for '${layer}' must be an object`,
+    }
+  }
+
+  const status = (input as { status?: unknown }).status
+  if (status === "missing") {
+    return {
+      status: "missing",
+    }
+  }
+
+  if (status === "resolved") {
+    const markdown = (input as { markdown?: unknown }).markdown
+    if (typeof markdown !== "string") {
+      return {
+        status: "invalid",
+        reason: `Resolved layer '${layer}' must provide markdown as a string`,
+      }
+    }
+
+    return {
+      status: "resolved",
+      markdown,
+    }
+  }
+
+  if (status === "invalid") {
+    const reason = (input as { reason?: unknown }).reason
+    if (typeof reason !== "string" || reason.trim().length === 0) {
+      return {
+        status: "invalid",
+        reason: `Invalid layer '${layer}' must provide a non-empty reason`,
+      }
+    }
+
+    return {
+      status: "invalid",
+      reason,
+    }
+  }
+
+  return {
+    status: "invalid",
+    reason: `Layer '${layer}' has unknown status`,
+  }
 }
 
 const resolveLayer = (
   layer: PromptLayerType,
-  input: PromptLayerInput | undefined
+  input: unknown
 ): {
   layer: PromptLayerResolution
   warning: PromptResolutionWarning | null
 } => {
-  if (!input || input.status === "missing") {
+  const parsedInput = parseLayerInput(layer, input)
+
+  if (parsedInput.status === "missing") {
     return {
       layer: {
         layer,
@@ -40,23 +110,23 @@ const resolveLayer = (
     }
   }
 
-  if (input.status === "invalid") {
+  if (parsedInput.status === "invalid") {
     return {
       layer: {
         layer,
         status: "invalid",
-        reason: input.reason,
+        reason: parsedInput.reason,
         applied: false,
       },
       warning: {
         code: "invalid_layer",
         layer,
-        message: `Prompt layer '${layer}' is invalid: ${input.reason}`,
+        message: `Prompt layer '${layer}' is invalid: ${parsedInput.reason}`,
       },
     }
   }
 
-  if (input.markdown.trim().length === 0) {
+  if (parsedInput.markdown.trim().length === 0) {
     return {
       layer: {
         layer,
@@ -76,7 +146,7 @@ const resolveLayer = (
     layer: {
       layer,
       status: "resolved",
-      markdown: input.markdown,
+      markdown: parsedInput.markdown,
       applied: true,
     },
     warning: null,

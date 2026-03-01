@@ -185,4 +185,52 @@ describe("resolvePromptComposition", () => {
     ])
     expect(fromNullLayers.warnings).toEqual(fromEmptyObject.warnings)
   })
+
+  it("handles malformed layer values without throwing", () => {
+    // Arrange
+    const resolveUnsafe = resolvePromptComposition as (
+      input: unknown
+    ) => ReturnType<typeof resolvePromptComposition>
+
+    // Act
+    const malformed = resolveUnsafe({
+      layers: {
+        "core-persona": "invalid",
+        surface: {
+          status: "resolved",
+        },
+        media: {
+          status: "invalid",
+          reason: 123,
+        },
+        "task-profile": {
+          status: "resolved",
+          markdown: "## Task Profile\nOnly run profile-specific steps.",
+        },
+      },
+    })
+
+    // Assert
+    expect(malformed.segments).toEqual(["## Task Profile\nOnly run profile-specific steps."])
+    expect(malformed.warnings).toEqual([
+      {
+        code: "invalid_layer",
+        layer: "core-persona",
+        message:
+          "Prompt layer 'core-persona' is invalid: Layer input for 'core-persona' must be an object",
+      },
+      {
+        code: "invalid_layer",
+        layer: "surface",
+        message:
+          "Prompt layer 'surface' is invalid: Resolved layer 'surface' must provide markdown as a string",
+      },
+      {
+        code: "invalid_layer",
+        layer: "media",
+        message:
+          "Prompt layer 'media' is invalid: Invalid layer 'media' must provide a non-empty reason",
+      },
+    ])
+  })
 })
