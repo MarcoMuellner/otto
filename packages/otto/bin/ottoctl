@@ -1033,8 +1033,30 @@ run_model_cli() {
   NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/model-cli.mjs" "$@"
 }
 
+run_prompt_cli() {
+  NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/prompt-cli.mjs" "$@"
+}
+
 cmd_model() {
   run_model_cli model "$@"
+}
+
+cmd_prompt() {
+  local subcommand="${1:-}"
+  shift || true
+
+  case "${subcommand}" in
+    ""|prompt)
+      run_prompt_cli prompt "$@"
+      ;;
+    help|--help|-h)
+      run_prompt_cli --help
+      ;;
+    *)
+      error "Unknown prompt command: ${subcommand}"
+      exit 1
+      ;;
+  esac
 }
 
 cmd_extension() {
@@ -1715,6 +1737,7 @@ Usage:
   ottoctl model defaults set <flow> <provider/model|inherit>
   ottoctl heartbeat status
   ottoctl heartbeat mode <observe|mute>
+  ottoctl prompt
   ottoctl extension list
   ottoctl extension install <id>[@version]
   ottoctl extension update <id>
@@ -1772,6 +1795,10 @@ main() {
     heartbeat)
       shift
       cmd_heartbeat "$@"
+      ;;
+    prompt)
+      shift
+      cmd_prompt "$@"
       ;;
     extension)
       shift

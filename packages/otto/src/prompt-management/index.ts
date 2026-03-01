@@ -5,6 +5,7 @@ export {
 } from "./routing.js"
 export { resolveInteractiveSystemPrompt } from "./interactive-resolution.js"
 export { resolveJobSystemPrompt } from "./job-resolution.js"
+export { listPromptFileInventory } from "./inventory.js"
 export { resolvePromptComposition } from "./resolver.js"
 export { PROMPT_LAYER_ORDER } from "./types.js"
 export {
@@ -12,6 +13,7 @@ export {
   PROMPT_ROUTE_FLOW_VALUES,
   PROMPT_ROUTE_MEDIA_VALUES,
 } from "./routing-types.js"
+export type { PromptFileInventoryEntry } from "./inventory.js"
 export type {
   PromptCompositionResult,
   PromptLayerInput,

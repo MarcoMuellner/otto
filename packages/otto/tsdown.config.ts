@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown"
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/extension-cli.ts", "src/model-cli.ts"],
+  entry: ["src/index.ts", "src/extension-cli.ts", "src/model-cli.ts", "src/prompt-cli.ts"],
   platform: "node",
   format: ["esm"],
   banner: {
