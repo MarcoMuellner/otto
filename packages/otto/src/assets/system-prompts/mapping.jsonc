@@ -1,6 +1,116 @@
 {
   // System-owned prompt routing baseline.
-  // Ticket 003 introduces mapping schema + runtime resolution.
   "version": 1,
-  "routes": {}
+  "selectors": {
+    "interactive": {
+      "default": "interactive-cli",
+      "media": {
+        "chatapps": "interactive-chatapps",
+        "web": "interactive-web",
+        "cli": "interactive-cli"
+      }
+    },
+    "scheduled": {
+      "default": "scheduled-cli",
+      "media": {
+        "chatapps": "scheduled-chatapps",
+        "web": "scheduled-web",
+        "cli": "scheduled-cli"
+      }
+    },
+    "background": {
+      "default": "background-cli",
+      "media": {
+        "chatapps": "background-chatapps",
+        "web": "background-web",
+        "cli": "background-cli"
+      }
+    },
+    "watchdog": {
+      "default": "watchdog-default",
+      "media": {}
+    }
+  },
+  "routes": {
+    "interactive-chatapps": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "interactive-web": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "interactive-cli": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "scheduled-chatapps": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "scheduled-web": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "scheduled-cli": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "background-chatapps": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "background-web": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "background-cli": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    },
+    "watchdog-default": {
+      "layers": {
+        "core-persona": {
+          "source": "system",
+          "path": "layers/core-persona.md"
+        }
+      }
+    }
+  }
 }
