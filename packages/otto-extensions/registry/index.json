@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-02-20T21:38:50.247Z",
+  "generatedAt": "2026-03-01T09:55:34.933Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -22,12 +22,12 @@
       }
     },
     "brave-search": {
-      "latest": "0.1.0",
+      "latest": "0.1.1",
       "versions": {
-        "0.1.0": {
-          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/brave-search-0.1.0.tgz",
-          "sha256": "ad542f0a5283ba5ae887913a4bab4718ef6a1d514c3a5a082c214a8760118f5c",
-          "sizeBytes": 1671,
+        "0.1.1": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/brave-search-0.1.1.tgz",
+          "sha256": "9f6e6f9cfde4ad9dd760675532997b94497969cecdf6e7868ef3f83cd3478ea4",
+          "sizeBytes": 1978,
           "compatibility": {
             "otto": ">=0.1.0",
             "node": ">=22"

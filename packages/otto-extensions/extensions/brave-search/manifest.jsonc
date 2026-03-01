@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "brave-search",
   "name": "Brave Search MCP",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Brave Search MCP server for web, news, image, video, and local search with agent-friendly tooling.",
   "tags": ["mcp", "search", "brave", "web", "research"],
   "compatibility": {

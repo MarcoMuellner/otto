@@ -6,6 +6,7 @@
         "assistant": {
           "tools": {
             "skill": true,
+            "report_background_milestone": true,
           },
           "prompt": "You are Otto's assistant runtime. Stay concise and outcome-focused.",
         },
@@ -39,6 +40,7 @@
               "list_tasks": true,
               "check_task_failures": true,
               "queue_telegram_message": true,
+              "report_background_milestone": false,
               "get_notification_policy": true,
               "set_notification_policy": true,
             },
