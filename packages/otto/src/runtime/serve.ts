@@ -251,6 +251,16 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
         }, 150)
       },
       jobsRepository,
+      jobRunSessionsRepository,
+      sessionController: {
+        closeSession: async (sessionId: string): Promise<void> => {
+          if (!interactiveSessionController?.closeSession) {
+            throw new Error("Session close is unavailable")
+          }
+
+          await interactiveSessionController.closeSession(sessionId)
+        },
+      },
       taskAuditRepository,
       commandAuditRepository,
       userProfileRepository,

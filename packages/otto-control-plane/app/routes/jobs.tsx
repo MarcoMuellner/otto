@@ -6,7 +6,10 @@ import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.js"
 import { Switch } from "../components/ui/switch.js"
 import { modelCatalogResponseSchema } from "../features/models/contracts.js"
-import type { ExternalJobListItem } from "../features/jobs/contracts.js"
+import {
+  INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+  type ExternalJobListItem,
+} from "../features/jobs/contracts.js"
 import { getJobDisplayTitle } from "../features/jobs/presentation.js"
 import {
   createJobsViewPreferencesStore,
@@ -15,9 +18,12 @@ import {
 } from "../features/jobs/view-preferences.js"
 import { createOttoExternalApiClientFromEnvironment } from "../server/otto-external-api.server.js"
 
+type JobsTab = "scheduled" | "background"
+
 type JobsRouteLoaderData =
   | {
       status: "success"
+      tab: JobsTab
       jobs: ExternalJobListItem[]
       now: number
     }
@@ -121,13 +127,35 @@ const parseDateTimeLocalToEpoch = (value: string): number | null => {
 
   return Math.trunc(timestamp)
 }
-export const loader = async (): Promise<JobsRouteLoaderData> => {
+export const loader = async ({ request }: { request: Request }): Promise<JobsRouteLoaderData> => {
+  const searchParams = new URL(request.url).searchParams
+  const tab: JobsTab = searchParams.get("tab") === "background" ? "background" : "scheduled"
+
   try {
     const client = await createOttoExternalApiClientFromEnvironment()
-    const response = await client.listJobs()
+    const response = await client.listJobs(
+      tab === "background"
+        ? {
+            lane: "interactive",
+            type: INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+          }
+        : {
+            lane: "scheduled",
+          }
+    )
+
+    const jobs = response.jobs.filter((job) => {
+      if (tab === "background") {
+        return job.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+      }
+
+      return job.type !== INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+    })
+
     return {
       status: "success",
-      jobs: response.jobs,
+      tab,
+      jobs,
       now: Date.now(),
     }
   } catch {
@@ -144,6 +172,7 @@ export default function JobsRoute() {
   const navigation = useNavigation()
   const isLoading = navigation.state !== "idle"
   const loaderNow = data.status === "success" ? data.now : Date.now()
+  const isBackgroundTab = data.status === "success" && data.tab === "background"
 
   const [searchQuery, setSearchQuery] = useState("")
   const [preferences, setPreferences] = useState<JobsViewPreferences | null>(null)
@@ -297,7 +326,12 @@ export default function JobsRoute() {
     return haystack.includes(normalizedQuery)
   })
 
-  const operatorJobs = filteredJobs.filter((job) => job.managedBy === "operator")
+  const backgroundJobs = filteredJobs.filter(
+    (job) => job.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+  )
+  const operatorJobs = filteredJobs.filter(
+    (job) => job.managedBy === "operator" && job.type !== INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+  )
   const systemJobs = filteredJobs.filter((job) => job.managedBy === "system")
   const hasVisibleJobs = filteredJobs.length > 0
 
@@ -436,7 +470,8 @@ export default function JobsRoute() {
               Job Queue
             </h1>
             <p className="mt-2 mb-0 whitespace-nowrap font-mono text-[11px] text-[#888888]">
-              {activeCount} Active • {scheduledCount} Scheduled • {stoppedCount} Stopped
+              {activeCount} Active • {scheduledCount} {isBackgroundTab ? "Queued" : "Scheduled"} •{" "}
+              {stoppedCount} {isBackgroundTab ? "Terminal" : "Stopped"}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -453,21 +488,46 @@ export default function JobsRoute() {
                 Back
               </Button>
             </Link>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-10 px-3"
-              onClick={() => {
-                setCreateFeedback(null)
-                setIsCreatePanelOpen((current) => !current)
-              }}
-            >
-              {isCreatePanelOpen ? "Close" : "Create"}
-            </Button>
+            {!isBackgroundTab ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10 px-3"
+                onClick={() => {
+                  setCreateFeedback(null)
+                  setIsCreatePanelOpen((current) => !current)
+                }}
+              >
+                {isCreatePanelOpen ? "Close" : "Create"}
+              </Button>
+            ) : null}
           </div>
         </div>
       </header>
+
+      <nav className="mb-3 flex items-center gap-1.5">
+        <Link
+          to="/jobs?tab=scheduled"
+          className={
+            isBackgroundTab
+              ? "rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3 py-1.5 font-mono text-[0.68rem] tracking-[0.1em] text-[#666666] uppercase"
+              : "rounded-full border border-[rgba(26,26,26,0.24)] bg-[rgba(26,26,26,0.05)] px-3 py-1.5 font-mono text-[0.68rem] tracking-[0.1em] text-[#1a1a1a] uppercase"
+          }
+        >
+          Scheduled
+        </Link>
+        <Link
+          to="/jobs?tab=background"
+          className={
+            isBackgroundTab
+              ? "rounded-full border border-[rgba(26,26,26,0.24)] bg-[rgba(26,26,26,0.05)] px-3 py-1.5 font-mono text-[0.68rem] tracking-[0.1em] text-[#1a1a1a] uppercase"
+              : "rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3 py-1.5 font-mono text-[0.68rem] tracking-[0.1em] text-[#666666] uppercase"
+          }
+        >
+          Background
+        </Link>
+      </nav>
 
       <div className="mb-3 grid gap-2">
         <label className="flex items-center gap-2 rounded-xl border border-[rgba(26,26,26,0.08)] bg-white px-3 py-2">
@@ -490,7 +550,7 @@ export default function JobsRoute() {
             type="search"
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search jobs..."
+            placeholder={isBackgroundTab ? "Search background tasks..." : "Search jobs..."}
             className="w-full border-none bg-transparent p-0 text-sm text-[#1a1a1a] outline-none placeholder:text-[#aaaaaa]"
           />
         </label>
@@ -508,21 +568,23 @@ export default function JobsRoute() {
             size="compact"
           />
 
-          <Switch
-            checked={activePreferences.showSystemJobs}
-            onCheckedChange={(checked) =>
-              setPreferences((current) => ({
-                ...(current ?? defaultJobsViewPreferences),
-                showSystemJobs: checked,
-              }))
-            }
-            label="System"
-            size="compact"
-          />
+          {!isBackgroundTab ? (
+            <Switch
+              checked={activePreferences.showSystemJobs}
+              onCheckedChange={(checked) =>
+                setPreferences((current) => ({
+                  ...(current ?? defaultJobsViewPreferences),
+                  showSystemJobs: checked,
+                }))
+              }
+              label="System"
+              size="compact"
+            />
+          ) : null}
         </div>
       </div>
 
-      {isCreatePanelOpen ? (
+      {isCreatePanelOpen && !isBackgroundTab ? (
         <Card className="mb-4">
           <CardHeader>
             <CardTitle>Create job</CardTitle>
@@ -747,22 +809,34 @@ export default function JobsRoute() {
         </Card>
       ) : (
         <div className="grid gap-3 pr-1 md:hide-scrollbar md:flex-1 md:gap-4 md:overflow-y-auto md:pr-2">
-          <JobsGroupCard
-            title="Operator-managed jobs"
-            description="Operator-owned recurring and one-shot jobs"
-            emptyMessage="No operator jobs match the current filters."
-            jobs={operatorJobs}
-            referenceNow={referenceNow}
-          />
-          {activePreferences.showSystemJobs ? (
+          {isBackgroundTab ? (
             <JobsGroupCard
-              title="System-managed jobs"
-              description="Read-only runtime automation"
-              emptyMessage="No system jobs match the current filters."
-              jobs={systemJobs}
+              title="Interactive background tasks"
+              description="Telegram/CLI/Web parity tasks keyed by canonical job_id"
+              emptyMessage="No background tasks match the current filters."
+              jobs={backgroundJobs}
               referenceNow={referenceNow}
             />
-          ) : null}
+          ) : (
+            <>
+              <JobsGroupCard
+                title="Operator-managed jobs"
+                description="Operator-owned recurring and one-shot jobs"
+                emptyMessage="No operator jobs match the current filters."
+                jobs={operatorJobs}
+                referenceNow={referenceNow}
+              />
+              {activePreferences.showSystemJobs ? (
+                <JobsGroupCard
+                  title="System-managed jobs"
+                  description="Read-only runtime automation"
+                  emptyMessage="No system jobs match the current filters."
+                  jobs={systemJobs}
+                  referenceNow={referenceNow}
+                />
+              ) : null}
+            </>
+          )}
         </div>
       )}
     </section>

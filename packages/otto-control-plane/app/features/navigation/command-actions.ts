@@ -22,7 +22,7 @@ export const commandActions: CommandAction[] = [
   {
     id: "jump-jobs",
     label: "Job Queue",
-    subtitle: "Inspect scheduled and system jobs",
+    subtitle: "Inspect scheduled, system, and background tasks",
     group: "jump",
     icon: "jobs",
     shortcut: "G J",

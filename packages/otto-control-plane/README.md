@@ -20,7 +20,7 @@ Web control-plane process for Otto, built with React Router 7 framework mode.
   - `/chat` operator chat surface backed by OpenCode sessions
   - `/system` runtime metadata, service matrix, and runtime restart control
   - `/settings` notification profile settings (non-secret runtime preferences)
-  - `/jobs` scheduled jobs list with system/operator grouping and create form
+  - `/jobs` jobs surface with tabs for scheduled jobs and interactive background tasks
   - `/jobs/:jobId` job detail + recent audit evidence + edit/cancel/run-now actions
 - BFF routes:
   - `GET /api/health`
@@ -80,3 +80,9 @@ Resolution order for these values:
 1. Start Otto runtime: `pnpm -C packages/otto run serve`
 2. Start control plane: `pnpm -C packages/otto-control-plane run dev`
 3. Open reported URL and verify health card updates via `/api/health`.
+
+## Background Task Workflow
+
+- Telegram/CLI/Web share the same canonical identifier: raw `job_id`.
+- Jobs page `Background` tab filters to `interactive_background_oneshot` tasks and reuses existing list/detail UI.
+- Cancelling a background task from web calls runtime background-cancel semantics (session stop + idempotent terminal handling), matching chat surfaces.

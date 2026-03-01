@@ -14,6 +14,7 @@ import type {
   ExternalJobRun,
   ExternalJobRunsResponse,
 } from "../features/jobs/contracts.js"
+import { INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE } from "../features/jobs/contracts.js"
 import { getJobDisplayTitle } from "../features/jobs/presentation.js"
 import { cn } from "../lib/cn.js"
 import { createOttoExternalApiClientFromEnvironment } from "../server/otto-external-api.server.js"
@@ -265,6 +266,8 @@ export default function JobDetailRoute() {
   const [catalogError, setCatalogError] = useState<string | null>(null)
   const displayTitle =
     data.status === "success" ? getJobDisplayTitle(data.job.type) : "Task inspection"
+  const isBackgroundJob =
+    data.status === "success" && data.job.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
 
   useEffect(() => {
     if (data.status !== "success") {
@@ -350,7 +353,7 @@ export default function JobDetailRoute() {
   }, [])
 
   const submitRunNow = async () => {
-    if (data.status !== "success" || isMutating || !data.job.isMutable) {
+    if (data.status !== "success" || isMutating || !data.job.isMutable || isBackgroundJob) {
       return
     }
 
@@ -379,7 +382,13 @@ export default function JobDetailRoute() {
 
   const submitUpdate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (data.status !== "success" || isMutating || !data.job.isMutable || !editFormState) {
+    if (
+      data.status !== "success" ||
+      isMutating ||
+      !data.job.isMutable ||
+      !editFormState ||
+      isBackgroundJob
+    ) {
       return
     }
 
@@ -518,6 +527,11 @@ export default function JobDetailRoute() {
         return
       }
 
+      if (isBackgroundJob) {
+        navigate("/jobs?tab=background")
+        return
+      }
+
       navigate("/jobs")
     } catch {
       setMutationFeedback({
@@ -544,7 +558,7 @@ export default function JobDetailRoute() {
             </div>
 
             <Link
-              to="/jobs"
+              to={isBackgroundJob ? "/jobs?tab=background" : "/jobs"}
               className="inline-flex self-start rounded-[11px] border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 font-mono text-xs tracking-[0.11em] text-[#666666] uppercase transition-colors hover:bg-[rgba(26,26,26,0.05)] hover:text-[#1a1a1a]"
             >
               ESC / Back
@@ -586,6 +600,68 @@ export default function JobDetailRoute() {
                     <p className="m-0 text-sm text-[#888888]">
                       This is a system-managed job and cannot be edited, cancelled, or run-now.
                     </p>
+                  ) : isBackgroundJob ? (
+                    <>
+                      <p className="m-0 text-sm text-[#888888]">
+                        This interactive background task supports inspect and cancel parity with
+                        Telegram/CLI by canonical job_id. Create, edit, and run-now are disabled in
+                        this surface.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="px-2 py-1.5 text-[10px] tracking-[0.06em] sm:px-3 sm:py-2 sm:text-xs sm:tracking-[0.09em]"
+                          onClick={() => {
+                            setMutationFeedback(null)
+                            setIsCancelOpen((current) => !current)
+                          }}
+                          disabled={isMutating}
+                        >
+                          {isCancelOpen ? "Close Cancel" : "Cancel Task"}
+                        </Button>
+                      </div>
+
+                      {isCancelOpen ? (
+                        <div className="grid gap-2 rounded-xl border border-[rgba(26,26,26,0.12)] bg-[rgba(26,26,26,0.02)] p-3">
+                          <p className="m-0 text-sm text-[#555555]">
+                            This will request cancellation with the same runtime semantics used by
+                            chat surfaces.
+                          </p>
+                          <input
+                            id="cancel-reason"
+                            value={cancelReason}
+                            onChange={(event) => setCancelReason(event.target.value)}
+                            placeholder="Optional reason"
+                            className="rounded-lg border border-[rgba(26,26,26,0.18)] bg-white px-3 py-2 text-sm text-[#1a1a1a]"
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setIsCancelOpen(false)
+                              }}
+                              disabled={isMutating}
+                            >
+                              Never Mind
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="border-[rgba(180,35,24,0.35)] text-[#7a271a] hover:bg-[rgba(180,35,24,0.08)]"
+                              onClick={() => void submitCancel()}
+                              disabled={isMutating}
+                            >
+                              {isMutating ? "Cancelling..." : "Confirm Cancel"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <>
                       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
