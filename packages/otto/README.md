@@ -42,6 +42,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - External API token: reuses `~/.otto/secrets/internal-api.token`; runtime exports `OTTO_EXTERNAL_API_URL`
 - System prompts root: `~/.otto/system-prompts` (always refreshed by `otto setup`/`ottoctl update`)
 - User prompts root: `~/.otto/prompts` (seeded when missing, then preserved on `otto setup`/`ottoctl update`)
+- `ottoctl prompt` opens an interactive arrow-key picker for prompt markdown files and only allows editing user-owned files (`~/.otto/prompts`)
 - API boundary: `/internal/*` is OpenCode-tool/internal runtime integration, `/external/*` is authenticated LAN-facing control-plane/app integration
 - External jobs endpoints currently exposed:
   - System: `GET /external/system/status`, `POST /external/system/restart`
@@ -112,6 +113,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl model defaults set <flow> <provider/model|inherit>`
   - `ottoctl heartbeat status` (show current heartbeat delivery mode)
   - `ottoctl heartbeat mode <observe|mute>` (observe = always compact updates, mute = suppress normal heartbeats)
+  - `ottoctl prompt` (interactive prompt picker/editor; system-owned files are view-only in this flow)
   - `ottoctl extension list`
   - `ottoctl extension install <id>[@version]` (default installs latest registry version)
   - `ottoctl extension update <id>`
