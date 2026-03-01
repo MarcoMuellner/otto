@@ -104,7 +104,7 @@ export const resolveInteractiveSystemPrompt = async (input: {
       continue
     }
 
-    const absolutePath = layerAbsolutePaths[warning.layer] ?? reference.path
+    const absolutePath = layerAbsolutePaths[warning.layer] ?? null
 
     if (reference.source === "user") {
       input.logger?.error(
