@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   createApprovalsRepository,
   createCommandAuditRepository,
+  createInteractiveContextEventsRepository,
   createJobRunSessionsRepository,
   createJobsRepository,
   createOutboundMessagesRepository,
@@ -389,6 +390,202 @@ describe("persistence repositories", () => {
       failedAt: 900,
       errorMessage: "rate limited",
     })
+
+    db.close()
+  })
+
+  it("stores and lists recent interactive context events by source session", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createInteractiveContextEventsRepository(db)
+
+    repository.insert({
+      id: "ctx-1",
+      sourceSessionId: "session-1",
+      outboundMessageId: "outbound-1",
+      sourceLane: "internal_api",
+      sourceKind: "milestone",
+      sourceRef: "job-1",
+      content: "Background phase complete",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.insert({
+      id: "ctx-2",
+      sourceSessionId: "session-1",
+      outboundMessageId: "outbound-2",
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat",
+      sourceRef: null,
+      content: "Heartbeat ready",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 200,
+      updatedAt: 200,
+    })
+    repository.insert({
+      id: "ctx-3",
+      sourceSessionId: "session-2",
+      outboundMessageId: "outbound-3",
+      sourceLane: "scheduler",
+      sourceKind: "watchdog",
+      sourceRef: null,
+      content: "Watchdog alert",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 300,
+      updatedAt: 300,
+    })
+
+    // Act
+    const recent = repository.listRecentBySourceSessionId("session-1", 10)
+
+    // Assert
+    expect(recent.map((event) => event.id)).toEqual(["ctx-2", "ctx-1"])
+
+    db.close()
+  })
+
+  it("updates interactive context delivery status by outbound message id", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createInteractiveContextEventsRepository(db)
+    repository.insert({
+      id: "ctx-status-1",
+      sourceSessionId: "session-status-1",
+      outboundMessageId: "outbound-status-1",
+      sourceLane: "internal_api",
+      sourceKind: "queue",
+      sourceRef: null,
+      content: "Queued message",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    // Act
+    const updated = repository.updateDeliveryStatusByOutboundMessageId(
+      "outbound-status-1",
+      {
+        deliveryStatus: "held",
+        deliveryStatusDetail: "quiet_hours",
+        errorMessage: "suppressed_by_policy:quiet_hours",
+      },
+      250
+    )
+
+    // Assert
+    expect(updated).toBe(true)
+    const row = db
+      .prepare(
+        `SELECT
+          delivery_status as deliveryStatus,
+          delivery_status_detail as deliveryStatusDetail,
+          error_message as errorMessage,
+          updated_at as updatedAt
+         FROM interactive_context_events
+         WHERE outbound_message_id = ?`
+      )
+      .get("outbound-status-1") as {
+      deliveryStatus: string
+      deliveryStatusDetail: string | null
+      errorMessage: string | null
+      updatedAt: number
+    }
+    expect(row).toEqual({
+      deliveryStatus: "held",
+      deliveryStatusDetail: "quiet_hours",
+      errorMessage: "suppressed_by_policy:quiet_hours",
+      updatedAt: 250,
+    })
+
+    db.close()
+  })
+
+  it("prunes interactive context retention per source session", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createInteractiveContextEventsRepository(db)
+
+    repository.insert({
+      id: "ctx-prune-1",
+      sourceSessionId: "session-prune-1",
+      outboundMessageId: "outbound-prune-1",
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat",
+      sourceRef: null,
+      content: "one",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.insert({
+      id: "ctx-prune-2",
+      sourceSessionId: "session-prune-1",
+      outboundMessageId: "outbound-prune-2",
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat",
+      sourceRef: null,
+      content: "two",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 200,
+      updatedAt: 200,
+    })
+    repository.insert({
+      id: "ctx-prune-3",
+      sourceSessionId: "session-prune-1",
+      outboundMessageId: "outbound-prune-3",
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat",
+      sourceRef: null,
+      content: "three",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 300,
+      updatedAt: 300,
+    })
+    repository.insert({
+      id: "ctx-prune-other",
+      sourceSessionId: "session-prune-2",
+      outboundMessageId: "outbound-prune-other",
+      sourceLane: "internal_api",
+      sourceKind: "queue",
+      sourceRef: null,
+      content: "other session",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 150,
+      updatedAt: 150,
+    })
+
+    // Act
+    const deleted = repository.pruneBySourceSessionId("session-prune-1", 2)
+    const remainingSessionOne = repository.listRecentBySourceSessionId("session-prune-1", 10)
+    const remainingSessionTwo = repository.listRecentBySourceSessionId("session-prune-2", 10)
+
+    // Assert
+    expect(deleted).toBe(1)
+    expect(remainingSessionOne.map((event) => event.id)).toEqual(["ctx-prune-3", "ctx-prune-2"])
+    expect(remainingSessionTwo.map((event) => event.id)).toEqual(["ctx-prune-other"])
 
     db.close()
   })

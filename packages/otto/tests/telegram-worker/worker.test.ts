@@ -250,6 +250,24 @@ const createWorkerConfig = (
   }
 }
 
+const waitForMockCallCount = async (
+  mock: { mock: { calls: unknown[][] } },
+  expectedCalls: number,
+  timeoutMs = 5_000,
+  pollMs = 25
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMs
+  while (mock.mock.calls.length < expectedCalls) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Timed out waiting for ${expectedCalls} calls; observed ${mock.mock.calls.length}`
+      )
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
+  }
+}
+
 describe("startTelegramWorker", () => {
   it("starts and stops with heartbeat logs", async () => {
     // Arrange
@@ -726,7 +744,7 @@ describe("startTelegramWorker", () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 700))
+    await waitForMockCallCount(vi.mocked(promptSessionParts), 1)
 
     // Assert
     expect(promptSessionParts).toHaveBeenCalledTimes(1)
@@ -811,7 +829,7 @@ describe("startTelegramWorker", () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 700))
+    await waitForMockCallCount(vi.mocked(promptSessionParts), 1)
 
     // Assert
     expect(promptSessionParts).toHaveBeenCalledTimes(1)
@@ -875,7 +893,7 @@ describe("startTelegramWorker", () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 700))
+    await waitForMockCallCount(vi.mocked(promptSessionParts), 1)
 
     // Replay where first update is duplicate and second is new
     await fakeBot.dispatchMedia({
@@ -922,7 +940,7 @@ describe("startTelegramWorker", () => {
       },
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 700))
+    await waitForMockCallCount(vi.mocked(promptSessionParts), 2)
 
     // Assert
     expect(promptSessionParts).toHaveBeenCalledTimes(2)

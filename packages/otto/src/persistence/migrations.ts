@@ -304,4 +304,27 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
       `ALTER TABLE job_run_sessions ADD COLUMN prompt_provenance_json TEXT`,
     ],
   },
+  {
+    id: "018_interactive_context_events",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS interactive_context_events (
+        id TEXT PRIMARY KEY,
+        source_session_id TEXT NOT NULL,
+        outbound_message_id TEXT NOT NULL,
+        source_lane TEXT NOT NULL,
+        source_kind TEXT NOT NULL,
+        source_ref TEXT,
+        content TEXT NOT NULL,
+        delivery_status TEXT NOT NULL,
+        delivery_status_detail TEXT,
+        error_message TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_interactive_context_events_outbound_message
+       ON interactive_context_events (outbound_message_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_interactive_context_events_session_recent
+       ON interactive_context_events (source_session_id, created_at DESC, id DESC)`,
+    ],
+  },
 ]
