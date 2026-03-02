@@ -1,8 +1,25 @@
 import { Command, CommanderError, InvalidArgumentError } from "commander"
 
-export type OttoCommand = "setup" | "serve" | "telegram-worker"
+export type DoctorMode = "fast" | "deep"
 
-const VALID_COMMANDS = ["setup", "serve", "telegram-worker"] as const
+export type OttoCommand =
+  | {
+      name: "setup"
+    }
+  | {
+      name: "serve"
+    }
+  | {
+      name: "telegram-worker"
+    }
+  | {
+      name: "doctor"
+      mode: DoctorMode
+    }
+
+type BaseOttoCommand = "setup" | "serve" | "telegram-worker" | "doctor"
+
+const VALID_COMMANDS = ["setup", "serve", "telegram-worker", "doctor"] as const
 
 /**
  * Centralizes command validation in one parser so runtime entry behavior stays predictable
@@ -22,7 +39,7 @@ export const parseCommand = (argv: string[]): OttoCommand => {
       "[command]",
       "runtime command",
       (value: string) => {
-        if (!VALID_COMMANDS.includes(value as OttoCommand)) {
+        if (!VALID_COMMANDS.includes(value as BaseOttoCommand)) {
           throw new InvalidArgumentError(
             `Unknown command: ${value}. Valid commands: ${VALID_COMMANDS.join(", ")}`
           )
@@ -32,6 +49,7 @@ export const parseCommand = (argv: string[]): OttoCommand => {
       },
       "serve"
     )
+    .option("--deep", "Run doctor in deep mode")
 
   try {
     parser.parse(argv, { from: "user" })
@@ -47,5 +65,22 @@ export const parseCommand = (argv: string[]): OttoCommand => {
     throw new Error("Unknown command parsing error")
   }
 
-  return parser.processedArgs[0] as OttoCommand
+  const baseCommand = parser.processedArgs[0] as BaseOttoCommand
+  const options = parser.opts<{ deep?: boolean }>()
+  const isDeepMode = options.deep === true
+
+  if (baseCommand !== "doctor" && isDeepMode) {
+    throw new Error("Unknown option '--deep'. Usage: otto doctor [--deep]")
+  }
+
+  if (baseCommand === "doctor") {
+    return {
+      name: "doctor",
+      mode: isDeepMode ? "deep" : "fast",
+    }
+  }
+
+  return {
+    name: baseCommand,
+  }
 }

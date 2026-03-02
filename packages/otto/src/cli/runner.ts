@@ -1,10 +1,29 @@
 import type { Logger } from "pino"
 
-import type { OttoCommand } from "./command.js"
+import type { DoctorMode, OttoCommand } from "./command.js"
+import type { DoctorRunSummary } from "../doctor/index.js"
 
 type CommandHandler = (logger: Logger) => Promise<unknown>
+type DoctorCommandHandler = (logger: Logger, mode: DoctorMode) => Promise<DoctorRunSummary>
 
-type CommandHandlers = Record<OttoCommand, CommandHandler>
+type CommandHandlers = {
+  setup: CommandHandler
+  serve: CommandHandler
+  "telegram-worker": CommandHandler
+  doctor: DoctorCommandHandler
+}
+
+export const mapDoctorSummaryToExitCode = (summary: DoctorRunSummary): number => {
+  if (summary.internalFailure) {
+    return 2
+  }
+
+  if (summary.verdict === "green") {
+    return 0
+  }
+
+  return 1
+}
 
 /**
  * Isolates command dispatch from process bootstrapping so each runtime mode can evolve
@@ -18,6 +37,12 @@ export const runCommand = async (
   command: OttoCommand,
   logger: Logger,
   handlers: CommandHandlers
-): Promise<void> => {
-  await handlers[command](logger)
+): Promise<number> => {
+  if (command.name === "doctor") {
+    const summary = await handlers.doctor(logger, command.mode)
+    return mapDoctorSummaryToExitCode(summary)
+  }
+
+  await handlers[command.name](logger)
+  return 0
 }

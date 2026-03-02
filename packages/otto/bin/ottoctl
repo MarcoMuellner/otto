@@ -1708,6 +1708,28 @@ cmd_configure_telegram() {
   fi
 }
 
+cmd_doctor() {
+  local mode_arg="${1:-}"
+
+  if [[ $# -gt 1 ]]; then
+    error "Usage: ottoctl doctor [--deep]"
+    exit 1
+  fi
+
+  if [[ -n "${mode_arg}" && "${mode_arg}" != "--deep" ]]; then
+    error "Unknown option for doctor: ${mode_arg}"
+    error "Usage: ottoctl doctor [--deep]"
+    exit 1
+  fi
+
+  if [[ "${mode_arg}" == "--deep" ]]; then
+    NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/index.mjs" doctor --deep
+    return
+  fi
+
+  NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/index.mjs" doctor
+}
+
 cmd_help() {
   cat <<'EOF'
 ottoctl - Otto server control
@@ -1744,7 +1766,13 @@ Usage:
   ottoctl extension update --all
   ottoctl extension disable <id>
   ottoctl extension remove <id>[@version]
+  ottoctl doctor
+  ottoctl doctor --deep
   ottoctl update [--nightly] [--pr number] [--repo owner/repo]
+
+Examples:
+  ottoctl doctor
+  ottoctl doctor --deep
 EOF
 }
 
@@ -1807,6 +1835,10 @@ main() {
     env)
       shift
       cmd_env "$@"
+      ;;
+    doctor)
+      shift
+      cmd_doctor "$@"
       ;;
     update)
       shift
