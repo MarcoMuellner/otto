@@ -16,6 +16,7 @@ This directory stores deployable epics and tickets.
 - `epic_010`: Prompt management hierarchy with update-safe user layers and per-run provenance.
 - `epic_011`: Interactive context bridge for non-interactive outbound continuity.
 - `epic_012`: Deep Doctor healthcheck and end-to-end regression guard.
+- `epic_013`: Bugfix for scheduler deadlocked session recovery and non-interactive guardrails.
 
 ## Structure
 
