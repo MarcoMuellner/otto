@@ -13,6 +13,7 @@ describe("createChatSurfaceService", () => {
       listSessionBindings: () => {
         throw new Error("database unavailable")
       },
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit: () => true,
       createOpencodeChatClient: () => ({
         listSessions: async () => [],
@@ -63,6 +64,7 @@ describe("createChatSurfaceService", () => {
       listSessionBindings: () => {
         throw new Error("database unavailable")
       },
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit: () => true,
       createOpencodeChatClient: () => ({
         listSessions: async () => {
@@ -135,6 +137,7 @@ describe("createChatSurfaceService", () => {
         stateDatabasePath: "/tmp/otto-state.db",
       }),
       listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit: () => true,
       resolveInteractiveSystemPrompt: async () => "# Prompt\nUse web layering.",
       createOpencodeChatClient: () => ({
@@ -191,6 +194,7 @@ describe("createChatSurfaceService", () => {
         stateDatabasePath: "/tmp/otto-state.db",
       }),
       listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit: () => true,
       resolveInteractiveSystemPrompt: async () => {
         throw new Error("runtime endpoint unavailable")
@@ -248,6 +252,7 @@ describe("createChatSurfaceService", () => {
         stateDatabasePath: "/tmp/otto-state.db",
       }),
       listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit,
       resolveInteractiveSystemPrompt: async () => "   ",
       createOpencodeChatClient: () => ({
@@ -314,6 +319,7 @@ describe("createChatSurfaceService", () => {
           stateDatabasePath: "/tmp/otto-state.db",
         }),
         listSessionBindings: () => [],
+        listRecentInteractiveContextEventsBySourceSessionId: () => [],
         insertCommandAudit,
         resolveInteractiveSystemPrompt: async () => {
           await new Promise(() => {})
@@ -366,6 +372,277 @@ describe("createChatSurfaceService", () => {
     }
   })
 
+  it("injects recent non-interactive context into sync send model input", async () => {
+    // Arrange
+    const promptSession = vi.fn(async () => {
+      return {
+        id: "reply-context",
+        role: "assistant" as const,
+        text: "contextual reply",
+        createdAt: 2_300,
+        partTypes: ["text"],
+      }
+    })
+    const insertCommandAudit = vi.fn(() => true)
+    const listRecentInteractiveContextEventsBySourceSessionId = vi.fn(() => [
+      {
+        sourceLane: "scheduler",
+        sourceKind: "heartbeat",
+        sourceRef: "job-1",
+        content: "Heartbeat digest delivered",
+        deliveryStatus: "sent" as const,
+        deliveryStatusDetail: "delivered",
+        errorMessage: null,
+        createdAt: 1,
+      },
+    ])
+
+    const service = createChatSurfaceService({
+      resolveConfig: async () => ({
+        opencodeApiUrl: "http://127.0.0.1:4096",
+        stateDatabasePath: "/tmp/otto-state.db",
+      }),
+      listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId,
+      insertCommandAudit,
+      resolveInteractiveSystemPrompt: async () => "# Prompt\nUse web layering.",
+      createOpencodeChatClient: () => ({
+        listSessions: async () => [],
+        getSession: async () => {
+          throw new Error("unused in this test")
+        },
+        createSession: async () => {
+          throw new Error("unused in this test")
+        },
+        listMessages: async () => {
+          throw new Error("unused in this test")
+        },
+        getMessage: async () => {
+          throw new Error("unused in this test")
+        },
+        promptSession,
+        promptSessionAsync: async () => {
+          throw new Error("unused in this test")
+        },
+        subscribeEvents: async function* () {
+          yield* []
+          throw new Error("unused in this test")
+        },
+      }),
+      now: () => 1_500,
+    })
+
+    // Act
+    const payload = await service.sendMessage("session-1", "hello")
+
+    // Assert
+    expect(payload.reply?.id).toBe("reply-context")
+    expect(listRecentInteractiveContextEventsBySourceSessionId).toHaveBeenCalledWith(
+      "/tmp/otto-state.db",
+      "session-1",
+      20
+    )
+    expect(promptSession).toHaveBeenCalledWith(
+      "session-1",
+      expect.stringContaining("Recent non-interactive context:"),
+      { systemPrompt: "# Prompt\nUse web layering." }
+    )
+    expect(insertCommandAudit).toHaveBeenLastCalledWith(
+      "/tmp/otto-state.db",
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          contextInjectionStatus: "injected",
+          contextEventCount: 1,
+          contextInjectedEventCount: 1,
+        }),
+      })
+    )
+  })
+
+  it("continues sync send without context injection when state DB query fails", async () => {
+    // Arrange
+    const promptSession = vi.fn(async () => {
+      return {
+        id: "reply-context-degraded",
+        role: "assistant" as const,
+        text: "degraded reply",
+        createdAt: 2_300,
+        partTypes: ["text"],
+      }
+    })
+    const insertCommandAudit = vi.fn(() => true)
+
+    const service = createChatSurfaceService({
+      resolveConfig: async () => ({
+        opencodeApiUrl: "http://127.0.0.1:4096",
+        stateDatabasePath: "/tmp/otto-state.db",
+      }),
+      listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId: () => {
+        throw new Error("state DB unavailable")
+      },
+      insertCommandAudit,
+      resolveInteractiveSystemPrompt: async () => "# Prompt\nUse web layering.",
+      createOpencodeChatClient: () => ({
+        listSessions: async () => [],
+        getSession: async () => {
+          throw new Error("unused in this test")
+        },
+        createSession: async () => {
+          throw new Error("unused in this test")
+        },
+        listMessages: async () => {
+          throw new Error("unused in this test")
+        },
+        getMessage: async () => {
+          throw new Error("unused in this test")
+        },
+        promptSession,
+        promptSessionAsync: async () => {
+          throw new Error("unused in this test")
+        },
+        subscribeEvents: async function* () {
+          yield* []
+          throw new Error("unused in this test")
+        },
+      }),
+      now: () => 1_600,
+    })
+
+    // Act
+    const payload = await service.sendMessage("session-1", "hello")
+
+    // Assert
+    expect(payload.reply?.id).toBe("reply-context-degraded")
+    expect(promptSession).toHaveBeenCalledWith("session-1", "hello", {
+      systemPrompt: "# Prompt\nUse web layering.",
+    })
+    expect(insertCommandAudit).toHaveBeenLastCalledWith(
+      "/tmp/otto-state.db",
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          contextInjectionStatus: "degraded",
+          contextEventCount: 0,
+          contextInjectedEventCount: 0,
+        }),
+      })
+    )
+  })
+
+  it("injects recent non-interactive context into streaming model input", async () => {
+    // Arrange
+    const promptSessionAsync = vi.fn(async () => undefined)
+    const listRecentInteractiveContextEventsBySourceSessionId = vi.fn(() => [
+      {
+        sourceLane: "scheduler",
+        sourceKind: "heartbeat",
+        sourceRef: "job-2",
+        content: "Heartbeat queued",
+        deliveryStatus: "queued" as const,
+        deliveryStatusDetail: "retry_scheduled",
+        errorMessage: null,
+        createdAt: 1,
+      },
+    ])
+
+    const service = createChatSurfaceService({
+      resolveConfig: async () => ({
+        opencodeApiUrl: "http://127.0.0.1:4096",
+        stateDatabasePath: "/tmp/otto-state.db",
+      }),
+      listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId,
+      insertCommandAudit: () => true,
+      createOpencodeChatClient: () => ({
+        listSessions: async () => [],
+        getSession: async () => {
+          throw new Error("unused in this test")
+        },
+        createSession: async () => {
+          throw new Error("unused in this test")
+        },
+        listMessages: async () => [
+          {
+            id: "assistant-ctx-stream",
+            role: "assistant",
+            text: "Hello world",
+            createdAt: 2_000,
+            partTypes: ["text"],
+          },
+        ],
+        getMessage: async (_sessionId: string, messageId: string) => {
+          if (messageId === "assistant-ctx-stream") {
+            return {
+              message: {
+                id: "assistant-ctx-stream",
+                role: "assistant",
+                text: "Hello world",
+                createdAt: 2_000,
+                partTypes: ["text"],
+              },
+              parts: [],
+            }
+          }
+
+          return null
+        },
+        promptSession: async () => {
+          throw new Error("unused in this test")
+        },
+        promptSessionAsync,
+        subscribeEvents: async function* () {
+          yield {
+            type: "message.updated",
+            properties: {
+              sessionID: "session-1",
+              info: {
+                id: "assistant-ctx-stream",
+                role: "assistant",
+              },
+            },
+          }
+
+          yield {
+            type: "message.part.updated",
+            properties: {
+              sessionID: "session-1",
+              part: {
+                id: "part-ctx-stream",
+                messageID: "assistant-ctx-stream",
+                type: "text",
+                text: "Hello world",
+              },
+              delta: "Hello world",
+            },
+          }
+
+          yield {
+            type: "session.idle",
+            properties: {
+              sessionID: "session-1",
+            },
+          }
+        },
+      }),
+      now: () => 1_700,
+    })
+
+    // Act
+    const events: Array<{ type: string }> = []
+    for await (const event of service.sendMessageStream("session-1", "hello")) {
+      events.push({ type: event.type })
+    }
+
+    // Assert
+    expect(events.map((entry) => entry.type)).toEqual(["started", "delta", "completed"])
+    expect(promptSessionAsync).toHaveBeenCalledWith(
+      "session-1",
+      expect.stringContaining("Recent non-interactive context:"),
+      undefined,
+      undefined
+    )
+  })
+
   it("streams assistant deltas and ignores user part events", async () => {
     // Arrange
     const service = createChatSurfaceService({
@@ -374,6 +651,7 @@ describe("createChatSurfaceService", () => {
         stateDatabasePath: "/tmp/otto-state.db",
       }),
       listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit: () => true,
       createOpencodeChatClient: () => ({
         listSessions: async () => [],
@@ -499,6 +777,7 @@ describe("createChatSurfaceService", () => {
         stateDatabasePath: "/tmp/otto-state.db",
       }),
       listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit: () => true,
       createOpencodeChatClient: () => ({
         listSessions: async () => [],
@@ -610,6 +889,7 @@ describe("createChatSurfaceService", () => {
         stateDatabasePath: "/tmp/otto-state.db",
       }),
       listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId: () => [],
       insertCommandAudit: () => true,
       createOpencodeChatClient: () => ({
         listSessions: async () => [],

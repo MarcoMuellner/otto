@@ -9,6 +9,8 @@ import type {
 import { resolveCachedControlPlaneChatConfig } from "./chat-env.server.js"
 import {
   listSessionBindings,
+  listRecentInteractiveContextEventsBySourceSessionId,
+  type InteractiveContextEventRow,
   type SessionBindingRow,
   insertCommandAudit,
 } from "./otto-state.server.js"
@@ -24,6 +26,7 @@ import { createOttoExternalApiClientFromEnvironment } from "./otto-external-api.
 type ChatSurfaceServiceDependencies = {
   resolveConfig: typeof resolveCachedControlPlaneChatConfig
   listSessionBindings: typeof listSessionBindings
+  listRecentInteractiveContextEventsBySourceSessionId: typeof listRecentInteractiveContextEventsBySourceSessionId
   insertCommandAudit: typeof insertCommandAudit
   createOpencodeChatClient: typeof createOpencodeChatClient
   resolveInteractiveSystemPrompt?: () => Promise<string | undefined>
@@ -31,8 +34,160 @@ type ChatSurfaceServiceDependencies = {
 }
 
 const INTERACTIVE_PROMPT_RESOLUTION_TIMEOUT_MS = 2_000
+const DEFAULT_INTERACTIVE_CONTEXT_LIMIT = 20
+const INTERACTIVE_CONTEXT_MAX_LINE_LENGTH = 220
 
 type PromptResolutionStatus = "resolved" | "fallback" | "disabled" | "empty"
+type ContextInjectionStatus = "injected" | "none" | "degraded"
+
+type InteractiveContextInjectionResult = {
+  injectedText: string | null
+  status: ContextInjectionStatus
+  eventCount: number
+  injectedEventCount: number
+  truncated: boolean
+}
+
+const normalizeWhitespace = (value: string): string => {
+  return value.replaceAll(/\s+/g, " ").trim()
+}
+
+const shorten = (
+  value: string,
+  maxLength: number
+): {
+  value: string
+  truncated: boolean
+} => {
+  if (value.length <= maxLength) {
+    return { value, truncated: false }
+  }
+
+  return {
+    value: `${value.slice(0, Math.max(0, maxLength - 3)).trim()}...`,
+    truncated: true,
+  }
+}
+
+const toStatusLabel = (status: "queued" | "sent" | "failed" | "held"): string => {
+  if (status === "sent") {
+    return "sent"
+  }
+
+  if (status === "failed") {
+    return "failed"
+  }
+
+  if (status === "held") {
+    return "held"
+  }
+
+  return "queued"
+}
+
+const buildInteractiveContextPromptBlock = (
+  events: InteractiveContextEventRow[]
+): {
+  block: string | null
+  includedEvents: number
+  truncated: boolean
+} => {
+  if (events.length === 0) {
+    return {
+      block: null,
+      includedEvents: 0,
+      truncated: false,
+    }
+  }
+
+  const lines: string[] = []
+  let truncated = false
+
+  for (const event of events) {
+    const sourceParts = [
+      normalizeWhitespace(event.sourceLane),
+      normalizeWhitespace(event.sourceKind),
+    ]
+      .filter((value) => value.length > 0)
+      .join("/")
+    const sourceRef = normalizeWhitespace(event.sourceRef ?? "")
+    const source = sourceRef.length > 0 ? `${sourceParts}(${sourceRef})` : sourceParts
+    const detail = normalizeWhitespace(event.deliveryStatusDetail ?? event.errorMessage ?? "")
+    const content = normalizeWhitespace(event.content)
+    if (content.length === 0) {
+      continue
+    }
+
+    const summary = detail.length > 0 ? `${content} (${detail})` : content
+    const shortened = shorten(summary, INTERACTIVE_CONTEXT_MAX_LINE_LENGTH)
+    truncated = truncated || shortened.truncated
+    lines.push(`- [${toStatusLabel(event.deliveryStatus)}] ${source}: ${shortened.value}`)
+  }
+
+  if (lines.length === 0) {
+    return {
+      block: null,
+      includedEvents: 0,
+      truncated,
+    }
+  }
+
+  return {
+    block: [
+      "Recent non-interactive context:",
+      ...lines,
+      "Use this only as supporting context when it is relevant.",
+    ].join("\n"),
+    includedEvents: lines.length,
+    truncated,
+  }
+}
+
+const composeInteractivePromptTextWithContext = async (
+  dependencies: ChatSurfaceServiceDependencies,
+  input: {
+    databasePath: string
+    sourceSessionId: string
+    text: string
+  }
+): Promise<InteractiveContextInjectionResult> => {
+  try {
+    const events = dependencies.listRecentInteractiveContextEventsBySourceSessionId(
+      input.databasePath,
+      input.sourceSessionId,
+      DEFAULT_INTERACTIVE_CONTEXT_LIMIT
+    )
+    const formatted = buildInteractiveContextPromptBlock(events)
+
+    if (!formatted.block) {
+      return {
+        injectedText: null,
+        status: "none",
+        eventCount: events.length,
+        injectedEventCount: 0,
+        truncated: formatted.truncated,
+      }
+    }
+
+    const injectedText = `${formatted.block}\n\n${input.text}`
+
+    return {
+      injectedText,
+      status: "injected",
+      eventCount: events.length,
+      injectedEventCount: formatted.includedEvents,
+      truncated: formatted.truncated,
+    }
+  } catch {
+    return {
+      injectedText: null,
+      status: "degraded",
+      eventCount: 0,
+      injectedEventCount: 0,
+      truncated: false,
+    }
+  }
+}
 
 const resolveInteractivePromptForSurface = async (
   dependencies: ChatSurfaceServiceDependencies
@@ -94,6 +249,7 @@ const resolveInteractiveSystemPromptFromRuntime = async (): Promise<string | und
 const defaultDependencies: ChatSurfaceServiceDependencies = {
   resolveConfig: resolveCachedControlPlaneChatConfig,
   listSessionBindings,
+  listRecentInteractiveContextEventsBySourceSessionId,
   insertCommandAudit,
   createOpencodeChatClient,
   resolveInteractiveSystemPrompt: resolveInteractiveSystemPromptFromRuntime,
@@ -435,11 +591,17 @@ export const createChatSurfaceService = (
       const config = await dependencies.resolveConfig()
       const chatClient = dependencies.createOpencodeChatClient({ baseUrl: config.opencodeApiUrl })
       const promptResolution = await resolveInteractivePromptForSurface(dependencies)
+      const contextInjection = await composeInteractivePromptTextWithContext(dependencies, {
+        databasePath: config.stateDatabasePath,
+        sourceSessionId: threadId,
+        text,
+      })
+      const promptText = contextInjection.injectedText ?? text
 
       try {
         const reply = await chatClient.promptSession(
           threadId,
-          text,
+          promptText,
           promptResolution.systemPrompt
             ? { systemPrompt: promptResolution.systemPrompt }
             : undefined
@@ -454,6 +616,10 @@ export const createChatSurfaceService = (
             sentChars: text.length,
             hasReply: reply !== null,
             promptResolutionStatus: promptResolution.status,
+            contextInjectionStatus: contextInjection.status,
+            contextEventCount: contextInjection.eventCount,
+            contextInjectedEventCount: contextInjection.injectedEventCount,
+            contextInjectionTruncated: contextInjection.truncated,
           },
         })
 
@@ -469,6 +635,10 @@ export const createChatSurfaceService = (
             threadId,
             sentChars: text.length,
             promptResolutionStatus: promptResolution.status,
+            contextInjectionStatus: contextInjection.status,
+            contextEventCount: contextInjection.eventCount,
+            contextInjectedEventCount: contextInjection.injectedEventCount,
+            contextInjectionTruncated: contextInjection.truncated,
           },
         })
 
@@ -484,6 +654,12 @@ export const createChatSurfaceService = (
       const startedAt = (dependencies.now ?? Date.now)()
       const requestMessageId = `cp-${startedAt}-${Math.random().toString(36).slice(2, 10)}`
       const promptResolution = await resolveInteractivePromptForSurface(dependencies)
+      const contextInjection = await composeInteractivePromptTextWithContext(dependencies, {
+        databasePath: config.stateDatabasePath,
+        sourceSessionId: threadId,
+        text,
+      })
+      const promptText = contextInjection.injectedText ?? text
 
       const abortController = new AbortController()
       const textParts = new Map<string, string>()
@@ -593,7 +769,7 @@ export const createChatSurfaceService = (
         const firstEventPromise = nextEventWithTimeout()
         await chatClient.promptSessionAsync(
           threadId,
-          text,
+          promptText,
           undefined,
           promptResolution.systemPrompt
             ? { systemPrompt: promptResolution.systemPrompt }
@@ -775,6 +951,10 @@ export const createChatSurfaceService = (
             streamedChars: lastText.length,
             hasReply: reply !== null,
             promptResolutionStatus: promptResolution.status,
+            contextInjectionStatus: contextInjection.status,
+            contextEventCount: contextInjection.eventCount,
+            contextInjectedEventCount: contextInjection.injectedEventCount,
+            contextInjectionTruncated: contextInjection.truncated,
           },
         })
 
@@ -796,6 +976,10 @@ export const createChatSurfaceService = (
             sentChars: text.length,
             streamedChars: lastText.length,
             promptResolutionStatus: promptResolution.status,
+            contextInjectionStatus: contextInjection.status,
+            contextEventCount: contextInjection.eventCount,
+            contextInjectedEventCount: contextInjection.injectedEventCount,
+            contextInjectionTruncated: contextInjection.truncated,
           },
         })
 
