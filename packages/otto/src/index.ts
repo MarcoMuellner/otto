@@ -1,6 +1,7 @@
 import { buildBootstrapMessage } from "./bootstrap/message.js"
 import { parseCommand } from "./cli/command.js"
 import { runCommand } from "./cli/runner.js"
+import { runDoctor } from "./doctor/index.js"
 import { createComponentLogger, logger } from "./logging/logger.js"
 import { runServe } from "./runtime/serve.js"
 import { runSetup } from "./runtime/setup.js"
@@ -18,13 +19,16 @@ logger.info({ version: getAppVersion() }, "Otto version detected")
  */
 const main = async (): Promise<void> => {
   const command = parseCommand(process.argv.slice(2))
-  const commandLogger = createComponentLogger(command)
+  const commandLogger = createComponentLogger(command.name)
 
-  await runCommand(command, commandLogger, {
+  const exitCode = await runCommand(command, commandLogger, {
     setup: runSetup,
     serve: runServe,
     "telegram-worker": runTelegramWorker,
+    doctor: runDoctor,
   })
+
+  process.exitCode = exitCode
 }
 
 main().catch((error) => {
