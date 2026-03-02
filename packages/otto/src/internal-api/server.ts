@@ -46,6 +46,7 @@ import type {
   UserProfileRecord,
 } from "../persistence/repositories.js"
 import { checkTaskFailures, resolveDefaultWatchdogChatId } from "../scheduler/watchdog.js"
+import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
@@ -67,6 +68,7 @@ type InternalApiServerDependencies = {
   outboundMessagesRepository: OutboundMessageEnqueueRepository
   sessionBindingsRepository: {
     getTelegramChatIdBySessionId: (sessionId: string) => number | null
+    getSessionIdByTelegramChatId?: (chatId: number) => string | null
   }
   jobsRepository: {
     getById: (jobId: string) => JobRecord | null
@@ -120,6 +122,7 @@ type InternalApiServerDependencies = {
     upsert: (record: UserProfileRecord) => void
     setMuteUntil: (muteUntil: number | null, updatedAt?: number) => void
   }
+  nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
 }
 
 const queueTelegramMessageApiSchema = z.object({
@@ -335,6 +338,94 @@ const parsePromptProvenanceJson = (value: string | null | undefined): PromptProv
     return parsed
   } catch {
     return null
+  }
+}
+
+const resolveSourceSessionIdFromInput = (
+  dependencies: InternalApiServerDependencies,
+  input: {
+    sessionId?: string
+    chatId: number
+    sourceKind: string
+  }
+): string | null => {
+  const sessionIdFromChatBinding =
+    dependencies.sessionBindingsRepository.getSessionIdByTelegramChatId?.(input.chatId) ?? null
+
+  if (input.sessionId && sessionIdFromChatBinding && input.sessionId !== sessionIdFromChatBinding) {
+    dependencies.logger.warn(
+      {
+        sourceKind: input.sourceKind,
+        chatId: input.chatId,
+        providedSessionId: input.sessionId,
+        boundSessionId: sessionIdFromChatBinding,
+      },
+      "Ignoring provided session id for context capture because chat binding resolves to a different session"
+    )
+
+    return sessionIdFromChatBinding
+  }
+
+  if (sessionIdFromChatBinding) {
+    return sessionIdFromChatBinding
+  }
+
+  return input.sessionId ?? null
+}
+
+const captureNonInteractiveContextSafely = (
+  dependencies: InternalApiServerDependencies,
+  input: {
+    mode: "text" | "file"
+    sourceSessionId: string | null
+    sourceLane: string
+    sourceKind: string
+    sourceRef?: string | null
+    content?: string
+    caption?: string
+    messageIds: string[]
+    enqueueStatus: "enqueued" | "duplicate"
+  }
+): void => {
+  if (!dependencies.nonInteractiveContextCaptureService) {
+    return
+  }
+
+  try {
+    if (input.mode === "file") {
+      dependencies.nonInteractiveContextCaptureService.captureQueuedFileMessage({
+        sourceSessionId: input.sourceSessionId,
+        sourceLane: input.sourceLane,
+        sourceKind: input.sourceKind,
+        sourceRef: input.sourceRef,
+        caption: input.caption ?? "",
+        messageIds: input.messageIds,
+        enqueueStatus: input.enqueueStatus,
+      })
+      return
+    }
+
+    dependencies.nonInteractiveContextCaptureService.captureQueuedTextMessage({
+      sourceSessionId: input.sourceSessionId,
+      sourceLane: input.sourceLane,
+      sourceKind: input.sourceKind,
+      sourceRef: input.sourceRef,
+      content: input.content ?? "",
+      messageIds: input.messageIds,
+      enqueueStatus: input.enqueueStatus,
+    })
+  } catch (error) {
+    const err = error as Error
+    dependencies.logger.warn(
+      {
+        sourceSessionId: input.sourceSessionId,
+        sourceLane: input.sourceLane,
+        sourceKind: input.sourceKind,
+        sourceRef: input.sourceRef ?? null,
+        error: err.message,
+      },
+      "Interactive context capture failed; enqueue result preserved"
+    )
   }
 }
 
@@ -620,6 +711,20 @@ export const buildInternalApiServer = (
         },
         dependencies.outboundMessagesRepository
       )
+      const sourceSessionId = resolveSourceSessionIdFromInput(dependencies, {
+        sessionId: payload.sessionId,
+        chatId: resolvedChatId,
+        sourceKind: "queue_telegram_message",
+      })
+      captureNonInteractiveContextSafely(dependencies, {
+        mode: "text",
+        sourceSessionId,
+        sourceLane: "internal_api",
+        sourceKind: "queue_telegram_message",
+        content: payload.content,
+        messageIds: result.messageIds,
+        enqueueStatus: result.status,
+      })
       dependencies.logger.info(
         {
           route: "queue-telegram-message",
@@ -715,6 +820,20 @@ export const buildInternalApiServer = (
         },
         dependencies.outboundMessagesRepository
       )
+      const sourceSessionId = resolveSourceSessionIdFromInput(dependencies, {
+        sessionId: payload.sessionId,
+        chatId: resolvedChatId,
+        sourceKind: "queue_telegram_file",
+      })
+      captureNonInteractiveContextSafely(dependencies, {
+        mode: "file",
+        sourceSessionId,
+        sourceLane: "internal_api",
+        sourceKind: "queue_telegram_file",
+        caption: payload.caption ?? "",
+        messageIds: result.messageIds,
+        enqueueStatus: result.status,
+      })
 
       dependencies.logger.info(
         {
@@ -1055,6 +1174,16 @@ export const buildInternalApiServer = (
         },
         dependencies.outboundMessagesRepository
       )
+      captureNonInteractiveContextSafely(dependencies, {
+        mode: "text",
+        sourceSessionId: context.sourceSessionId,
+        sourceLane: "internal_api",
+        sourceKind: "background_milestone",
+        sourceRef: `${context.jobId}:${context.runId}`,
+        content: payload.content,
+        messageIds: result.messageIds,
+        enqueueStatus: result.status,
+      })
 
       dependencies.logger.info(
         {

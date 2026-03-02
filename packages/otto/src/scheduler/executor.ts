@@ -14,6 +14,7 @@ import {
   type PromptRouteMedia,
 } from "../prompt-management/index.js"
 import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
+import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import { executeHeartbeatTask, HEARTBEAT_TASK_TYPE } from "./heartbeat.js"
@@ -144,6 +145,7 @@ type TaskExecutionEngineDependencies = {
   sessionBindingsRepository: {
     getByBindingKey: (bindingKey: string) => { sessionId: string } | null
     getTelegramChatIdBySessionId: (sessionId: string) => number | null
+    getSessionIdByTelegramChatId?: (chatId: number) => string | null
     upsert: (bindingKey: string, sessionId: string, updatedAt?: number) => void
   }
   outboundMessagesRepository: {
@@ -187,6 +189,7 @@ type TaskExecutionEngineDependencies = {
     } | null
     setLastDigestAt: (lastDigestAt: number, updatedAt?: number) => void
   }
+  nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
   now?: () => number
 }
 
@@ -561,6 +564,18 @@ const resolveBackgroundLifecycleChatId = (
   return dependencies.defaultWatchdogChatId
 }
 
+const resolveBackgroundLifecycleSourceSessionId = (
+  dependencies: TaskExecutionEngineDependencies,
+  context: BackgroundLifecycleContext,
+  chatId: number
+): string | null => {
+  if (context.sourceSessionId) {
+    return context.sourceSessionId
+  }
+
+  return dependencies.sessionBindingsRepository.getSessionIdByTelegramChatId?.(chatId) ?? null
+}
+
 const enqueueBackgroundLifecycleMessage = (
   dependencies: TaskExecutionEngineDependencies,
   context: BackgroundLifecycleContext,
@@ -596,6 +611,17 @@ const enqueueBackgroundLifecycleMessage = (
       dependencies.outboundMessagesRepository,
       input.timestamp
     )
+
+    dependencies.nonInteractiveContextCaptureService?.captureQueuedTextMessage({
+      sourceSessionId: resolveBackgroundLifecycleSourceSessionId(dependencies, context, chatId),
+      sourceLane: "scheduler",
+      sourceKind: "background_lifecycle",
+      sourceRef: `${context.jobId}:${context.runId}:${input.phase}`,
+      content: input.content,
+      messageIds: enqueueResult.messageIds,
+      enqueueStatus: enqueueResult.status,
+      timestamp: input.timestamp,
+    })
 
     dependencies.logger.info(
       {
@@ -644,6 +670,8 @@ const executeWatchdogTask = async (
       jobsRepository: dependencies.jobsRepository,
       outboundMessagesRepository: dependencies.outboundMessagesRepository,
       defaultChatId: dependencies.defaultWatchdogChatId,
+      sessionBindingsRepository: dependencies.sessionBindingsRepository,
+      nonInteractiveContextCaptureService: dependencies.nonInteractiveContextCaptureService,
     },
     {
       ...validatedPayload.data,
@@ -730,6 +758,8 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               outboundMessagesRepository: dependencies.outboundMessagesRepository,
               userProfileRepository: dependencies.userProfileRepository,
               defaultChatId: dependencies.defaultWatchdogChatId,
+              sessionBindingsRepository: dependencies.sessionBindingsRepository,
+              nonInteractiveContextCaptureService: dependencies.nonInteractiveContextCaptureService,
             },
             job.payload,
             startedAt

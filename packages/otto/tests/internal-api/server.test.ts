@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Logger } from "pino"
 
 import { buildInternalApiServer, resolveInternalApiConfig } from "../../src/internal-api/server.js"
+import type { NonInteractiveContextCaptureService } from "../../src/runtime/non-interactive-context-capture.js"
 import type { OutboundMessageEnqueueRepository } from "../../src/telegram-worker/outbound-enqueue.js"
 import type {
   FailedJobRunRecord,
@@ -187,6 +188,13 @@ const createUserProfileRepositoryStub = () => {
   }
 }
 
+const createNonInteractiveContextCaptureServiceStub = (): NonInteractiveContextCaptureService => {
+  return {
+    captureQueuedTextMessage: vi.fn(),
+    captureQueuedFileMessage: vi.fn(),
+  }
+}
+
 const createJobRunSessionsRepositoryStub = () => {
   const byRunId = new Map<string, JobRunSessionRecord>()
 
@@ -312,6 +320,7 @@ describe("buildInternalApiServer", () => {
         () => "enqueued"
       ),
     }
+    const contextCaptureService = createNonInteractiveContextCaptureServiceStub()
     const app = buildInternalApiServer({
       logger: createLoggerStub(),
       config: {
@@ -330,6 +339,7 @@ describe("buildInternalApiServer", () => {
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
       userProfileRepository: createUserProfileRepositoryStub(),
+      nonInteractiveContextCaptureService: contextCaptureService,
     })
 
     // Act
@@ -341,6 +351,7 @@ describe("buildInternalApiServer", () => {
       },
       payload: {
         chatId: 9,
+        sessionId: "session-capture-1",
         content: "hello",
         dedupeKey: "dedupe-1",
       },
@@ -355,6 +366,125 @@ describe("buildInternalApiServer", () => {
       dedupeKey: "dedupe-1",
     })
     expect(repository.enqueueOrIgnoreDedupe).toHaveBeenCalledOnce()
+    expect(contextCaptureService.captureQueuedTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceSessionId: "session-capture-1",
+        sourceLane: "internal_api",
+        sourceKind: "queue_telegram_message",
+        enqueueStatus: "enqueued",
+      })
+    )
+
+    await app.close()
+  })
+
+  it("does not fail queue route when context capture throws", async () => {
+    // Arrange
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      nonInteractiveContextCaptureService: {
+        captureQueuedTextMessage: vi.fn(() => {
+          throw new Error("capture unavailable")
+        }),
+        captureQueuedFileMessage: vi.fn(),
+      },
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/queue-telegram-message",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        chatId: 9,
+        sessionId: "session-capture-throws",
+        content: "hello",
+        dedupeKey: "dedupe-capture-throw",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({ status: "enqueued" })
+    expect(repository.enqueueOrIgnoreDedupe).toHaveBeenCalledOnce()
+
+    await app.close()
+  })
+
+  it("uses chat binding session for capture when provided sessionId mismatches", async () => {
+    // Arrange
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const contextCaptureService = createNonInteractiveContextCaptureServiceStub()
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+        getSessionIdByTelegramChatId: vi.fn(() => "session-bound-777"),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      nonInteractiveContextCaptureService: contextCaptureService,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/queue-telegram-message",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        chatId: 777,
+        sessionId: "session-stale",
+        content: "hello",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(contextCaptureService.captureQueuedTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceSessionId: "session-bound-777",
+      })
+    )
 
     await app.close()
   })
@@ -1016,6 +1146,7 @@ describe("buildInternalApiServer", () => {
       ),
     }
 
+    const contextCaptureService = createNonInteractiveContextCaptureServiceStub()
     const app = buildInternalApiServer({
       logger: createLoggerStub(),
       config: {
@@ -1034,6 +1165,7 @@ describe("buildInternalApiServer", () => {
       taskAuditRepository: createTaskAuditRepositoryStub(),
       commandAuditRepository: createCommandAuditRepositoryStub(),
       userProfileRepository: createUserProfileRepositoryStub(),
+      nonInteractiveContextCaptureService: contextCaptureService,
     })
 
     try {
@@ -1077,6 +1209,14 @@ describe("buildInternalApiServer", () => {
         taskId: "job-background-1",
         runId: "run-background-1",
       })
+      expect(contextCaptureService.captureQueuedTextMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceSessionId: "session-origin",
+          sourceLane: "internal_api",
+          sourceKind: "background_milestone",
+          enqueueStatus: "enqueued",
+        })
+      )
     } finally {
       await app.close()
       if (previousInterval === undefined) {

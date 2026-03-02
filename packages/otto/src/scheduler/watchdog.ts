@@ -3,6 +3,7 @@ import { createHash } from "node:crypto"
 import { z } from "zod"
 
 import type { FailedJobRunRecord, JobRecord } from "../persistence/repositories.js"
+import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import {
   loadTelegramCredentials,
   type TelegramCredentialSource,
@@ -246,6 +247,10 @@ export const checkTaskFailures = (
     jobsRepository: FailedRunsRepository
     outboundMessagesRepository: OutboundMessagesRepository
     defaultChatId: number | null
+    sessionBindingsRepository?: {
+      getSessionIdByTelegramChatId?: (chatId: number) => string | null
+    }
+    nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
   },
   input: CheckTaskFailuresInput = {},
   now = Date.now
@@ -297,16 +302,34 @@ export const checkTaskFailures = (
     parsedInput.lookbackMinutes,
     parsedInput.threshold
   )
+  const messageContent = buildWatchdogMessage(
+    failures,
+    parsedInput.lookbackMinutes,
+    parsedInput.threshold
+  )
   const enqueueResult = enqueueTelegramMessage(
     {
       chatId: resolvedChatId,
-      content: buildWatchdogMessage(failures, parsedInput.lookbackMinutes, parsedInput.threshold),
+      content: messageContent,
       dedupeKey,
       priority: "high",
     },
     dependencies.outboundMessagesRepository,
     nowTimestamp
   )
+
+  dependencies.nonInteractiveContextCaptureService?.captureQueuedTextMessage({
+    sourceSessionId:
+      dependencies.sessionBindingsRepository?.getSessionIdByTelegramChatId?.(resolvedChatId) ??
+      null,
+    sourceLane: "scheduler",
+    sourceKind: "watchdog_alert",
+    sourceRef: dedupeKey,
+    content: messageContent,
+    messageIds: enqueueResult.messageIds,
+    enqueueStatus: enqueueResult.status,
+    timestamp: nowTimestamp,
+  })
 
   return {
     lookbackMinutes: parsedInput.lookbackMinutes,

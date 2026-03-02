@@ -29,6 +29,7 @@ import { createOutboundMessagesRepository } from "../persistence/repositories.js
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
+import { createInteractiveContextEventsRepository } from "../persistence/repositories.js"
 import { createUserProfileRepository } from "../persistence/repositories.js"
 import { resolveInteractiveSystemPrompt } from "../prompt-management/index.js"
 import {
@@ -39,6 +40,7 @@ import { ensureHeartbeatTask, HEARTBEAT_DEFAULT_CADENCE_MINUTES } from "../sched
 import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { createTaskExecutionEngine } from "../scheduler/executor.js"
 import { startSchedulerKernel } from "../scheduler/kernel.js"
+import { createNonInteractiveContextCaptureService } from "./non-interactive-context-capture.js"
 import {
   ensureWatchdogTask,
   resolveDefaultWatchdogChatId,
@@ -113,8 +115,14 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   const taskAuditRepository = createTaskAuditRepository(persistenceDatabase)
   const commandAuditRepository = createCommandAuditRepository(persistenceDatabase)
   const outboundMessagesRepository = createOutboundMessagesRepository(persistenceDatabase)
+  const interactiveContextEventsRepository =
+    createInteractiveContextEventsRepository(persistenceDatabase)
   const sessionBindingsRepository = createSessionBindingsRepository(persistenceDatabase)
   const userProfileRepository = createUserProfileRepository(persistenceDatabase)
+  const nonInteractiveContextCaptureService = createNonInteractiveContextCaptureService({
+    logger,
+    interactiveContextEventsRepository,
+  })
   const internalApiConfig = await resolveInternalApiConfig(config.ottoHome)
   const externalApiConfig = await resolveExternalApiConfig(config.ottoHome)
   const schedulerConfig = resolveSchedulerConfig()
@@ -189,6 +197,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       userProfileRepository,
       taskAuditRepository,
       commandAuditRepository,
+      nonInteractiveContextCaptureService,
     })
     systemServiceStates.internal_api = {
       ...systemServiceStates.internal_api,
@@ -429,6 +438,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       userProfileRepository,
       sessionGateway: schedulerSessionGateway,
       defaultWatchdogChatId: watchdogChatId,
+      nonInteractiveContextCaptureService,
     })
 
     schedulerKernel = await startSchedulerKernel({

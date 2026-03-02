@@ -15,6 +15,10 @@ export type SessionBindingRecord = {
   updatedAt: number
 }
 
+type SessionIdRow = {
+  sessionId: string
+}
+
 export type InboundMessageRecord = {
   id: string
   sourceMessageId: string
@@ -293,6 +297,15 @@ export const createSessionBindingsRepository = (database: DatabaseSync) => {
      LIMIT 1`
   )
 
+  const getLatestTelegramBindingByChatIdStatement = database.prepare(
+    `SELECT
+      session_id as sessionId
+     FROM session_bindings
+     WHERE binding_key = ?
+     ORDER BY updated_at DESC
+     LIMIT 1`
+  )
+
   const parseTelegramChatIdFromBindingKey = (bindingKey: string): number | null => {
     const match = /^telegram:chat:(-?\d+):assistant$/.exec(bindingKey)
     if (!match) {
@@ -321,6 +334,14 @@ export const createSessionBindingsRepository = (database: DatabaseSync) => {
       }
 
       return parseTelegramChatIdFromBindingKey(row.bindingKey)
+    },
+    getSessionIdByTelegramChatId: (chatId: number): string | null => {
+      const bindingKey = `telegram:chat:${chatId}:assistant`
+      const row = getLatestTelegramBindingByChatIdStatement.get(bindingKey) as
+        | SessionIdRow
+        | undefined
+
+      return row?.sessionId ?? null
     },
   }
 }
