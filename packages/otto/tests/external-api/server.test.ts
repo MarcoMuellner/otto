@@ -1690,6 +1690,183 @@ describe("buildExternalApiServer", () => {
     await app.close()
   })
 
+  it("keeps jobs endpoints compatible with doctor probe create-run-cleanup flow", async () => {
+    // Arrange
+    const tasks = new Map<string, JobRecord>()
+    const runsByJobId = new Map<string, JobRunRecord[]>()
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (jobId: string): JobRecord | null => {
+          return tasks.get(jobId) ?? null
+        },
+        createTask: (record: JobRecord): void => {
+          tasks.set(record.id, record)
+        },
+        runTaskNow: (jobId: string, scheduledFor: number, updatedAt = Date.now()): void => {
+          const existing = tasks.get(jobId)
+          if (!existing) {
+            return
+          }
+
+          tasks.set(jobId, {
+            ...existing,
+            status: "idle",
+            nextRunAt: scheduledFor,
+            terminalState: null,
+            terminalReason: null,
+            updatedAt,
+          })
+
+          const previousRuns = runsByJobId.get(jobId) ?? []
+          runsByJobId.set(jobId, [
+            {
+              id: `run-${previousRuns.length + 1}`,
+              jobId,
+              scheduledFor,
+              startedAt: scheduledFor,
+              finishedAt: scheduledFor + 10,
+              status: "failed",
+              errorCode: "invalid_task_payload",
+              errorMessage: "payload invalid",
+              resultJson: '{"status":"failed","summary":"payload invalid","errors":[]}',
+              createdAt: scheduledFor,
+            },
+            ...previousRuns,
+          ])
+        },
+        listRunsByJobId: (jobId: string): JobRunRecord[] => {
+          return runsByJobId.get(jobId) ?? []
+        },
+        countRunsByJobId: (jobId: string): number => {
+          return (runsByJobId.get(jobId) ?? []).length
+        },
+        cancelTask: (jobId: string, reason: string | null, updatedAt = Date.now()): void => {
+          const existing = tasks.get(jobId)
+          if (!existing) {
+            return
+          }
+
+          tasks.set(jobId, {
+            ...existing,
+            status: "idle",
+            nextRunAt: null,
+            terminalState: "cancelled",
+            terminalReason: reason,
+            lockToken: null,
+            lockExpiresAt: null,
+            updatedAt,
+          })
+        },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/external/jobs",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        id: "doctor.pipeline.contract",
+        type: "interactive_background_oneshot",
+        scheduleType: "oneshot",
+        runAt: 8_000,
+        payload: {
+          version: 0,
+          doctorProbe: true,
+        },
+      },
+    })
+
+    const runNowResponse = await app.inject({
+      method: "POST",
+      url: "/external/jobs/doctor.pipeline.contract/run-now",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    const runsResponse = await app.inject({
+      method: "GET",
+      url: "/external/jobs/doctor.pipeline.contract/runs?limit=5&offset=0",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: "/external/jobs/doctor.pipeline.contract",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        reason: "doctor probe cleanup",
+      },
+    })
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: "/external/jobs/doctor.pipeline.contract",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(createResponse.statusCode).toBe(201)
+    expect(createResponse.json()).toMatchObject({
+      id: "doctor.pipeline.contract",
+      status: "created",
+    })
+
+    expect(runNowResponse.statusCode).toBe(200)
+    expect(runNowResponse.json()).toMatchObject({
+      id: "doctor.pipeline.contract",
+      status: "run_now_scheduled",
+    })
+
+    expect(runsResponse.statusCode).toBe(200)
+    expect(runsResponse.json()).toMatchObject({
+      taskId: "doctor.pipeline.contract",
+      total: 1,
+      runs: [
+        {
+          jobId: "doctor.pipeline.contract",
+          status: "failed",
+          errorCode: "invalid_task_payload",
+        },
+      ],
+    })
+
+    expect(deleteResponse.statusCode).toBe(200)
+    expect(deleteResponse.json()).toMatchObject({
+      id: "doctor.pipeline.contract",
+      status: "deleted",
+    })
+
+    expect(detailResponse.statusCode).toBe(200)
+    expect(detailResponse.json()).toMatchObject({
+      job: {
+        id: "doctor.pipeline.contract",
+        terminalState: "cancelled",
+        nextRunAt: null,
+      },
+    })
+
+    await app.close()
+  })
+
   it("rejects mutation attempts for system-managed jobs", async () => {
     // Arrange
     const systemJob = createJobRecord("system-heartbeat")
