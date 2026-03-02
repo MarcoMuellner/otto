@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 
 import { openPersistenceDatabase } from "../persistence/index.js"
 import { createInboundMessagesRepository } from "../persistence/repositories.js"
+import { createInteractiveContextEventsRepository } from "../persistence/repositories.js"
 import { createJobsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
@@ -388,6 +389,7 @@ export const startTelegramWorker = async (
   const inboundMessagesRepository = createInboundMessagesRepository(database)
   const jobsRepository = createJobsRepository(database)
   const outboundMessagesRepository = createOutboundMessagesRepository(database)
+  const interactiveContextEventsRepository = createInteractiveContextEventsRepository(database)
   const voiceInboundMessagesRepository = createVoiceInboundMessagesRepository(database)
   const mediaInboundMessagesRepository = createMediaInboundMessagesRepository(database)
   const userProfileRepository = createUserProfileRepository(database)
@@ -462,6 +464,7 @@ export const startTelegramWorker = async (
     },
     userProfileRepository,
     jobsRepository,
+    interactiveContextEventsRepository,
   })
 
   const processOutboundQueue = async (): Promise<void> => {

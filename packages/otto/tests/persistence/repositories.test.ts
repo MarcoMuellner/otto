@@ -534,6 +534,68 @@ describe("persistence repositories", () => {
     db.close()
   })
 
+  it("mirrors interactive context delivery status and prunes to session cap", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createInteractiveContextEventsRepository(db)
+
+    repository.insert({
+      id: "ctx-mirror-1",
+      sourceSessionId: "session-mirror-1",
+      outboundMessageId: "outbound-mirror-1",
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat",
+      sourceRef: null,
+      content: "first",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    repository.insert({
+      id: "ctx-mirror-2",
+      sourceSessionId: "session-mirror-1",
+      outboundMessageId: "outbound-mirror-2",
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat",
+      sourceRef: null,
+      content: "second",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: null,
+      errorMessage: null,
+      createdAt: 200,
+      updatedAt: 200,
+    })
+
+    // Act
+    const mirrorResult = repository.mirrorDeliveryStatusByOutboundMessageId(
+      "outbound-mirror-1",
+      {
+        deliveryStatus: "failed",
+        deliveryStatusDetail: "retry_scheduled",
+        errorMessage: "network timeout",
+      },
+      {
+        updatedAt: 250,
+        retentionCap: 1,
+      }
+    )
+    const remaining = repository.listRecentBySourceSessionId("session-mirror-1", 10)
+
+    // Assert
+    expect(mirrorResult).toEqual({
+      updated: true,
+      sourceSessionId: "session-mirror-1",
+      prunedCount: 1,
+    })
+    expect(remaining.map((event) => event.id)).toEqual(["ctx-mirror-2"])
+
+    db.close()
+  })
+
   it("prunes interactive context retention per source session", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)

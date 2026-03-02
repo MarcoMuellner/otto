@@ -707,6 +707,12 @@ export const createInteractiveContextEventsRepository = (database: DatabaseSync)
      WHERE outbound_message_id = ?`
   )
 
+  const selectSourceSessionIdByOutboundMessageIdStatement = database.prepare(
+    `SELECT source_session_id as sourceSessionId
+     FROM interactive_context_events
+     WHERE outbound_message_id = ?`
+  )
+
   const pruneBySessionCapStatement = database.prepare(
     `DELETE FROM interactive_context_events
      WHERE source_session_id = ?
@@ -750,6 +756,78 @@ export const createInteractiveContextEventsRepository = (database: DatabaseSync)
         outboundMessageId
       ) as { changes?: number }
       return (result.changes ?? 0) > 0
+    },
+    mirrorDeliveryStatusByOutboundMessageId: (
+      outboundMessageId: string,
+      update: {
+        deliveryStatus: InteractiveContextDeliveryStatus
+        deliveryStatusDetail?: string | null
+        errorMessage?: string | null
+      },
+      options?: {
+        updatedAt?: number
+        retentionCap?: number
+      }
+    ): {
+      updated: boolean
+      sourceSessionId: string | null
+      prunedCount: number
+    } => {
+      const updatedAt = options?.updatedAt ?? Date.now()
+      const updated = updateDeliveryStatusStatement.run(
+        update.deliveryStatus,
+        update.deliveryStatusDetail ?? null,
+        update.errorMessage ?? null,
+        updatedAt,
+        outboundMessageId
+      ) as { changes?: number }
+
+      if ((updated.changes ?? 0) < 1) {
+        return {
+          updated: false,
+          sourceSessionId: null,
+          prunedCount: 0,
+        }
+      }
+
+      const sourceSessionRow = selectSourceSessionIdByOutboundMessageIdStatement.get(
+        outboundMessageId
+      ) as
+        | {
+            sourceSessionId: string
+          }
+        | undefined
+
+      if (!sourceSessionRow) {
+        return {
+          updated: true,
+          sourceSessionId: null,
+          prunedCount: 0,
+        }
+      }
+
+      if (typeof options?.retentionCap !== "number") {
+        return {
+          updated: true,
+          sourceSessionId: sourceSessionRow.sourceSessionId,
+          prunedCount: 0,
+        }
+      }
+
+      const normalizedCap = Number.isInteger(options.retentionCap)
+        ? Math.max(0, options.retentionCap)
+        : 0
+      const pruned = pruneBySessionCapStatement.run(
+        sourceSessionRow.sourceSessionId,
+        sourceSessionRow.sourceSessionId,
+        normalizedCap
+      ) as { changes?: number }
+
+      return {
+        updated: true,
+        sourceSessionId: sourceSessionRow.sourceSessionId,
+        prunedCount: pruned.changes ?? 0,
+      }
     },
     pruneBySourceSessionId: (sourceSessionId: string, cap: number): number => {
       const normalizedCap = Number.isInteger(cap) ? Math.max(0, cap) : 0

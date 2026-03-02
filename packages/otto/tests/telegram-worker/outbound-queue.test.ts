@@ -18,6 +18,16 @@ const createLoggerStub = (): Logger => {
   } as unknown as Logger
 }
 
+const createContextEventsRepositoryStub = () => {
+  return {
+    mirrorDeliveryStatusByOutboundMessageId: vi.fn(() => ({
+      updated: true,
+      sourceSessionId: "session-1",
+      prunedCount: 0,
+    })),
+  }
+}
+
 describe("outbound queue processor", () => {
   it("calculates capped exponential retry delay", () => {
     // Arrange
@@ -41,6 +51,7 @@ describe("outbound queue processor", () => {
   it("marks due messages as sent after successful delivery", async () => {
     // Arrange
     const logger = createLoggerStub()
+    const contextEventsRepository = createContextEventsRepositoryStub()
     const repository = {
       listDue: vi.fn(() => [
         {
@@ -79,6 +90,8 @@ describe("outbound queue processor", () => {
         get: () => null,
         setLastDigestAt: vi.fn(),
       },
+      interactiveContextEventsRepository: contextEventsRepository,
+      contextRetentionCap: 100,
     })
 
     // Act
@@ -89,11 +102,21 @@ describe("outbound queue processor", () => {
     expect(repository.markSent).toHaveBeenCalledOnce()
     expect(repository.markRetry).not.toHaveBeenCalled()
     expect(repository.markFailed).not.toHaveBeenCalled()
+    expect(contextEventsRepository.mirrorDeliveryStatusByOutboundMessageId).toHaveBeenCalledWith(
+      "out-1",
+      {
+        deliveryStatus: "sent",
+        deliveryStatusDetail: "delivered",
+        errorMessage: null,
+      },
+      expect.objectContaining({ retentionCap: 100 })
+    )
   })
 
   it("queues retry when delivery fails before max attempts", async () => {
     // Arrange
     const logger = createLoggerStub()
+    const contextEventsRepository = createContextEventsRepositoryStub()
     const repository = {
       listDue: vi.fn(() => [
         {
@@ -135,6 +158,7 @@ describe("outbound queue processor", () => {
         get: () => null,
         setLastDigestAt: vi.fn(),
       },
+      interactiveContextEventsRepository: contextEventsRepository,
     })
 
     // Act
@@ -144,6 +168,15 @@ describe("outbound queue processor", () => {
     expect(repository.markSent).not.toHaveBeenCalled()
     expect(repository.markFailed).not.toHaveBeenCalled()
     expect(repository.markRetry).toHaveBeenCalledWith("out-2", 2, 9_000, "network timeout", 5_000)
+    expect(contextEventsRepository.mirrorDeliveryStatusByOutboundMessageId).toHaveBeenCalledWith(
+      "out-2",
+      {
+        deliveryStatus: "queued",
+        deliveryStatusDetail: "retry_scheduled",
+        errorMessage: "network timeout",
+      },
+      expect.objectContaining({ retentionCap: 100, updatedAt: 5_000 })
+    )
     nowSpy.mockRestore()
   })
 
@@ -210,6 +243,7 @@ describe("outbound queue processor", () => {
   it("marks permanent failure when max attempts are reached", async () => {
     // Arrange
     const logger = createLoggerStub()
+    const contextEventsRepository = createContextEventsRepositoryStub()
     const repository = {
       listDue: vi.fn(() => [
         {
@@ -251,6 +285,7 @@ describe("outbound queue processor", () => {
         get: () => null,
         setLastDigestAt: vi.fn(),
       },
+      interactiveContextEventsRepository: contextEventsRepository,
     })
 
     // Act
@@ -260,12 +295,22 @@ describe("outbound queue processor", () => {
     expect(repository.markSent).not.toHaveBeenCalled()
     expect(repository.markRetry).not.toHaveBeenCalled()
     expect(repository.markFailed).toHaveBeenCalledWith("out-3", 3, "telegram 429", 9_000)
+    expect(contextEventsRepository.mirrorDeliveryStatusByOutboundMessageId).toHaveBeenCalledWith(
+      "out-3",
+      {
+        deliveryStatus: "failed",
+        deliveryStatusDetail: "max_attempts_exhausted",
+        errorMessage: "telegram 429",
+      },
+      expect.objectContaining({ retentionCap: 100, updatedAt: 9_000 })
+    )
     nowSpy.mockRestore()
   })
 
   it("suppresses normal messages during quiet hours", async () => {
     // Arrange
     const logger = createLoggerStub()
+    const contextEventsRepository = createContextEventsRepositoryStub()
     const repository = {
       listDue: vi.fn(() => [
         {
@@ -318,6 +363,7 @@ describe("outbound queue processor", () => {
         }),
         setLastDigestAt: vi.fn(),
       },
+      interactiveContextEventsRepository: contextEventsRepository,
     })
 
     // Act
@@ -328,6 +374,15 @@ describe("outbound queue processor", () => {
     expect(repository.markRetry).toHaveBeenCalledOnce()
     const reason = vi.mocked(repository.markRetry).mock.calls[0]?.[3]
     expect(reason).toContain("suppressed_by_policy")
+    expect(contextEventsRepository.mirrorDeliveryStatusByOutboundMessageId).toHaveBeenCalledWith(
+      "out-quiet-1",
+      {
+        deliveryStatus: "held",
+        deliveryStatusDetail: "quiet_hours",
+        errorMessage: "suppressed_by_policy:quiet_hours",
+      },
+      expect.objectContaining({ retentionCap: 100 })
+    )
   })
 
   it("does not release suppressed digest while quiet-hours gate is still active", async () => {
