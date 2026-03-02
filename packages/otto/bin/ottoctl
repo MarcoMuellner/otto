@@ -1042,7 +1042,21 @@ cmd_model() {
 }
 
 cmd_prompt() {
-  run_prompt_cli "$@"
+  local subcommand="${1:-}"
+  shift || true
+
+  case "${subcommand}" in
+    ""|prompt)
+      run_prompt_cli prompt "$@"
+      ;;
+    help|--help|-h)
+      run_prompt_cli --help
+      ;;
+    *)
+      error "Unknown prompt command: ${subcommand}"
+      exit 1
+      ;;
+  esac
 }
 
 cmd_extension() {
@@ -1724,6 +1738,7 @@ Usage:
   ottoctl prompt
   ottoctl heartbeat status
   ottoctl heartbeat mode <observe|mute>
+  ottoctl prompt
   ottoctl extension list
   ottoctl extension install <id>[@version]
   ottoctl extension update <id>
@@ -1785,6 +1800,10 @@ main() {
     heartbeat)
       shift
       cmd_heartbeat "$@"
+      ;;
+    prompt)
+      shift
+      cmd_prompt "$@"
       ;;
     extension)
       shift

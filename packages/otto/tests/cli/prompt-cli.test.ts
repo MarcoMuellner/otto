@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { runPromptCliCommand } from "../../src/prompt-cli.js"
-import type { PromptFileEntry } from "../../src/prompt-management/index.js"
-
-const testEnv = {
-  OTTO_HOME: "/tmp/.otto",
-}
+import {
+  resolveEditorCandidates,
+  resolveNextPickerIndex,
+  runPromptCliCommand,
+} from "../../src/prompt-cli.js"
 
 const createStreams = () => {
   const outputs: string[] = []
@@ -25,76 +24,128 @@ const createStreams = () => {
   }
 }
 
-const sampleEntries: PromptFileEntry[] = [
-  {
-    source: "user",
-    relativePath: "layers/core-persona.md",
-    absolutePath: "/tmp/.otto/prompts/layers/core-persona.md",
-  },
-  {
-    source: "system",
-    relativePath: "layers/media-cli.md",
-    absolutePath: "/tmp/.otto/system-prompts/layers/media-cli.md",
-  },
-]
+describe("resolveNextPickerIndex", () => {
+  it("wraps up/down selection across picker rows", () => {
+    // Arrange
+    const itemCount = 3
+
+    // Act
+    const fromStartUp = resolveNextPickerIndex(0, itemCount, "up")
+    const fromEndDown = resolveNextPickerIndex(2, itemCount, "down")
+    const fromMiddleUp = resolveNextPickerIndex(1, itemCount, "up")
+    const fromMiddleDown = resolveNextPickerIndex(1, itemCount, "down")
+
+    // Assert
+    expect(fromStartUp).toBe(2)
+    expect(fromEndDown).toBe(0)
+    expect(fromMiddleUp).toBe(0)
+    expect(fromMiddleDown).toBe(2)
+  })
+})
+
+describe("resolveEditorCandidates", () => {
+  it("prefers EDITOR then VISUAL before fallback editors", () => {
+    // Arrange
+    const env = {
+      EDITOR: "code --wait",
+      VISUAL: "vim",
+    }
+
+    // Act
+    const candidates = resolveEditorCandidates(env)
+
+    // Assert
+    expect(candidates.map((candidate) => candidate.command)).toEqual([
+      "code --wait",
+      "vim",
+      "nano",
+      "vi",
+    ])
+  })
+})
 
 describe("runPromptCliCommand", () => {
-  it("prints prompt inventory for list command", async () => {
+  it("prints usage for help", async () => {
     // Arrange
     const { outputs, errors, streams } = createStreams()
 
     // Act
-    const exitCode = await runPromptCliCommand(["list"], streams, testEnv, {
-      listPromptFiles: async () => sampleEntries,
-      pickPromptFile: async () => null,
-      openEditor: async () => {},
-    })
+    const code = await runPromptCliCommand(["--help"], streams)
 
     // Assert
-    expect(exitCode).toBe(0)
+    expect(code).toBe(0)
     expect(errors).toEqual([])
-    expect(outputs).toContain("source\tpath")
-    expect(outputs).toContain("user\tlayers/core-persona.md")
-    expect(outputs).toContain("system\tlayers/media-cli.md")
+    expect(outputs.join("\n")).toContain("Usage: prompt-cli")
   })
 
-  it("opens selected user prompt file", async () => {
+  it("blocks direct editing of system-owned prompt files", async () => {
     // Arrange
     const { errors, streams } = createStreams()
-    const openEditor = vi.fn(async () => {})
+    const openInEditor = vi.fn()
 
     // Act
-    const exitCode = await runPromptCliCommand([], streams, testEnv, {
-      listPromptFiles: async () => sampleEntries,
-      pickPromptFile: async ({ entries }) => entries[0] ?? null,
-      openEditor,
-    })
-
-    // Assert
-    expect(exitCode).toBe(0)
-    expect(errors).toEqual([])
-    expect(openEditor).toHaveBeenCalledWith({
-      filePath: "/tmp/.otto/prompts/layers/core-persona.md",
-      environment: testEnv,
-    })
-  })
-
-  it("warns when selected prompt is system-owned", async () => {
-    // Arrange
-    const { errors, streams } = createStreams()
-
-    // Act
-    const exitCode = await runPromptCliCommand([], streams, testEnv, {
-      listPromptFiles: async () => sampleEntries,
-      pickPromptFile: async ({ entries }) => entries[1] ?? null,
-      openEditor: async () => {},
-    })
-
-    // Assert
-    expect(exitCode).toBe(0)
-    expect(errors).toContain(
-      "Selected a system-owned prompt file. Changes may be overwritten by otto setup/update."
+    const code = await runPromptCliCommand(
+      ["prompt"],
+      streams,
+      {
+        OTTO_HOME: "/tmp/otto-home",
+      },
+      {
+        listPromptFiles: async () => [
+          {
+            source: "system",
+            relativePath: "layers/core-persona.md",
+            absolutePath: "/tmp/otto-home/system-prompts/layers/core-persona.md",
+          },
+        ],
+        runPicker: async (entries) => ({
+          status: "selected",
+          entry: entries[0]!,
+        }),
+        openInEditor,
+      }
     )
+
+    // Assert
+    expect(code).toBe(1)
+    expect(errors[0]).toContain("Editing blocked for system-owned prompt")
+    expect(errors[0]).toContain("/tmp/otto-home/prompts/layers/core-persona.md")
+    expect(openInEditor).not.toHaveBeenCalled()
+  })
+
+  it("opens selected user-owned prompt file", async () => {
+    // Arrange
+    const { outputs, errors, streams } = createStreams()
+    const openInEditor = vi.fn(async () => ({ command: "vim" }))
+
+    // Act
+    const code = await runPromptCliCommand(
+      ["prompt"],
+      streams,
+      {
+        OTTO_HOME: "/tmp/otto-home",
+      },
+      {
+        listPromptFiles: async () => [
+          {
+            source: "user",
+            relativePath: "layers/media-cli.md",
+            absolutePath: "/tmp/otto-home/prompts/layers/media-cli.md",
+          },
+        ],
+        runPicker: async (entries) => ({
+          status: "selected",
+          entry: entries[0]!,
+        }),
+        openInEditor,
+      }
+    )
+
+    // Assert
+    expect(code).toBe(0)
+    expect(errors).toEqual([])
+    expect(openInEditor).toHaveBeenCalledOnce()
+    expect(outputs.join("\n")).toContain("Opened [user] layers/media-cli.md using vim")
   })
 
   it("returns success when picker is cancelled", async () => {
@@ -102,51 +153,24 @@ describe("runPromptCliCommand", () => {
     const { outputs, errors, streams } = createStreams()
 
     // Act
-    const exitCode = await runPromptCliCommand([], streams, testEnv, {
-      listPromptFiles: async () => sampleEntries,
-      pickPromptFile: async () => null,
-      openEditor: async () => {},
-    })
+    const code = await runPromptCliCommand(
+      ["prompt"],
+      streams,
+      {
+        OTTO_HOME: "/tmp/otto-home",
+      },
+      {
+        listPromptFiles: async () => [],
+        runPicker: async () => ({
+          status: "cancelled",
+        }),
+        openInEditor: async () => ({ command: "vim" }),
+      }
+    )
 
     // Assert
-    expect(exitCode).toBe(0)
+    expect(code).toBe(0)
     expect(errors).toEqual([])
     expect(outputs).toContain("Prompt picker cancelled")
-  })
-
-  it("returns actionable error when no prompt files are available", async () => {
-    // Arrange
-    const { errors, streams } = createStreams()
-
-    // Act
-    const exitCode = await runPromptCliCommand([], streams, testEnv, {
-      listPromptFiles: async () => [],
-      pickPromptFile: async () => null,
-      openEditor: async () => {},
-    })
-
-    // Assert
-    expect(exitCode).toBe(1)
-    expect(errors[0]).toContain("No prompt files found under")
-  })
-
-  it("returns actionable error when editor launch fails", async () => {
-    // Arrange
-    const { errors, streams } = createStreams()
-
-    // Act
-    const exitCode = await runPromptCliCommand([], streams, testEnv, {
-      listPromptFiles: async () => sampleEntries,
-      pickPromptFile: async ({ entries }) => entries[0] ?? null,
-      openEditor: async () => {
-        throw new Error(
-          "No usable editor found. Attempted 'vi'. Set $VISUAL or $EDITOR to an installed terminal editor."
-        )
-      },
-    })
-
-    // Assert
-    expect(exitCode).toBe(1)
-    expect(errors[0]).toContain("No usable editor found")
   })
 })
