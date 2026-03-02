@@ -482,6 +482,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
         createSessionGateway: async (baseUrl) => {
           return createOpencodeSessionGateway(baseUrl, logger, modelResolver)
         },
+        interactiveContextEventsRepository,
         resolveInteractiveSystemPrompt: async () => {
           const resolved = await resolveInteractiveSystemPrompt({
             ottoHome: config.ottoHome,

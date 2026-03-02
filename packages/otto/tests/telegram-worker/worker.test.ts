@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Logger } from "pino"
 
 import { openPersistenceDatabase } from "../../src/persistence/index.js"
+import { createInteractiveContextEventsRepository } from "../../src/persistence/repositories.js"
 import { startTelegramWorker, type TelegramBotRuntime } from "../../src/telegram-worker/worker.js"
 import type { TelegramWorkerConfig } from "../../src/telegram-worker/config.js"
 
@@ -528,6 +529,72 @@ describe("startTelegramWorker", () => {
     expect(transcribe).not.toHaveBeenCalled()
     const lastMessage = fakeBot.sentMessages[fakeBot.sentMessages.length - 1]
     expect(lastMessage?.text).toContain("too large")
+
+    await worker.stop()
+  })
+
+  it("injects session-scoped interactive context into text prompts", async () => {
+    // Arrange
+    const { logger } = createLoggerStub()
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const fakeBot = createFakeBotRuntime()
+    const database = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const interactiveContextEventsRepository = createInteractiveContextEventsRepository(database)
+    interactiveContextEventsRepository.insert({
+      id: "ctx-1",
+      sourceSessionId: "session-1",
+      outboundMessageId: "out-1",
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat",
+      sourceRef: "job-1",
+      content: "Heartbeat digest delivered",
+      deliveryStatus: "sent",
+      deliveryStatusDetail: "delivered",
+      errorMessage: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const promptSessionParts = vi.fn(async () => "assistant reply")
+
+    const worker = await startTelegramWorker(logger, createWorkerConfig(), {
+      createBotRuntime: () => fakeBot.runtime,
+      openDatabase: () => database,
+      createSessionGateway: () => ({
+        ensureSession: async () => "session-1",
+        promptSessionParts,
+        promptSession: async () => "assistant reply",
+      }),
+    })
+
+    // Act
+    await fakeBot.dispatch({
+      sourceMessageId: "context-inject-1",
+      chatId: 2002,
+      userId: 1001,
+      text: "what happened?",
+      update: {
+        message: {
+          from: { id: 1001 },
+          chat: { id: 2002, type: "private" },
+        },
+      },
+    })
+
+    // Assert
+    expect(promptSessionParts).toHaveBeenCalledTimes(1)
+    const parts = vi.mocked(promptSessionParts).mock.calls[0]?.[1]
+    expect(parts?.[0]).toMatchObject({
+      type: "text",
+    })
+    expect(parts?.[0]).toBeDefined()
+    const contextPart = parts?.[0] as { type: "text"; text: string }
+    expect(contextPart.text).toContain("Recent non-interactive context:")
+    expect(contextPart.text).toContain(
+      "[sent] scheduler/heartbeat(job-1): Heartbeat digest delivered (delivered)"
+    )
+    expect(parts?.[1]).toEqual({ type: "text", text: "what happened?" })
 
     await worker.stop()
   })

@@ -101,6 +101,7 @@ export type TelegramBotRuntime = {
 export type TelegramWorkerDependencies = {
   createBotRuntime?: (botToken: string) => TelegramBotRuntime
   openDatabase?: () => DatabaseSync
+  interactiveContextEventsRepository?: ReturnType<typeof createInteractiveContextEventsRepository>
   createSessionGateway?: (
     baseUrl: string
   ) => Promise<OpencodeSessionGateway> | OpencodeSessionGateway
@@ -389,7 +390,9 @@ export const startTelegramWorker = async (
   const inboundMessagesRepository = createInboundMessagesRepository(database)
   const jobsRepository = createJobsRepository(database)
   const outboundMessagesRepository = createOutboundMessagesRepository(database)
-  const interactiveContextEventsRepository = createInteractiveContextEventsRepository(database)
+  const interactiveContextEventsRepository =
+    dependencies.interactiveContextEventsRepository ??
+    createInteractiveContextEventsRepository(database)
   const voiceInboundMessagesRepository = createVoiceInboundMessagesRepository(database)
   const mediaInboundMessagesRepository = createMediaInboundMessagesRepository(database)
   const userProfileRepository = createUserProfileRepository(database)
@@ -443,6 +446,7 @@ export const startTelegramWorker = async (
     },
     sessionGateway,
     resolveInteractiveSystemPrompt: dependencies.resolveInteractiveSystemPrompt,
+    interactiveContextEventsRepository,
     sessionBindingsRepository,
     inboundMessagesRepository,
     outboundMessagesRepository,
