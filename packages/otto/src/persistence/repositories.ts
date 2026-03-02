@@ -643,8 +643,8 @@ export const createOutboundMessagesRepository = (database: DatabaseSync) => {
 }
 
 /**
- * Persists non-interactive outbound context events so interactive follow-up prompts can recover
- * recent user-facing activity with deterministic delivery status transitions.
+ * Persists interactive context events emitted by non-interactive lanes so follow-up prompts can
+ * recover recent user-facing activity with deterministic delivery status transitions.
  *
  * @param database Open SQLite database instance.
  * @returns Repository for interactive context event writes, reads, and retention pruning.
