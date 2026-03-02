@@ -117,6 +117,214 @@ describe("createInboundBridge", () => {
     )
   })
 
+  it("injects recent non-interactive context into interactive prompt parts", async () => {
+    // Arrange
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger
+    const sendMessage = vi.fn(async () => {})
+    const sessionGateway = {
+      ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => "Hello from Otto"),
+      promptSession: vi.fn(async () => "Hello from Otto"),
+    }
+    const sessionBindingsRepository = {
+      getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+      upsert: vi.fn(),
+    }
+    const inboundMessagesRepository = {
+      insert: vi.fn(),
+    }
+    const outboundMessagesRepository = {
+      enqueue: vi.fn(),
+    }
+    const interactiveContextEventsRepository = {
+      listRecentBySourceSessionId: vi.fn(() => [
+        {
+          sourceLane: "scheduler",
+          sourceKind: "heartbeat",
+          sourceRef: "job-1",
+          content: "Heartbeat digest delivered",
+          deliveryStatus: "sent" as const,
+          deliveryStatusDetail: "delivered",
+          errorMessage: null,
+          createdAt: 1,
+        },
+      ]),
+    }
+
+    const bridge = createInboundBridge({
+      logger,
+      sender: { sendMessage },
+      sessionGateway,
+      sessionBindingsRepository,
+      interactiveContextEventsRepository,
+      inboundMessagesRepository,
+      outboundMessagesRepository,
+      promptTimeoutMs: 30_000,
+    })
+
+    // Act
+    await bridge.handleTextMessage({
+      sourceMessageId: "ctx-1",
+      chatId: 7,
+      userId: 9,
+      text: "hi",
+    })
+
+    // Assert
+    expect(interactiveContextEventsRepository.listRecentBySourceSessionId).toHaveBeenCalledWith(
+      "session-1",
+      20
+    )
+    const parts = vi.mocked(sessionGateway.promptSessionParts).mock.calls[0]?.[1]
+    expect(parts?.[0]?.type).toBe("text")
+    expect(parts?.[0]).toBeDefined()
+    const contextPart = parts?.[0] as { type: "text"; text: string }
+    expect(contextPart.text).toContain("Recent non-interactive context:")
+    expect(contextPart.text).toContain(
+      "[sent] scheduler/heartbeat(job-1): Heartbeat digest delivered (delivered)"
+    )
+    expect(parts?.[1]).toEqual({ type: "text", text: "hi" })
+  })
+
+  it("keeps prompt parts unchanged when no context events exist", async () => {
+    // Arrange
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger
+    const sendMessage = vi.fn(async () => {})
+    const sessionGateway = {
+      ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => "Hello from Otto"),
+      promptSession: vi.fn(async () => "Hello from Otto"),
+    }
+    const sessionBindingsRepository = {
+      getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+      upsert: vi.fn(),
+    }
+    const inboundMessagesRepository = {
+      insert: vi.fn(),
+    }
+    const outboundMessagesRepository = {
+      enqueue: vi.fn(),
+    }
+    const interactiveContextEventsRepository = {
+      listRecentBySourceSessionId: vi.fn(() => []),
+    }
+
+    const bridge = createInboundBridge({
+      logger,
+      sender: { sendMessage },
+      sessionGateway,
+      sessionBindingsRepository,
+      interactiveContextEventsRepository,
+      inboundMessagesRepository,
+      outboundMessagesRepository,
+      promptTimeoutMs: 30_000,
+    })
+
+    // Act
+    await bridge.handleTextMessage({
+      sourceMessageId: "ctx-empty-1",
+      chatId: 7,
+      userId: 9,
+      text: "hi",
+    })
+
+    // Assert
+    expect(sessionGateway.promptSessionParts).toHaveBeenCalledWith(
+      "session-1",
+      [{ type: "text", text: "hi" }],
+      {
+        modelContext: {
+          flow: "interactiveAssistant",
+        },
+      }
+    )
+  })
+
+  it("queries context by resolved session id and logs truncation metadata", async () => {
+    // Arrange
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger
+    const sendMessage = vi.fn(async () => {})
+    const sessionGateway = {
+      ensureSession: vi.fn(async () => "session-2"),
+      promptSessionParts: vi.fn(async () => "Hello from Otto"),
+      promptSession: vi.fn(async () => "Hello from Otto"),
+    }
+    const sessionBindingsRepository = {
+      getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+      upsert: vi.fn(),
+    }
+    const inboundMessagesRepository = {
+      insert: vi.fn(),
+    }
+    const outboundMessagesRepository = {
+      enqueue: vi.fn(),
+    }
+    const interactiveContextEventsRepository = {
+      listRecentBySourceSessionId: vi.fn((sourceSessionId: string) => {
+        if (sourceSessionId !== "session-2") {
+          return []
+        }
+
+        return [
+          {
+            sourceLane: "scheduler",
+            sourceKind: "watchdog",
+            sourceRef: null,
+            content: "x".repeat(500),
+            deliveryStatus: "failed" as const,
+            deliveryStatusDetail: "max_attempts_exhausted",
+            errorMessage: null,
+            createdAt: 1,
+          },
+        ]
+      }),
+    }
+
+    const bridge = createInboundBridge({
+      logger,
+      sender: { sendMessage },
+      sessionGateway,
+      sessionBindingsRepository,
+      interactiveContextEventsRepository,
+      inboundMessagesRepository,
+      outboundMessagesRepository,
+      promptTimeoutMs: 30_000,
+    })
+
+    // Act
+    await bridge.handleTextMessage({
+      sourceMessageId: "ctx-scope-1",
+      chatId: 7,
+      userId: 9,
+      text: "hi",
+    })
+
+    // Assert
+    expect(interactiveContextEventsRepository.listRecentBySourceSessionId).toHaveBeenCalledWith(
+      "session-2",
+      20
+    )
+    const infoCalls = vi.mocked(logger.info).mock.calls
+    const injectionLog = infoCalls.find((call) =>
+      String(call[1]).includes("Prepared interactive context injection")
+    )
+    expect(injectionLog?.[0]).toMatchObject({
+      sourceSessionId: "session-2",
+      eventCount: 1,
+      injectedEventCount: 1,
+      truncated: true,
+    })
+  })
+
   it("falls back when interactive prompt resolution fails", async () => {
     // Arrange
     const logger = {
