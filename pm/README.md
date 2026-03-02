@@ -14,6 +14,8 @@ This directory stores deployable epics and tickets.
 - `epic_008`: Runtime model management defaults and per-job model switching.
 - `epic_009`: Interactive background one-shot tasks across Telegram, CLI chat, and web chat.
 - `epic_010`: Prompt management hierarchy with update-safe user layers and per-run provenance.
+- `epic_011`: Interactive context bridge for non-interactive outbound continuity.
+- `epic_012`: Deep Doctor healthcheck and end-to-end regression guard.
 
 ## Structure
 
