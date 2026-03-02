@@ -21,6 +21,8 @@ describe("settings-notification-profile service", () => {
       quietHoursEnd: "08:00",
       quietMode: "critical_only",
       heartbeatOnlyIfSignal: true,
+      interactiveContextWindowSize: 20,
+      contextRetentionCap: 100,
     })
   })
 
@@ -38,6 +40,8 @@ describe("settings-notification-profile service", () => {
         quietHoursStart: "21:00",
         quietHoursEnd: "07:30",
         muteForMinutes: 10,
+        interactiveContextWindowSize: 55,
+        contextRetentionCap: 77,
       },
       now
     )
@@ -50,6 +54,10 @@ describe("settings-notification-profile service", () => {
     expect(changed).toContain("quietHoursStart")
     expect(changed).toContain("quietHoursEnd")
     expect(changed).toContain("muteUntil")
+    expect(merged.interactiveContextWindowSize).toBe(55)
+    expect(merged.contextRetentionCap).toBe(77)
+    expect(changed).toContain("interactiveContextWindowSize")
+    expect(changed).toContain("contextRetentionCap")
   })
 
   it("rejects invalid timezone in update payload", () => {
@@ -57,6 +65,20 @@ describe("settings-notification-profile service", () => {
     expect(() =>
       notificationProfileUpdateSchema.parse({
         timezone: "Europe/NopeTown",
+      })
+    ).toThrow()
+  })
+
+  it("rejects out-of-range context window and retention cap", () => {
+    expect(() =>
+      notificationProfileUpdateSchema.parse({
+        interactiveContextWindowSize: 4,
+      })
+    ).toThrow()
+
+    expect(() =>
+      notificationProfileUpdateSchema.parse({
+        contextRetentionCap: 201,
       })
     ).toThrow()
   })

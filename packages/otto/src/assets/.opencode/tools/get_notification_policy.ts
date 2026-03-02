@@ -17,7 +17,7 @@ const resolveInternalApiConfiguration = (): { baseUrl: string; token: string } =
 
 export default tool({
   description:
-    "Read the current notification profile (quiet hours, heartbeat windows, mute state).",
+    "Read the current notification profile (quiet hours, heartbeat windows, mute state, interactive context window size, and context retention cap).",
   args: {},
   async execute(_args): Promise<string> {
     const { baseUrl, token } = resolveInternalApiConfiguration()

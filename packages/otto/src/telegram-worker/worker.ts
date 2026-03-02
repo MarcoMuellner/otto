@@ -447,6 +447,7 @@ export const startTelegramWorker = async (
     sessionGateway,
     resolveInteractiveSystemPrompt: dependencies.resolveInteractiveSystemPrompt,
     interactiveContextEventsRepository,
+    userProfileRepository,
     sessionBindingsRepository,
     inboundMessagesRepository,
     outboundMessagesRepository,

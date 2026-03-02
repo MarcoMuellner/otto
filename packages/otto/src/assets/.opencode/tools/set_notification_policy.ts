@@ -17,7 +17,7 @@ const resolveInternalApiConfiguration = (): { baseUrl: string; token: string } =
 
 export default tool({
   description:
-    "Update notification policy settings (quiet hours, heartbeat windows, cadence, and temporary mute).",
+    "Update notification policy settings (quiet hours, heartbeat windows, cadence, temporary mute, interactive context window size, and context retention cap).",
   args: {
     timezone: tool.schema.string().optional().describe("IANA timezone, e.g. Europe/Vienna"),
     quietHoursStart: tool.schema
@@ -79,6 +79,20 @@ export default tool({
       .boolean()
       .optional()
       .describe("Only send heartbeat when there is meaningful activity"),
+    interactiveContextWindowSize: tool.schema
+      .number()
+      .int()
+      .min(5)
+      .max(200)
+      .optional()
+      .describe("Interactive context event window size used for prompt injection"),
+    contextRetentionCap: tool.schema
+      .number()
+      .int()
+      .min(5)
+      .max(200)
+      .optional()
+      .describe("Per-session cap for retained interactive context events"),
     markOnboardingComplete: tool.schema
       .boolean()
       .optional()

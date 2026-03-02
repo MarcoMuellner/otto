@@ -28,6 +28,8 @@ export const notificationProfileUpdateSchema = z.object({
     .nullable()
     .optional(),
   heartbeatOnlyIfSignal: z.boolean().optional(),
+  interactiveContextWindowSize: z.number().int().min(5).max(200).optional(),
+  contextRetentionCap: z.number().int().min(5).max(200).optional(),
   quietMode: z.enum(["critical_only", "off"]).optional(),
   muteUntil: z.number().int().nullable().optional(),
   muteForMinutes: z
@@ -53,6 +55,8 @@ const defaultNotificationProfile = (): UserProfileRecord => {
     heartbeatEvening: "19:00",
     heartbeatCadenceMinutes: 180,
     heartbeatOnlyIfSignal: true,
+    interactiveContextWindowSize: 20,
+    contextRetentionCap: 100,
     onboardingCompletedAt: null,
     lastDigestAt: null,
     updatedAt: Date.now(),
@@ -95,6 +99,9 @@ export const applyNotificationProfileUpdate = (
         ? existing.heartbeatCadenceMinutes
         : input.heartbeatCadenceMinutes,
     heartbeatOnlyIfSignal: input.heartbeatOnlyIfSignal ?? existing.heartbeatOnlyIfSignal,
+    interactiveContextWindowSize:
+      input.interactiveContextWindowSize ?? existing.interactiveContextWindowSize,
+    contextRetentionCap: input.contextRetentionCap ?? existing.contextRetentionCap,
     onboardingCompletedAt: input.markOnboardingComplete ? now : existing.onboardingCompletedAt,
     lastDigestAt: existing.lastDigestAt,
     updatedAt: now,

@@ -20,6 +20,8 @@ export const notificationProfileSchema = z.object({
   heartbeatEvening: z.string().nullable(),
   heartbeatCadenceMinutes: z.number().int().nullable(),
   heartbeatOnlyIfSignal: z.boolean(),
+  interactiveContextWindowSize: z.number().int().min(5).max(200),
+  contextRetentionCap: z.number().int().min(5).max(200),
   onboardingCompletedAt: z.number().int().nullable(),
   lastDigestAt: z.number().int().nullable(),
   updatedAt: z.number().int(),
@@ -49,6 +51,8 @@ export const updateNotificationProfileRequestSchema = z.object({
     .nullable()
     .optional(),
   heartbeatOnlyIfSignal: z.boolean().optional(),
+  interactiveContextWindowSize: z.number().int().min(5).max(200).optional(),
+  contextRetentionCap: z.number().int().min(5).max(200).optional(),
   quietMode: z.enum(["critical_only", "off"]).optional(),
   muteUntil: z.number().int().nullable().optional(),
   muteForMinutes: z
