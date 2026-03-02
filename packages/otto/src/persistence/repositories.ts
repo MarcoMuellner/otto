@@ -232,6 +232,23 @@ export type UserProfileRecord = {
   updatedAt: number
 }
 
+export type InteractiveContextDeliveryStatus = "queued" | "sent" | "failed" | "held"
+
+export type InteractiveContextEventRecord = {
+  id: string
+  sourceSessionId: string
+  outboundMessageId: string
+  sourceLane: string
+  sourceKind: string
+  sourceRef: string | null
+  content: string
+  deliveryStatus: InteractiveContextDeliveryStatus
+  deliveryStatusDetail: string | null
+  errorMessage: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 const isUniqueConstraintForColumn = (error: unknown, columnName: string): boolean => {
   if (!(error instanceof Error)) {
     return false
@@ -621,6 +638,106 @@ export const createOutboundMessagesRepository = (database: DatabaseSync) => {
       timestamp = Date.now()
     ): void => {
       markFailedStatement.run(attemptCount, timestamp, errorMessage, timestamp, id)
+    },
+  }
+}
+
+/**
+ * Persists non-interactive outbound context events so interactive follow-up prompts can recover
+ * recent user-facing activity with deterministic delivery status transitions.
+ *
+ * @param database Open SQLite database instance.
+ * @returns Repository for interactive context event writes, reads, and retention pruning.
+ */
+export const createInteractiveContextEventsRepository = (database: DatabaseSync) => {
+  const insertStatement = database.prepare(
+    `INSERT INTO interactive_context_events
+      (id, source_session_id, outbound_message_id, source_lane, source_kind, source_ref, content, delivery_status, delivery_status_detail, error_message, created_at, updated_at)
+     VALUES
+      (@id, @sourceSessionId, @outboundMessageId, @sourceLane, @sourceKind, @sourceRef, @content, @deliveryStatus, @deliveryStatusDetail, @errorMessage, @createdAt, @updatedAt)`
+  )
+
+  const listRecentBySessionIdStatement = database.prepare(
+    `SELECT
+      id,
+      source_session_id as sourceSessionId,
+      outbound_message_id as outboundMessageId,
+      source_lane as sourceLane,
+      source_kind as sourceKind,
+      source_ref as sourceRef,
+      content,
+      delivery_status as deliveryStatus,
+      delivery_status_detail as deliveryStatusDetail,
+      error_message as errorMessage,
+      created_at as createdAt,
+      updated_at as updatedAt
+     FROM interactive_context_events
+     WHERE source_session_id = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
+  )
+
+  const updateDeliveryStatusStatement = database.prepare(
+    `UPDATE interactive_context_events
+     SET delivery_status = ?,
+         delivery_status_detail = ?,
+         error_message = ?,
+         updated_at = ?
+     WHERE outbound_message_id = ?`
+  )
+
+  const pruneBySessionCapStatement = database.prepare(
+    `DELETE FROM interactive_context_events
+     WHERE source_session_id = ?
+       AND id IN (
+         SELECT id
+         FROM interactive_context_events
+         WHERE source_session_id = ?
+         ORDER BY created_at DESC, id DESC
+         LIMIT -1 OFFSET ?
+       )`
+  )
+
+  return {
+    insert: (record: InteractiveContextEventRecord): void => {
+      insertStatement.run(record)
+    },
+    listRecentBySourceSessionId: (
+      sourceSessionId: string,
+      limit = 20
+    ): InteractiveContextEventRecord[] => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 20
+      return listRecentBySessionIdStatement.all(
+        sourceSessionId,
+        normalizedLimit
+      ) as InteractiveContextEventRecord[]
+    },
+    updateDeliveryStatusByOutboundMessageId: (
+      outboundMessageId: string,
+      update: {
+        deliveryStatus: InteractiveContextDeliveryStatus
+        deliveryStatusDetail?: string | null
+        errorMessage?: string | null
+      },
+      updatedAt = Date.now()
+    ): boolean => {
+      const result = updateDeliveryStatusStatement.run(
+        update.deliveryStatus,
+        update.deliveryStatusDetail ?? null,
+        update.errorMessage ?? null,
+        updatedAt,
+        outboundMessageId
+      ) as { changes?: number }
+      return (result.changes ?? 0) > 0
+    },
+    pruneBySourceSessionId: (sourceSessionId: string, cap: number): number => {
+      const normalizedCap = Number.isInteger(cap) ? Math.max(0, cap) : 0
+      const result = pruneBySessionCapStatement.run(
+        sourceSessionId,
+        sourceSessionId,
+        normalizedCap
+      ) as { changes?: number }
+      return result.changes ?? 0
     },
   }
 }

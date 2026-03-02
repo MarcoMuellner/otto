@@ -57,6 +57,7 @@ describe("openPersistenceDatabase", () => {
     expect(tableNames).toEqual(
       expect.arrayContaining([
         "approvals",
+        "interactive_context_events",
         "jobs",
         "job_run_sessions",
         "messages_in",
@@ -121,5 +122,38 @@ describe("openPersistenceDatabase", () => {
     // Assert
     expect(runColumns.map((column) => column.name)).toContain("prompt_provenance_json")
     expect(runSessionColumns.map((column) => column.name)).toContain("prompt_provenance_json")
+  })
+
+  it("adds interactive context events table with delivery and lookup indexes", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const dbPath = path.join(tempRoot, "state.db")
+
+    // Act
+    const db = openPersistenceDatabase({ dbPath })
+    const columns = db.prepare("PRAGMA table_info(interactive_context_events)").all() as Array<{
+      name: string
+    }>
+    const indexes = db.prepare("PRAGMA index_list(interactive_context_events)").all() as Array<{
+      name: string
+    }>
+    db.close()
+
+    // Assert
+    expect(columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "source_session_id",
+        "outbound_message_id",
+        "delivery_status",
+        "delivery_status_detail",
+      ])
+    )
+    expect(indexes.map((index) => index.name)).toEqual(
+      expect.arrayContaining([
+        "idx_interactive_context_events_outbound_message",
+        "idx_interactive_context_events_session_recent",
+      ])
+    )
   })
 })
