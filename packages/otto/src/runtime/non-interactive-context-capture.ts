@@ -49,7 +49,7 @@ const alignMessageBodies = (content: string, messageIds: string[]): string[] => 
     return chunks
   }
 
-  return messageIds.map(() => content)
+  return []
 }
 
 export const createNonInteractiveContextCaptureService = (dependencies: {
@@ -115,6 +115,21 @@ export const createNonInteractiveContextCaptureService = (dependencies: {
 
   return {
     captureQueuedTextMessage: (input): void => {
+      const messageBodies = alignMessageBodies(input.content, input.messageIds)
+      if (input.messageIds.length > 0 && messageBodies.length === 0) {
+        dependencies.logger.warn(
+          {
+            sourceSessionId: input.sourceSessionId,
+            sourceLane: input.sourceLane,
+            sourceKind: input.sourceKind,
+            sourceRef: normalizeSourceRef(input.sourceRef),
+            messageIdCount: input.messageIds.length,
+          },
+          "Skipping non-interactive text context capture because queued message ids do not align with chunked content"
+        )
+        return
+      }
+
       capture({
         sourceSessionId: input.sourceSessionId,
         sourceLane: input.sourceLane,
@@ -122,7 +137,7 @@ export const createNonInteractiveContextCaptureService = (dependencies: {
         sourceRef: input.sourceRef,
         enqueueStatus: input.enqueueStatus,
         messageIds: input.messageIds,
-        messageBodies: alignMessageBodies(input.content, input.messageIds),
+        messageBodies,
         timestamp: input.timestamp,
       })
     },
