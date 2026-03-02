@@ -6,11 +6,15 @@ import type {
   ChatThreadBinding,
   ChatThreadsResponse,
 } from "../features/chat/contracts.js"
+import {
+  buildInteractiveContextPromptBlock,
+  DEFAULT_INTERACTIVE_CONTEXT_LIMIT,
+  normalizeInteractiveContextWindowSize,
+} from "otto-extension-sdk"
 import { resolveCachedControlPlaneChatConfig } from "./chat-env.server.js"
 import {
   listSessionBindings,
   listRecentInteractiveContextEventsBySourceSessionId,
-  type InteractiveContextEventRow,
   type SessionBindingRow,
   insertCommandAudit,
 } from "./otto-state.server.js"
@@ -36,10 +40,6 @@ type ChatSurfaceServiceDependencies = {
 
 const INTERACTIVE_PROMPT_RESOLUTION_TIMEOUT_MS = 2_000
 const INTERACTIVE_CONTEXT_WINDOW_RESOLUTION_TIMEOUT_MS = 2_000
-const DEFAULT_INTERACTIVE_CONTEXT_LIMIT = 20
-const MIN_INTERACTIVE_CONTEXT_LIMIT = 5
-const MAX_INTERACTIVE_CONTEXT_LIMIT = 200
-const INTERACTIVE_CONTEXT_MAX_LINE_LENGTH = 220
 
 type PromptResolutionStatus = "resolved" | "fallback" | "disabled" | "empty"
 type ContextInjectionStatus = "injected" | "none" | "degraded"
@@ -50,101 +50,6 @@ type InteractiveContextInjectionResult = {
   eventCount: number
   injectedEventCount: number
   truncated: boolean
-}
-
-const normalizeWhitespace = (value: string): string => {
-  return value.replaceAll(/\s+/g, " ").trim()
-}
-
-const shorten = (
-  value: string,
-  maxLength: number
-): {
-  value: string
-  truncated: boolean
-} => {
-  if (value.length <= maxLength) {
-    return { value, truncated: false }
-  }
-
-  return {
-    value: `${value.slice(0, Math.max(0, maxLength - 3)).trim()}...`,
-    truncated: true,
-  }
-}
-
-const toStatusLabel = (status: "queued" | "sent" | "failed" | "held"): string => {
-  if (status === "sent") {
-    return "sent"
-  }
-
-  if (status === "failed") {
-    return "failed"
-  }
-
-  if (status === "held") {
-    return "held"
-  }
-
-  return "queued"
-}
-
-const buildInteractiveContextPromptBlock = (
-  events: InteractiveContextEventRow[]
-): {
-  block: string | null
-  includedEvents: number
-  truncated: boolean
-} => {
-  if (events.length === 0) {
-    return {
-      block: null,
-      includedEvents: 0,
-      truncated: false,
-    }
-  }
-
-  const lines: string[] = []
-  let truncated = false
-
-  for (const event of events) {
-    const sourceParts = [
-      normalizeWhitespace(event.sourceLane),
-      normalizeWhitespace(event.sourceKind),
-    ]
-      .filter((value) => value.length > 0)
-      .join("/")
-    const sourceRef = normalizeWhitespace(event.sourceRef ?? "")
-    const source = sourceRef.length > 0 ? `${sourceParts}(${sourceRef})` : sourceParts
-    const detail = normalizeWhitespace(event.deliveryStatusDetail ?? event.errorMessage ?? "")
-    const content = normalizeWhitespace(event.content)
-    if (content.length === 0) {
-      continue
-    }
-
-    const summary = detail.length > 0 ? `${content} (${detail})` : content
-    const shortened = shorten(summary, INTERACTIVE_CONTEXT_MAX_LINE_LENGTH)
-    truncated = truncated || shortened.truncated
-    lines.push(`- [${toStatusLabel(event.deliveryStatus)}] ${source}: ${shortened.value}`)
-  }
-
-  if (lines.length === 0) {
-    return {
-      block: null,
-      includedEvents: 0,
-      truncated,
-    }
-  }
-
-  return {
-    block: [
-      "Recent non-interactive context:",
-      ...lines,
-      "Use this only as supporting context when it is relevant.",
-    ].join("\n"),
-    includedEvents: lines.length,
-    truncated,
-  }
 }
 
 const composeInteractivePromptTextWithContext = async (
@@ -167,12 +72,7 @@ const composeInteractivePromptTextWithContext = async (
           }, INTERACTIVE_CONTEXT_WINDOW_RESOLUTION_TIMEOUT_MS)
         }),
       ])
-      if (Number.isInteger(resolvedContextWindowSize)) {
-        contextWindowSize = Math.max(
-          MIN_INTERACTIVE_CONTEXT_LIMIT,
-          Math.min(MAX_INTERACTIVE_CONTEXT_LIMIT, resolvedContextWindowSize)
-        )
-      }
+      contextWindowSize = normalizeInteractiveContextWindowSize(resolvedContextWindowSize)
     } catch {
       contextWindowSize = DEFAULT_INTERACTIVE_CONTEXT_LIMIT
     } finally {

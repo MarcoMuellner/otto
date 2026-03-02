@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto"
 
+import {
+  buildInteractiveContextPromptBlock,
+  normalizeInteractiveContextWindowSize,
+} from "otto-extension-sdk"
 import type { Logger } from "pino"
 
 import type { UserProfileRecord } from "../persistence/repositories.js"
@@ -105,10 +109,6 @@ const DEFAULT_FALLBACK_MESSAGE =
   "I could not complete that right now. Please try again in a moment."
 const TIMEOUT_FALLBACK_MESSAGE =
   "That request is taking longer than expected. Please try again in a moment."
-const DEFAULT_INTERACTIVE_CONTEXT_LIMIT = 20
-const MIN_INTERACTIVE_CONTEXT_LIMIT = 5
-const MAX_INTERACTIVE_CONTEXT_LIMIT = 200
-const INTERACTIVE_CONTEXT_MAX_LINE_LENGTH = 220
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   return await new Promise<T>((resolve, reject) => {
@@ -140,120 +140,11 @@ const isUniqueConstraintViolation = (error: unknown): boolean => {
   return error.message.includes("UNIQUE") || error.message.includes("constraint")
 }
 
-const normalizeWhitespace = (value: string): string => {
-  return value.replaceAll(/\s+/g, " ").trim()
-}
-
-const shorten = (
-  value: string,
-  maxLength: number
-): {
-  value: string
-  truncated: boolean
-} => {
-  if (value.length <= maxLength) {
-    return { value, truncated: false }
-  }
-
-  return {
-    value: `${value.slice(0, Math.max(0, maxLength - 3)).trim()}...`,
-    truncated: true,
-  }
-}
-
-const toStatusLabel = (status: "queued" | "sent" | "failed" | "held"): string => {
-  if (status === "sent") {
-    return "sent"
-  }
-
-  if (status === "failed") {
-    return "failed"
-  }
-
-  if (status === "held") {
-    return "held"
-  }
-
-  return "queued"
-}
-
-const buildInteractiveContextPromptBlock = (
-  events: Array<{
-    sourceLane: string
-    sourceKind: string
-    sourceRef: string | null
-    content: string
-    deliveryStatus: "queued" | "sent" | "failed" | "held"
-    deliveryStatusDetail: string | null
-    errorMessage: string | null
-  }>
-): {
-  block: string | null
-  includedEvents: number
-  truncated: boolean
-} => {
-  if (events.length === 0) {
-    return {
-      block: null,
-      includedEvents: 0,
-      truncated: false,
-    }
-  }
-
-  const lines: string[] = []
-  let truncated = false
-
-  for (const event of events) {
-    const sourceParts = [
-      normalizeWhitespace(event.sourceLane),
-      normalizeWhitespace(event.sourceKind),
-    ]
-      .filter((value) => value.length > 0)
-      .join("/")
-    const sourceRef = normalizeWhitespace(event.sourceRef ?? "")
-    const source = sourceRef.length > 0 ? `${sourceParts}(${sourceRef})` : sourceParts
-    const detail = normalizeWhitespace(event.deliveryStatusDetail ?? event.errorMessage ?? "")
-    const content = normalizeWhitespace(event.content)
-    if (content.length === 0) {
-      continue
-    }
-
-    const summary = detail.length > 0 ? `${content} (${detail})` : content
-    const shortened = shorten(summary, INTERACTIVE_CONTEXT_MAX_LINE_LENGTH)
-    truncated = truncated || shortened.truncated
-    lines.push(`- [${toStatusLabel(event.deliveryStatus)}] ${source}: ${shortened.value}`)
-  }
-
-  if (lines.length === 0) {
-    return {
-      block: null,
-      includedEvents: 0,
-      truncated,
-    }
-  }
-
-  return {
-    block: [
-      "Recent non-interactive context:",
-      ...lines,
-      "Use this only as supporting context when it is relevant.",
-    ].join("\n"),
-    includedEvents: lines.length,
-    truncated,
-  }
-}
-
 const resolveInteractiveContextLimit = (
   userProfileRepository: InboundBridgeDependencies["userProfileRepository"]
 ): number => {
-  const configuredLimit = userProfileRepository?.get()?.interactiveContextWindowSize
-  if (typeof configuredLimit !== "number" || !Number.isInteger(configuredLimit)) {
-    return DEFAULT_INTERACTIVE_CONTEXT_LIMIT
-  }
-
-  return Math.max(
-    MIN_INTERACTIVE_CONTEXT_LIMIT,
-    Math.min(MAX_INTERACTIVE_CONTEXT_LIMIT, configuredLimit)
+  return normalizeInteractiveContextWindowSize(
+    userProfileRepository?.get()?.interactiveContextWindowSize
   )
 }
 

@@ -4,8 +4,8 @@
 
 - `id`: `epic_011`
 - `type`: epic ticket
-- `state`: `planned`
-- `goal`: restore interactive continuity by injecting recent non-interactive user-facing updates into Telegram and Web interactive turns.
+- `state`: `done`
+- `goal`: restore interactive continuity by injecting recent non-interactive user-facing updates into Telegram, Web, and TUI interactive turns.
 
 ## Why
 
@@ -22,7 +22,14 @@ Interactive turns currently miss state from background/one-shot and other non-in
 - Retention cap is configurable, default `100`, valid range `5-200`.
 - New events only (no historical backfill migration).
 - Configuration is global and managed through existing settings flow (ottoctl assistant tool path + web settings).
-- Telegram + Web parity in this epic; TUI parity is tracked as follow-up.
+- Telegram + Web + TUI parity are completed in this epic.
+
+## Parity Status Notes
+
+- Telegram parity: completed (`ticket_004`).
+- Web parity: completed (`ticket_005`).
+- TUI parity contract: completed (`ticket_007`) with deterministic hook/adapter contract and follow-up coding checklist.
+- Remaining parity implementation work for this epic: none.
 
 ## Success Criteria
 
@@ -40,7 +47,7 @@ Interactive turns currently miss state from background/one-shot and other non-in
 4. `ticket_004`: Telegram interactive prompt injection.
 5. `ticket_005`: Control Plane web prompt injection parity.
 6. `ticket_006`: Global settings surface (`ottoctl` flow + web) and docs.
-7. `ticket_007`: TUI parity follow-up design + contract stub.
+7. `ticket_007`: TUI parity follow-up contract (locked, implementation-ready).
 
 ## Out of Scope
 
