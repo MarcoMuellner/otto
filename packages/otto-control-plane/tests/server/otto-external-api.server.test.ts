@@ -282,6 +282,97 @@ describe("createOttoExternalApiClient", () => {
     expect(seenUrls).toEqual(["http://127.0.0.1:4190/external/prompts/interactive?surface=web"])
   })
 
+  it("lists, reads, and updates prompt files", async () => {
+    // Arrange
+    const seenRequests: Array<{ url: string; method: string; bodyText: string | null }> = []
+    const client = createOttoExternalApiClient({
+      config: {
+        externalApiBaseUrl: "http://127.0.0.1:4190",
+        externalApiToken: "secret-token",
+      },
+      fetchImpl: async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = typeof input === "string" ? input : input.toString()
+        const method = init?.method ?? "GET"
+        seenRequests.push({
+          url,
+          method,
+          bodyText: typeof init?.body === "string" ? init.body : null,
+        })
+
+        if (url.endsWith("/external/prompts/files")) {
+          return Response.json(
+            {
+              files: [
+                {
+                  source: "user",
+                  relativePath: "layers/media-web.md",
+                  editable: true,
+                },
+              ],
+            },
+            { status: 200 }
+          )
+        }
+
+        if (url.includes("/external/prompts/file?") && method === "GET") {
+          return Response.json(
+            {
+              file: {
+                source: "user",
+                relativePath: "layers/media-web.md",
+                editable: true,
+                content: "# User prompt",
+              },
+            },
+            { status: 200 }
+          )
+        }
+
+        return Response.json(
+          {
+            status: "updated",
+            file: {
+              source: "user",
+              relativePath: "layers/media-web.md",
+              editable: true,
+              updatedAt: 1_700_000_000_000,
+            },
+          },
+          { status: 200 }
+        )
+      },
+    })
+
+    // Act
+    const list = await client.listPromptFiles()
+    const file = await client.getPromptFile("user", "layers/media-web.md")
+    const update = await client.updatePromptFile({
+      source: "user",
+      relativePath: "layers/media-web.md",
+      content: "# Updated",
+    })
+
+    // Assert
+    expect(list.files).toHaveLength(1)
+    expect(file.file.content).toContain("User prompt")
+    expect(update.status).toBe("updated")
+    expect(seenRequests).toMatchObject([
+      {
+        url: "http://127.0.0.1:4190/external/prompts/files",
+        method: "GET",
+      },
+      {
+        url: "http://127.0.0.1:4190/external/prompts/file?source=user&path=layers%2Fmedia-web.md",
+        method: "GET",
+      },
+      {
+        url: "http://127.0.0.1:4190/external/prompts/file",
+        method: "PUT",
+      },
+    ])
+    expect(seenRequests[2]?.bodyText).toContain("layers/media-web.md")
+  })
+
   it("gets and updates notification profile settings", async () => {
     // Arrange
     const seenRequests: Array<{ url: string; method: string; bodyText: string | null }> = []

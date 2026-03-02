@@ -1,5 +1,12 @@
 export type CommandActionGroup = "jump" | "quick"
-export type CommandActionIcon = "jobs" | "home" | "chat" | "system" | "settings" | "audit"
+export type CommandActionIcon =
+  | "jobs"
+  | "home"
+  | "chat"
+  | "system"
+  | "settings"
+  | "prompts"
+  | "audit"
 export type CommandActionTone = "neutral" | "success" | "info"
 
 export type CommandAction = {
@@ -63,6 +70,15 @@ export const commandActions: CommandAction[] = [
     icon: "settings",
     tone: "info",
     to: "/settings",
+  },
+  {
+    id: "quick-prompts",
+    label: "Prompt Management",
+    subtitle: "Inspect and edit prompt files",
+    group: "quick",
+    icon: "prompts",
+    tone: "info",
+    to: "/prompts",
   },
   {
     id: "quick-audit",

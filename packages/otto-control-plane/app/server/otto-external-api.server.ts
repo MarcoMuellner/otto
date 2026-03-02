@@ -55,6 +55,18 @@ import {
   updateNotificationProfileRequestSchema,
   updateNotificationProfileResponseSchema,
 } from "../features/settings/contracts.js"
+import {
+  promptFileResponseSchema,
+  promptFilesResponseSchema,
+  promptFileSourceSchema,
+  updatePromptFileRequestSchema,
+  updatePromptFileResponseSchema,
+  type PromptFileResponse,
+  type PromptFilesResponse,
+  type PromptFileSource,
+  type UpdatePromptFileRequest,
+  type UpdatePromptFileResponse,
+} from "../features/prompts/contracts.js"
 import { resolveCachedControlPlaneServerConfig, type ControlPlaneServerConfig } from "./env.js"
 
 export type OttoExternalHealthResponse = HealthResponse
@@ -73,6 +85,9 @@ export type OttoExternalModelCatalogResponse = ModelCatalogResponse
 export type OttoExternalModelRefreshResponse = ModelRefreshResponse
 export type OttoExternalModelDefaultsResponse = ModelDefaultsResponse
 export type OttoExternalInteractivePromptResponse = InteractivePromptResponse
+export type OttoExternalPromptFilesResponse = PromptFilesResponse
+export type OttoExternalPromptFileResponse = PromptFileResponse
+export type OttoExternalUpdatePromptFileResponse = UpdatePromptFileResponse
 
 export class OttoExternalApiError extends Error {
   statusCode: number | null
@@ -298,6 +313,33 @@ export const createOttoExternalApiClient = ({
         `/external/prompts/interactive?surface=${encodeURIComponent(parsedSurface)}`,
         interactivePromptResponseSchema
       )
+    },
+    listPromptFiles: async (): Promise<OttoExternalPromptFilesResponse> => {
+      return request("/external/prompts/files", promptFilesResponseSchema)
+    },
+    getPromptFile: async (
+      source: PromptFileSource,
+      relativePath: string
+    ): Promise<OttoExternalPromptFileResponse> => {
+      const parsedSource = promptFileSourceSchema.parse(source)
+      const parsedPath = relativePath.trim()
+      return request(
+        `/external/prompts/file?source=${encodeURIComponent(parsedSource)}&path=${encodeURIComponent(parsedPath)}`,
+        promptFileResponseSchema
+      )
+    },
+    updatePromptFile: async (
+      input: UpdatePromptFileRequest
+    ): Promise<OttoExternalUpdatePromptFileResponse> => {
+      const payload = updatePromptFileRequestSchema.parse(input)
+      return request("/external/prompts/file", updatePromptFileResponseSchema, {
+        method: "PUT",
+        body: {
+          source: payload.source,
+          path: payload.relativePath,
+          content: payload.content,
+        },
+      })
     },
     updateModelDefaults: async (
       input: ModelDefaultsUpdateRequest
