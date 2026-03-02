@@ -1,7 +1,11 @@
 import type { Logger } from "pino"
 import { rm } from "node:fs/promises"
 
-import type { JobRunSummaryRecord, UserProfileRecord } from "../persistence/repositories.js"
+import type {
+  InteractiveContextDeliveryStatus,
+  JobRunSummaryRecord,
+  UserProfileRecord,
+} from "../persistence/repositories.js"
 import {
   resolveEffectiveNotificationProfile,
   resolveNotificationGateDecision,
@@ -62,9 +66,29 @@ export type OutboundQueueProcessorDependencies = {
   jobsRepository?: {
     listRecentRuns: (sinceTimestamp: number, limit?: number) => JobRunSummaryRecord[]
   }
+  interactiveContextEventsRepository?: {
+    mirrorDeliveryStatusByOutboundMessageId: (
+      outboundMessageId: string,
+      update: {
+        deliveryStatus: InteractiveContextDeliveryStatus
+        deliveryStatusDetail?: string | null
+        errorMessage?: string | null
+      },
+      options?: {
+        updatedAt?: number
+        retentionCap?: number
+      }
+    ) => {
+      updated: boolean
+      sourceSessionId: string | null
+      prunedCount: number
+    }
+  }
+  contextRetentionCap?: number
 }
 
 const MAX_ERROR_MESSAGE_LENGTH = 1_000
+const DEFAULT_CONTEXT_RETENTION_CAP = 100
 
 /**
  * Uses a capped exponential retry schedule so temporary transport failures recover quickly
@@ -127,6 +151,63 @@ export const createOutboundQueueProcessor = (
   drainDueMessages: (now?: number) => Promise<void>
 } => {
   let draining = false
+  const configuredContextRetentionCap = dependencies.contextRetentionCap
+  const contextRetentionCap =
+    typeof configuredContextRetentionCap === "number" &&
+    Number.isInteger(configuredContextRetentionCap)
+      ? Math.max(0, configuredContextRetentionCap)
+      : DEFAULT_CONTEXT_RETENTION_CAP
+
+  const mirrorDeliveryStatus = (
+    outboundMessageId: string,
+    update: {
+      deliveryStatus: InteractiveContextDeliveryStatus
+      deliveryStatusDetail?: string | null
+      errorMessage?: string | null
+    },
+    timestamp: number
+  ): void => {
+    if (!dependencies.interactiveContextEventsRepository) {
+      return
+    }
+
+    try {
+      const result =
+        dependencies.interactiveContextEventsRepository.mirrorDeliveryStatusByOutboundMessageId(
+          outboundMessageId,
+          update,
+          {
+            updatedAt: timestamp,
+            retentionCap: contextRetentionCap,
+          }
+        )
+
+      dependencies.logger.info(
+        {
+          outboundMessageId,
+          deliveryStatus: update.deliveryStatus,
+          deliveryStatusDetail: update.deliveryStatusDetail ?? null,
+          contextEventMirrored: result.updated,
+          sourceSessionId: result.sourceSessionId,
+          prunedCount: result.prunedCount,
+          retentionCap: contextRetentionCap,
+        },
+        "Mirrored outbound delivery status into interactive context"
+      )
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.warn(
+        {
+          outboundMessageId,
+          deliveryStatus: update.deliveryStatus,
+          deliveryStatusDetail: update.deliveryStatusDetail ?? null,
+          retentionCap: contextRetentionCap,
+          error: err.message,
+        },
+        "Failed to mirror outbound delivery status into interactive context"
+      )
+    }
+  }
 
   const cleanupStagedMedia = async (message: OutboundDeliveryRecord): Promise<void> => {
     if (!message.mediaPath) {
@@ -186,6 +267,15 @@ export const createOutboundQueueProcessor = (
   ): Promise<void> => {
     const deliveredAt = Date.now()
     dependencies.repository.markSent(message.id, attemptCount, deliveredAt)
+    mirrorDeliveryStatus(
+      message.id,
+      {
+        deliveryStatus: "sent",
+        deliveryStatusDetail: "delivered",
+        errorMessage: null,
+      },
+      deliveredAt
+    )
     await cleanupStagedMedia(message)
     dependencies.logger.info(
       {
@@ -207,6 +297,15 @@ export const createOutboundQueueProcessor = (
 
     if (attemptCount >= dependencies.retryPolicy.maxAttempts) {
       dependencies.repository.markFailed(message.id, attemptCount, errorMessage, failedAt)
+      mirrorDeliveryStatus(
+        message.id,
+        {
+          deliveryStatus: "failed",
+          deliveryStatusDetail: "max_attempts_exhausted",
+          errorMessage,
+        },
+        failedAt
+      )
       await cleanupStagedMedia(message)
       dependencies.logger.error(
         {
@@ -228,6 +327,15 @@ export const createOutboundQueueProcessor = (
       attemptCount,
       nextAttemptAt,
       errorMessage,
+      failedAt
+    )
+    mirrorDeliveryStatus(
+      message.id,
+      {
+        deliveryStatus: "queued",
+        deliveryStatusDetail: "retry_scheduled",
+        errorMessage,
+      },
       failedAt
     )
     dependencies.logger.warn(
@@ -262,6 +370,15 @@ export const createOutboundQueueProcessor = (
         nextAttemptCount,
         retryAt,
         `${SUPPRESSED_PREFIX}${gateDecision.reason}`,
+        evaluationTime
+      )
+      mirrorDeliveryStatus(
+        message.id,
+        {
+          deliveryStatus: "held",
+          deliveryStatusDetail: gateDecision.reason,
+          errorMessage: `${SUPPRESSED_PREFIX}${gateDecision.reason}`,
+        },
         evaluationTime
       )
       dependencies.logger.info(
@@ -325,6 +442,15 @@ export const createOutboundQueueProcessor = (
             await dependencies.sender.sendMessage(chatId, summarizeSuppressedRuns(runs))
             for (const record of records) {
               dependencies.repository.markSent(record.id, record.attemptCount + 1, now)
+              mirrorDeliveryStatus(
+                record.id,
+                {
+                  deliveryStatus: "sent",
+                  deliveryStatusDetail: "digest_released",
+                  errorMessage: null,
+                },
+                now
+              )
               await cleanupStagedMedia(record)
               digestHandledMessageIds.add(record.id)
             }
