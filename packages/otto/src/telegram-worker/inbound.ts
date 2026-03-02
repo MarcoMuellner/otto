@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import type { Logger } from "pino"
 
+import type { UserProfileRecord } from "../persistence/repositories.js"
 import { normalizeAssistantText, splitTelegramMessage } from "./telegram.js"
 import type { OpencodePromptPart, OpencodeSessionGateway } from "./opencode.js"
 
@@ -90,6 +91,9 @@ export type InboundBridgeDependencies = {
       createdAt: number
     }>
   }
+  userProfileRepository?: {
+    get: () => Pick<UserProfileRecord, "interactiveContextWindowSize"> | null
+  }
   sessionBindingsRepository: SessionBindingsRepository
   inboundMessagesRepository: InboundMessagesRepository
   outboundMessagesRepository: OutboundMessagesRepository
@@ -102,6 +106,8 @@ const DEFAULT_FALLBACK_MESSAGE =
 const TIMEOUT_FALLBACK_MESSAGE =
   "That request is taking longer than expected. Please try again in a moment."
 const DEFAULT_INTERACTIVE_CONTEXT_LIMIT = 20
+const MIN_INTERACTIVE_CONTEXT_LIMIT = 5
+const MAX_INTERACTIVE_CONTEXT_LIMIT = 200
 const INTERACTIVE_CONTEXT_MAX_LINE_LENGTH = 220
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
@@ -235,6 +241,20 @@ const buildInteractiveContextPromptBlock = (
     includedEvents: lines.length,
     truncated,
   }
+}
+
+const resolveInteractiveContextLimit = (
+  userProfileRepository: InboundBridgeDependencies["userProfileRepository"]
+): number => {
+  const configuredLimit = userProfileRepository?.get()?.interactiveContextWindowSize
+  if (typeof configuredLimit !== "number" || !Number.isInteger(configuredLimit)) {
+    return DEFAULT_INTERACTIVE_CONTEXT_LIMIT
+  }
+
+  return Math.max(
+    MIN_INTERACTIVE_CONTEXT_LIMIT,
+    Math.min(MAX_INTERACTIVE_CONTEXT_LIMIT, configuredLimit)
+  )
 }
 
 const TYPING_ACTION_INTERVAL_MS = 4_000
@@ -393,10 +413,13 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
 
     try {
       if (dependencies.interactiveContextEventsRepository) {
+        const interactiveContextLimit = resolveInteractiveContextLimit(
+          dependencies.userProfileRepository
+        )
         const contextEvents =
           dependencies.interactiveContextEventsRepository.listRecentBySourceSessionId(
             resolvedSessionId,
-            DEFAULT_INTERACTIVE_CONTEXT_LIMIT
+            interactiveContextLimit
           )
         const formattedContext = buildInteractiveContextPromptBlock(contextEvents)
 
@@ -407,6 +430,7 @@ export const createInboundBridge = (dependencies: InboundBridgeDependencies) => 
             sourceSessionId: resolvedSessionId,
             eventCount: contextEvents.length,
             injectedEventCount: formattedContext.includedEvents,
+            contextWindowSize: interactiveContextLimit,
             truncated: formattedContext.truncated,
           },
           "Prepared interactive context injection for Telegram prompt"

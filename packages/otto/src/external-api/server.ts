@@ -459,6 +459,8 @@ const notificationProfileSchema = z.object({
   heartbeatEvening: z.string().nullable(),
   heartbeatCadenceMinutes: z.number().int().nullable(),
   heartbeatOnlyIfSignal: z.boolean(),
+  interactiveContextWindowSize: z.number().int().min(5).max(200),
+  contextRetentionCap: z.number().int().min(5).max(200),
   onboardingCompletedAt: z.number().int().nullable(),
   lastDigestAt: z.number().int().nullable(),
   updatedAt: z.number().int(),

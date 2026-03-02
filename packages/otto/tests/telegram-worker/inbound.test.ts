@@ -189,6 +189,61 @@ describe("createInboundBridge", () => {
     expect(parts?.[1]).toEqual({ type: "text", text: "hi" })
   })
 
+  it("uses configured interactive context window size from user profile", async () => {
+    // Arrange
+    const logger = {
+      info: vi.fn(),
+      error: vi.fn(),
+    } as unknown as Logger
+    const sendMessage = vi.fn(async () => {})
+    const sessionGateway = {
+      ensureSession: vi.fn(async () => "session-1"),
+      promptSessionParts: vi.fn(async () => "Hello from Otto"),
+      promptSession: vi.fn(async () => "Hello from Otto"),
+    }
+    const sessionBindingsRepository = {
+      getByBindingKey: vi.fn(() => ({ sessionId: "session-1" })),
+      upsert: vi.fn(),
+    }
+    const inboundMessagesRepository = {
+      insert: vi.fn(),
+    }
+    const outboundMessagesRepository = {
+      enqueue: vi.fn(),
+    }
+    const interactiveContextEventsRepository = {
+      listRecentBySourceSessionId: vi.fn(() => []),
+    }
+
+    const bridge = createInboundBridge({
+      logger,
+      sender: { sendMessage },
+      sessionGateway,
+      sessionBindingsRepository,
+      interactiveContextEventsRepository,
+      userProfileRepository: {
+        get: () => ({ interactiveContextWindowSize: 64 }),
+      },
+      inboundMessagesRepository,
+      outboundMessagesRepository,
+      promptTimeoutMs: 30_000,
+    })
+
+    // Act
+    await bridge.handleTextMessage({
+      sourceMessageId: "ctx-profile-window-1",
+      chatId: 7,
+      userId: 9,
+      text: "hi",
+    })
+
+    // Assert
+    expect(interactiveContextEventsRepository.listRecentBySourceSessionId).toHaveBeenCalledWith(
+      "session-1",
+      64
+    )
+  })
+
   it("keeps prompt parts unchanged when no context events exist", async () => {
     // Arrange
     const logger = {

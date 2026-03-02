@@ -327,4 +327,14 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
        ON interactive_context_events (source_session_id, created_at DESC, id DESC)`,
     ],
   },
+  {
+    id: "019_user_profile_interactive_context_settings",
+    statements: [
+      `ALTER TABLE user_profile ADD COLUMN interactive_context_window_size INTEGER`,
+      `ALTER TABLE user_profile ADD COLUMN context_retention_cap INTEGER`,
+      `UPDATE user_profile
+       SET interactive_context_window_size = COALESCE(interactive_context_window_size, 20),
+           context_retention_cap = COALESCE(context_retention_cap, 100)`,
+    ],
+  },
 ]

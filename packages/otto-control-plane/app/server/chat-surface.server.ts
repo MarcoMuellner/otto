@@ -30,11 +30,15 @@ type ChatSurfaceServiceDependencies = {
   insertCommandAudit: typeof insertCommandAudit
   createOpencodeChatClient: typeof createOpencodeChatClient
   resolveInteractiveSystemPrompt?: () => Promise<string | undefined>
+  resolveInteractiveContextWindowSize?: () => Promise<number>
   now?: () => number
 }
 
 const INTERACTIVE_PROMPT_RESOLUTION_TIMEOUT_MS = 2_000
+const INTERACTIVE_CONTEXT_WINDOW_RESOLUTION_TIMEOUT_MS = 2_000
 const DEFAULT_INTERACTIVE_CONTEXT_LIMIT = 20
+const MIN_INTERACTIVE_CONTEXT_LIMIT = 5
+const MAX_INTERACTIVE_CONTEXT_LIMIT = 200
 const INTERACTIVE_CONTEXT_MAX_LINE_LENGTH = 220
 
 type PromptResolutionStatus = "resolved" | "fallback" | "disabled" | "empty"
@@ -151,11 +155,38 @@ const composeInteractivePromptTextWithContext = async (
     text: string
   }
 ): Promise<InteractiveContextInjectionResult> => {
+  let contextWindowSize = DEFAULT_INTERACTIVE_CONTEXT_LIMIT
+  if (dependencies.resolveInteractiveContextWindowSize) {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    try {
+      const resolvedContextWindowSize = await Promise.race([
+        dependencies.resolveInteractiveContextWindowSize(),
+        new Promise<number>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error("Interactive context window resolution timed out"))
+          }, INTERACTIVE_CONTEXT_WINDOW_RESOLUTION_TIMEOUT_MS)
+        }),
+      ])
+      if (Number.isInteger(resolvedContextWindowSize)) {
+        contextWindowSize = Math.max(
+          MIN_INTERACTIVE_CONTEXT_LIMIT,
+          Math.min(MAX_INTERACTIVE_CONTEXT_LIMIT, resolvedContextWindowSize)
+        )
+      }
+    } catch {
+      contextWindowSize = DEFAULT_INTERACTIVE_CONTEXT_LIMIT
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }
+
   try {
     const events = dependencies.listRecentInteractiveContextEventsBySourceSessionId(
       input.databasePath,
       input.sourceSessionId,
-      DEFAULT_INTERACTIVE_CONTEXT_LIMIT
+      contextWindowSize
     )
     const formatted = buildInteractiveContextPromptBlock(events)
 
@@ -246,6 +277,12 @@ const resolveInteractiveSystemPromptFromRuntime = async (): Promise<string | und
   return trimmed.length > 0 ? resolved.systemPrompt : undefined
 }
 
+const resolveInteractiveContextWindowSizeFromRuntime = async (): Promise<number> => {
+  const client = await createOttoExternalApiClientFromEnvironment()
+  const profile = await client.getNotificationProfile()
+  return profile.profile.interactiveContextWindowSize
+}
+
 const defaultDependencies: ChatSurfaceServiceDependencies = {
   resolveConfig: resolveCachedControlPlaneChatConfig,
   listSessionBindings,
@@ -253,6 +290,7 @@ const defaultDependencies: ChatSurfaceServiceDependencies = {
   insertCommandAudit,
   createOpencodeChatClient,
   resolveInteractiveSystemPrompt: resolveInteractiveSystemPromptFromRuntime,
+  resolveInteractiveContextWindowSize: resolveInteractiveContextWindowSizeFromRuntime,
 }
 
 type BindingContext = {

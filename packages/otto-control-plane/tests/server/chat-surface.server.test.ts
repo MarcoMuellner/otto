@@ -459,6 +459,66 @@ describe("createChatSurfaceService", () => {
     )
   })
 
+  it("uses configured context window size for sync send injection", async () => {
+    // Arrange
+    const promptSession = vi.fn(async () => {
+      return {
+        id: "reply-context-window",
+        role: "assistant" as const,
+        text: "contextual reply",
+        createdAt: 2_301,
+        partTypes: ["text"],
+      }
+    })
+    const listRecentInteractiveContextEventsBySourceSessionId = vi.fn(() => [])
+
+    const service = createChatSurfaceService({
+      resolveConfig: async () => ({
+        opencodeApiUrl: "http://127.0.0.1:4096",
+        stateDatabasePath: "/tmp/otto-state.db",
+      }),
+      listSessionBindings: () => [],
+      listRecentInteractiveContextEventsBySourceSessionId,
+      insertCommandAudit: () => true,
+      resolveInteractiveSystemPrompt: async () => "# Prompt\nUse web layering.",
+      resolveInteractiveContextWindowSize: async () => 64,
+      createOpencodeChatClient: () => ({
+        listSessions: async () => [],
+        getSession: async () => {
+          throw new Error("unused in this test")
+        },
+        createSession: async () => {
+          throw new Error("unused in this test")
+        },
+        listMessages: async () => {
+          throw new Error("unused in this test")
+        },
+        getMessage: async () => {
+          throw new Error("unused in this test")
+        },
+        promptSession,
+        promptSessionAsync: async () => {
+          throw new Error("unused in this test")
+        },
+        subscribeEvents: async function* () {
+          yield* []
+          throw new Error("unused in this test")
+        },
+      }),
+      now: () => 1_505,
+    })
+
+    // Act
+    await service.sendMessage("session-1", "hello")
+
+    // Assert
+    expect(listRecentInteractiveContextEventsBySourceSessionId).toHaveBeenCalledWith(
+      "/tmp/otto-state.db",
+      "session-1",
+      64
+    )
+  })
+
   it("continues sync send without context injection when state DB query fails", async () => {
     // Arrange
     const promptSession = vi.fn(async () => {

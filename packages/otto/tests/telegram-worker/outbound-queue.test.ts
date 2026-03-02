@@ -113,6 +113,82 @@ describe("outbound queue processor", () => {
     )
   })
 
+  it("uses profile context retention cap when explicit dependency override is absent", async () => {
+    // Arrange
+    const logger = createLoggerStub()
+    const contextEventsRepository = createContextEventsRepositoryStub()
+    const repository = {
+      listDue: vi.fn(() => [
+        {
+          id: "out-profile-cap-1",
+          chatId: 77,
+          kind: "text" as const,
+          content: "hello",
+          mediaPath: null,
+          mediaMimeType: null,
+          mediaFilename: null,
+          priority: "normal" as const,
+          attemptCount: 0,
+          createdAt: 900,
+          errorMessage: null,
+        },
+      ]),
+      markSent: vi.fn(),
+      markRetry: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const sender = {
+      sendMessage: vi.fn(async () => {}),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
+    }
+    const processor = createOutboundQueueProcessor({
+      logger,
+      repository,
+      sender,
+      retryPolicy: {
+        maxAttempts: 5,
+        baseDelayMs: 1_000,
+        maxDelayMs: 60_000,
+      },
+      userProfileRepository: {
+        get: () => ({
+          timezone: "Europe/Vienna",
+          quietHoursStart: "20:00",
+          quietHoursEnd: "08:00",
+          quietMode: "off",
+          muteUntil: null,
+          heartbeatMorning: "08:30",
+          heartbeatMidday: "12:30",
+          heartbeatEvening: "19:00",
+          heartbeatCadenceMinutes: 180,
+          heartbeatOnlyIfSignal: true,
+          interactiveContextWindowSize: 20,
+          contextRetentionCap: 42,
+          onboardingCompletedAt: Date.now(),
+          lastDigestAt: null,
+          updatedAt: Date.now(),
+        }),
+        setLastDigestAt: vi.fn(),
+      },
+      interactiveContextEventsRepository: contextEventsRepository,
+    })
+
+    // Act
+    await processor.drainDueMessages(1_000)
+
+    // Assert
+    expect(contextEventsRepository.mirrorDeliveryStatusByOutboundMessageId).toHaveBeenCalledWith(
+      "out-profile-cap-1",
+      {
+        deliveryStatus: "sent",
+        deliveryStatusDetail: "delivered",
+        errorMessage: null,
+      },
+      expect.objectContaining({ retentionCap: 42 })
+    )
+  })
+
   it("queues retry when delivery fails before max attempts", async () => {
     // Arrange
     const logger = createLoggerStub()
@@ -357,6 +433,8 @@ describe("outbound queue processor", () => {
           heartbeatEvening: "19:00",
           heartbeatCadenceMinutes: 180,
           heartbeatOnlyIfSignal: true,
+          interactiveContextWindowSize: 20,
+          contextRetentionCap: 100,
           onboardingCompletedAt: Date.now(),
           lastDigestAt: null,
           updatedAt: Date.now(),
@@ -434,6 +512,8 @@ describe("outbound queue processor", () => {
           heartbeatEvening: "19:00",
           heartbeatCadenceMinutes: 180,
           heartbeatOnlyIfSignal: true,
+          interactiveContextWindowSize: 20,
+          contextRetentionCap: 100,
           onboardingCompletedAt: Date.now(),
           lastDigestAt: null,
           updatedAt: Date.now(),

@@ -13,7 +13,12 @@ import {
   type PromptProvenance,
   type PromptRouteMedia,
 } from "../prompt-management/index.js"
-import type { JobRecord, JobRunStatus, JobTerminalState } from "../persistence/repositories.js"
+import type {
+  JobRecord,
+  JobRunStatus,
+  JobTerminalState,
+  UserProfileRecord,
+} from "../persistence/repositories.js"
 import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
@@ -172,21 +177,7 @@ type TaskExecutionEngineDependencies = {
   sessionGateway: OpencodeSessionGateway
   defaultWatchdogChatId: number | null
   userProfileRepository: {
-    get: () => {
-      timezone: string | null
-      quietHoursStart: string | null
-      quietHoursEnd: string | null
-      quietMode: "critical_only" | "off" | null
-      muteUntil: number | null
-      heartbeatMorning: string | null
-      heartbeatMidday: string | null
-      heartbeatEvening: string | null
-      heartbeatCadenceMinutes: number | null
-      heartbeatOnlyIfSignal: boolean
-      onboardingCompletedAt: number | null
-      lastDigestAt: number | null
-      updatedAt: number
-    } | null
+    get: () => UserProfileRecord | null
     setLastDigestAt: (lastDigestAt: number, updatedAt?: number) => void
   }
   nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService

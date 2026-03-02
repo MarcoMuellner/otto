@@ -17,6 +17,8 @@ const createProfile = (overrides: Partial<UserProfileRecord> = {}): UserProfileR
     heartbeatEvening: "19:00",
     heartbeatCadenceMinutes: 180,
     heartbeatOnlyIfSignal: false,
+    interactiveContextWindowSize: 20,
+    contextRetentionCap: 100,
     onboardingCompletedAt: 1,
     lastDigestAt: null,
     updatedAt: 1,

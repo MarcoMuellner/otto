@@ -37,6 +37,8 @@ type SettingsFormState = {
   heartbeatMidday: string
   heartbeatEvening: string
   heartbeatCadenceMinutes: string
+  interactiveContextWindowSize: string
+  contextRetentionCap: string
   quietMode: "critical_only" | "off"
   heartbeatOnlyIfSignal: boolean
 }
@@ -83,6 +85,8 @@ const defaultSettingsFormState: SettingsFormState = {
   heartbeatMidday: "12:30",
   heartbeatEvening: "19:00",
   heartbeatCadenceMinutes: "180",
+  interactiveContextWindowSize: "20",
+  contextRetentionCap: "100",
   quietMode: "critical_only",
   heartbeatOnlyIfSignal: true,
 }
@@ -97,6 +101,8 @@ const toFormState = (profile: NotificationProfile): SettingsFormState => {
     heartbeatEvening: profile.heartbeatEvening ?? "",
     heartbeatCadenceMinutes:
       profile.heartbeatCadenceMinutes == null ? "" : String(profile.heartbeatCadenceMinutes),
+    interactiveContextWindowSize: String(profile.interactiveContextWindowSize),
+    contextRetentionCap: String(profile.contextRetentionCap),
     quietMode: profile.quietMode === "off" ? "off" : "critical_only",
     heartbeatOnlyIfSignal: profile.heartbeatOnlyIfSignal,
   }
@@ -341,6 +347,34 @@ export default function SettingsRoute() {
       cadence = parsedCadence
     }
 
+    const interactiveContextWindowSizeRaw = formState.interactiveContextWindowSize.trim()
+    const parsedInteractiveContextWindowSize = Number(interactiveContextWindowSizeRaw)
+    if (
+      !Number.isInteger(parsedInteractiveContextWindowSize) ||
+      parsedInteractiveContextWindowSize < 5 ||
+      parsedInteractiveContextWindowSize > 200
+    ) {
+      setFeedback({
+        kind: "error",
+        message: "Interactive context window size must be a whole number between 5 and 200.",
+      })
+      return
+    }
+
+    const contextRetentionCapRaw = formState.contextRetentionCap.trim()
+    const parsedContextRetentionCap = Number(contextRetentionCapRaw)
+    if (
+      !Number.isInteger(parsedContextRetentionCap) ||
+      parsedContextRetentionCap < 5 ||
+      parsedContextRetentionCap > 200
+    ) {
+      setFeedback({
+        kind: "error",
+        message: "Context retention cap must be a whole number between 5 and 200.",
+      })
+      return
+    }
+
     const payload = {
       timezone: formState.timezone.trim(),
       quietHoursStart: formState.quietHoursStart.trim() || null,
@@ -349,6 +383,8 @@ export default function SettingsRoute() {
       heartbeatMidday: formState.heartbeatMidday.trim() || null,
       heartbeatEvening: formState.heartbeatEvening.trim() || null,
       heartbeatCadenceMinutes: cadence,
+      interactiveContextWindowSize: parsedInteractiveContextWindowSize,
+      contextRetentionCap: parsedContextRetentionCap,
       quietMode: formState.quietMode,
       heartbeatOnlyIfSignal: formState.heartbeatOnlyIfSignal,
     }
@@ -620,7 +656,7 @@ export default function SettingsRoute() {
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-3">
               <div className="grid gap-1">
                 <label htmlFor="settings-cadence" className={settingsLabelClassName}>
                   Heartbeat Cadence (minutes)
@@ -640,6 +676,47 @@ export default function SettingsRoute() {
                   className={settingsFieldClassName}
                 />
               </div>
+              <div className="grid gap-1">
+                <label htmlFor="settings-context-window" className={settingsLabelClassName}>
+                  Context Window Size
+                </label>
+                <input
+                  id="settings-context-window"
+                  type="number"
+                  min={5}
+                  max={200}
+                  value={formState.interactiveContextWindowSize}
+                  onChange={(event) =>
+                    setFormState((current) => ({
+                      ...current,
+                      interactiveContextWindowSize: event.target.value,
+                    }))
+                  }
+                  className={settingsFieldClassName}
+                />
+              </div>
+              <div className="grid gap-1">
+                <label htmlFor="settings-retention-cap" className={settingsLabelClassName}>
+                  Retention Cap
+                </label>
+                <input
+                  id="settings-retention-cap"
+                  type="number"
+                  min={5}
+                  max={200}
+                  value={formState.contextRetentionCap}
+                  onChange={(event) =>
+                    setFormState((current) => ({
+                      ...current,
+                      contextRetentionCap: event.target.value,
+                    }))
+                  }
+                  className={settingsFieldClassName}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1">
                 <label htmlFor="settings-quiet-mode" className={settingsLabelClassName}>
                   Quiet Mode

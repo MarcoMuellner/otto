@@ -455,6 +455,8 @@ describe("buildExternalApiServer", () => {
       heartbeatEvening: "19:00",
       heartbeatCadenceMinutes: 180,
       heartbeatOnlyIfSignal: true,
+      interactiveContextWindowSize: 20,
+      contextRetentionCap: 100,
       onboardingCompletedAt: null,
       lastDigestAt: null,
       updatedAt: 1_000,
@@ -489,6 +491,8 @@ describe("buildExternalApiServer", () => {
       profile: {
         timezone: "Europe/Vienna",
         quietHoursStart: "21:00",
+        interactiveContextWindowSize: 20,
+        contextRetentionCap: 100,
       },
     })
 
@@ -529,6 +533,8 @@ describe("buildExternalApiServer", () => {
         timezone: "Europe/Vienna",
         quietHoursStart: "22:00",
         quietHoursEnd: "07:00",
+        interactiveContextWindowSize: 55,
+        contextRetentionCap: 90,
       },
     })
 
@@ -538,8 +544,15 @@ describe("buildExternalApiServer", () => {
       profile: {
         quietHoursStart: "22:00",
         quietHoursEnd: "07:00",
+        interactiveContextWindowSize: 55,
+        contextRetentionCap: 90,
       },
-      changedFields: expect.arrayContaining(["quietHoursStart", "quietHoursEnd"]),
+      changedFields: expect.arrayContaining([
+        "quietHoursStart",
+        "quietHoursEnd",
+        "interactiveContextWindowSize",
+        "contextRetentionCap",
+      ]),
     })
     expect(auditRecords[0]).toMatchObject({
       command: "set_notification_policy",
@@ -575,6 +588,43 @@ describe("buildExternalApiServer", () => {
       },
       payload: {
         timezone: "Europe/NopeTown",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: "invalid_request",
+    })
+
+    await app.close()
+  })
+
+  it("rejects out-of-range interactive context settings", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      userProfileRepository: createUserProfileRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "PUT",
+      url: "/external/settings/notification-profile",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        interactiveContextWindowSize: 201,
       },
     })
 

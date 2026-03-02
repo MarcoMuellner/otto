@@ -149,6 +149,8 @@ const createUserProfileRepositoryStub = () => {
     heartbeatEvening: string | null
     heartbeatCadenceMinutes: number | null
     heartbeatOnlyIfSignal: boolean
+    interactiveContextWindowSize: number
+    contextRetentionCap: number
     onboardingCompletedAt: number | null
     lastDigestAt: number | null
     updatedAt: number
@@ -172,6 +174,8 @@ const createUserProfileRepositoryStub = () => {
           heartbeatEvening: null,
           heartbeatCadenceMinutes: 180,
           heartbeatOnlyIfSignal: true,
+          interactiveContextWindowSize: 20,
+          contextRetentionCap: 100,
           onboardingCompletedAt: null,
           lastDigestAt: null,
           updatedAt: Date.now(),
@@ -1694,6 +1698,8 @@ describe("buildInternalApiServer", () => {
         quietHoursStart: "21:00",
         quietHoursEnd: "07:30",
         muteForMinutes: 30,
+        interactiveContextWindowSize: 66,
+        contextRetentionCap: 88,
       },
     })
 
@@ -1716,6 +1722,8 @@ describe("buildInternalApiServer", () => {
         timezone: "Europe/Vienna",
         quietHoursStart: "21:00",
         quietHoursEnd: "07:30",
+        interactiveContextWindowSize: 66,
+        contextRetentionCap: 88,
       },
     })
 
@@ -1758,6 +1766,51 @@ describe("buildInternalApiServer", () => {
       payload: {
         lane: "interactive",
         timezone: "Europe/NopeTown",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
+
+    await app.close()
+  })
+
+  it("rejects out-of-range interactive context settings", async () => {
+    // Arrange
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/notification-profile/set",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        interactiveContextWindowSize: 4,
       },
     })
 

@@ -89,6 +89,8 @@ export type OutboundQueueProcessorDependencies = {
 
 const MAX_ERROR_MESSAGE_LENGTH = 1_000
 const DEFAULT_CONTEXT_RETENTION_CAP = 100
+const MIN_CONTEXT_RETENTION_CAP = 5
+const MAX_CONTEXT_RETENTION_CAP = 200
 
 /**
  * Uses a capped exponential retry schedule so temporary transport failures recover quickly
@@ -151,12 +153,32 @@ export const createOutboundQueueProcessor = (
   drainDueMessages: (now?: number) => Promise<void>
 } => {
   let draining = false
-  const configuredContextRetentionCap = dependencies.contextRetentionCap
-  const contextRetentionCap =
-    typeof configuredContextRetentionCap === "number" &&
-    Number.isInteger(configuredContextRetentionCap)
-      ? Math.max(0, configuredContextRetentionCap)
-      : DEFAULT_CONTEXT_RETENTION_CAP
+
+  const resolveContextRetentionCap = (): number => {
+    const configuredContextRetentionCap = dependencies.contextRetentionCap
+    if (
+      typeof configuredContextRetentionCap === "number" &&
+      Number.isInteger(configuredContextRetentionCap)
+    ) {
+      return Math.max(
+        MIN_CONTEXT_RETENTION_CAP,
+        Math.min(MAX_CONTEXT_RETENTION_CAP, configuredContextRetentionCap)
+      )
+    }
+
+    const profileContextRetentionCap = dependencies.userProfileRepository.get()?.contextRetentionCap
+    if (
+      typeof profileContextRetentionCap === "number" &&
+      Number.isInteger(profileContextRetentionCap)
+    ) {
+      return Math.max(
+        MIN_CONTEXT_RETENTION_CAP,
+        Math.min(MAX_CONTEXT_RETENTION_CAP, profileContextRetentionCap)
+      )
+    }
+
+    return DEFAULT_CONTEXT_RETENTION_CAP
+  }
 
   const mirrorDeliveryStatus = (
     outboundMessageId: string,
@@ -169,6 +191,13 @@ export const createOutboundQueueProcessor = (
   ): void => {
     if (!dependencies.interactiveContextEventsRepository) {
       return
+    }
+    let contextRetentionCap = DEFAULT_CONTEXT_RETENTION_CAP
+
+    try {
+      contextRetentionCap = resolveContextRetentionCap()
+    } catch {
+      contextRetentionCap = DEFAULT_CONTEXT_RETENTION_CAP
     }
 
     try {

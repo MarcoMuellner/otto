@@ -231,6 +231,8 @@ export type UserProfileRecord = {
   heartbeatEvening: string | null
   heartbeatCadenceMinutes: number | null
   heartbeatOnlyIfSignal: boolean
+  interactiveContextWindowSize: number
+  contextRetentionCap: number
   onboardingCompletedAt: number | null
   lastDigestAt: number | null
   updatedAt: number
@@ -1682,6 +1684,8 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
       heartbeat_evening as heartbeatEvening,
       heartbeat_cadence_minutes as heartbeatCadenceMinutes,
       heartbeat_only_if_signal as heartbeatOnlyIfSignal,
+      interactive_context_window_size as interactiveContextWindowSize,
+      context_retention_cap as contextRetentionCap,
       onboarding_completed_at as onboardingCompletedAt,
       last_digest_at as lastDigestAt,
       updated_at as updatedAt
@@ -1691,9 +1695,9 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
 
   const upsertStatement = database.prepare(
     `INSERT INTO user_profile
-      (id, timezone, quiet_hours_start, quiet_hours_end, quiet_mode, mute_until, heartbeat_morning, heartbeat_midday, heartbeat_evening, heartbeat_cadence_minutes, heartbeat_only_if_signal, onboarding_completed_at, last_digest_at, updated_at)
+      (id, timezone, quiet_hours_start, quiet_hours_end, quiet_mode, mute_until, heartbeat_morning, heartbeat_midday, heartbeat_evening, heartbeat_cadence_minutes, heartbeat_only_if_signal, interactive_context_window_size, context_retention_cap, onboarding_completed_at, last_digest_at, updated_at)
      VALUES
-      (1, @timezone, @quietHoursStart, @quietHoursEnd, @quietMode, @muteUntil, @heartbeatMorning, @heartbeatMidday, @heartbeatEvening, @heartbeatCadenceMinutes, @heartbeatOnlyIfSignal, @onboardingCompletedAt, @lastDigestAt, @updatedAt)
+      (1, @timezone, @quietHoursStart, @quietHoursEnd, @quietMode, @muteUntil, @heartbeatMorning, @heartbeatMidday, @heartbeatEvening, @heartbeatCadenceMinutes, @heartbeatOnlyIfSignal, @interactiveContextWindowSize, @contextRetentionCap, @onboardingCompletedAt, @lastDigestAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
       timezone = excluded.timezone,
       quiet_hours_start = excluded.quiet_hours_start,
@@ -1705,6 +1709,8 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
       heartbeat_evening = excluded.heartbeat_evening,
       heartbeat_cadence_minutes = excluded.heartbeat_cadence_minutes,
       heartbeat_only_if_signal = excluded.heartbeat_only_if_signal,
+      interactive_context_window_size = excluded.interactive_context_window_size,
+      context_retention_cap = excluded.context_retention_cap,
       onboarding_completed_at = excluded.onboarding_completed_at,
       last_digest_at = excluded.last_digest_at,
       updated_at = excluded.updated_at`
@@ -1727,8 +1733,13 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
   return {
     get: (): UserProfileRecord | null => {
       const row = getStatement.get() as
-        | (Omit<UserProfileRecord, "heartbeatOnlyIfSignal"> & {
+        | (Omit<
+            UserProfileRecord,
+            "heartbeatOnlyIfSignal" | "interactiveContextWindowSize" | "contextRetentionCap"
+          > & {
             heartbeatOnlyIfSignal: number | null
+            interactiveContextWindowSize: number | null
+            contextRetentionCap: number | null
           })
         | undefined
       if (!row) {
@@ -1742,6 +1753,9 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
             ? row.quietMode
             : "critical_only",
         heartbeatOnlyIfSignal: row.heartbeatOnlyIfSignal === 0 ? false : true,
+        interactiveContextWindowSize:
+          row.interactiveContextWindowSize != null ? row.interactiveContextWindowSize : 20,
+        contextRetentionCap: row.contextRetentionCap != null ? row.contextRetentionCap : 100,
       }
     },
     upsert: (record: UserProfileRecord): void => {
