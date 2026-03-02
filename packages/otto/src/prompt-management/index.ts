@@ -8,7 +8,6 @@ export { resolveJobSystemPrompt } from "./job-resolution.js"
 export { listPromptFileInventory } from "./inventory.js"
 export { buildPromptProvenance } from "./provenance.js"
 export { resolvePromptComposition } from "./resolver.js"
-export { listPromptFiles } from "./file-inventory.js"
 export { PROMPT_LAYER_ORDER } from "./types.js"
 export {
   PROMPT_LAYER_SOURCE_VALUES,
@@ -39,7 +38,6 @@ export type {
   PromptRoutingWarningCode,
   ResolvePromptRouteContext,
 } from "./routing-types.js"
-export type { PromptFileEntry } from "./file-inventory.js"
 export type {
   InteractivePromptResolution,
   InteractivePromptSurface,

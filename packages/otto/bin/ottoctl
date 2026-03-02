@@ -1735,7 +1735,6 @@ Usage:
   ottoctl model refresh
   ottoctl model defaults show
   ottoctl model defaults set <flow> <provider/model|inherit>
-  ottoctl prompt
   ottoctl heartbeat status
   ottoctl heartbeat mode <observe|mute>
   ottoctl prompt
@@ -1792,10 +1791,6 @@ main() {
     model)
       shift
       cmd_model "$@"
-      ;;
-    prompt)
-      shift
-      cmd_prompt "$@"
       ;;
     heartbeat)
       shift
