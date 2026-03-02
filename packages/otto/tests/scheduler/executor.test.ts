@@ -6,12 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE } from "../../src/api-services/interactive-background-jobs.js"
 import {
+  createInteractiveContextEventsRepository,
   createJobsRepository,
   createJobRunSessionsRepository,
   createOutboundMessagesRepository,
   createSessionBindingsRepository,
   openPersistenceDatabase,
 } from "../../src/persistence/index.js"
+import { createNonInteractiveContextCaptureService } from "../../src/runtime/non-interactive-context-capture.js"
 import { createTaskExecutionEngine } from "../../src/scheduler/executor.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-scheduler-executor-")
@@ -589,6 +591,7 @@ describe("task execution engine", () => {
     const jobRunSessionsRepository = createJobRunSessionsRepository(db)
     const sessionBindingsRepository = createSessionBindingsRepository(db)
     const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    const interactiveContextEventsRepository = createInteractiveContextEventsRepository(db)
     await writeMinimalTaskConfig(tempRoot)
     await writeMinimalPromptWorkspace(tempRoot)
 
@@ -639,6 +642,10 @@ describe("task execution engine", () => {
       })
     )
     const logger = createLoggerStub()
+    const nonInteractiveContextCaptureService = createNonInteractiveContextCaptureService({
+      logger,
+      interactiveContextEventsRepository,
+    })
     const engine = createTaskExecutionEngine({
       logger,
       ottoHome: tempRoot,
@@ -656,6 +663,7 @@ describe("task execution engine", () => {
         get: () => null,
         setLastDigestAt: () => {},
       },
+      nonInteractiveContextCaptureService,
       now: () => 4_500,
     })
 
@@ -711,6 +719,43 @@ describe("task execution engine", () => {
     const task = jobsRepository.getById("job-background-1")
     expect(task?.terminalState).toBe("completed")
     expect(task?.nextRunAt).toBeNull()
+
+    const capturedContextEvents = db
+      .prepare(
+        `SELECT
+          source_session_id as sourceSessionId,
+          source_lane as sourceLane,
+          source_kind as sourceKind,
+          delivery_status as deliveryStatus,
+          delivery_status_detail as deliveryStatusDetail,
+          content
+         FROM interactive_context_events
+         WHERE source_session_id = ?
+         ORDER BY created_at ASC`
+      )
+      .all("session-origin-1") as Array<{
+      sourceSessionId: string
+      sourceLane: string
+      sourceKind: string
+      deliveryStatus: string
+      deliveryStatusDetail: string | null
+      content: string
+    }>
+
+    expect(capturedContextEvents).toHaveLength(2)
+    expect(capturedContextEvents[0]).toMatchObject({
+      sourceSessionId: "session-origin-1",
+      sourceLane: "scheduler",
+      sourceKind: "background_lifecycle",
+      deliveryStatus: "queued",
+      deliveryStatusDetail: "enqueued",
+    })
+    expect(capturedContextEvents.map((event) => event.content)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Started your background run"),
+        expect.stringContaining("Background run completed successfully"),
+      ])
+    )
 
     db.close()
   })

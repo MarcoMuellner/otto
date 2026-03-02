@@ -50,6 +50,27 @@ describe("persistence repositories", () => {
     db.close()
   })
 
+  it("resolves session id by Telegram chat id", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createSessionBindingsRepository(db)
+
+    repository.upsert("telegram:chat:777:assistant", "session-777", 1_000)
+    repository.upsert("scheduler:task:job-1:assistant", "session-scheduled", 1_100)
+
+    // Act
+    const resolved = repository.getSessionIdByTelegramChatId(777)
+    const missing = repository.getSessionIdByTelegramChatId(999)
+
+    // Assert
+    expect(resolved).toBe("session-777")
+    expect(missing).toBeNull()
+
+    db.close()
+  })
+
   it("stores and closes job run session lifecycle records", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)

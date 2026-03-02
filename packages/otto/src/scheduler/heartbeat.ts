@@ -7,6 +7,7 @@ import type {
   JobRunSummaryRecord,
   UserProfileRecord,
 } from "../persistence/repositories.js"
+import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import {
   getLocalClockMinutesInProfileTimezone,
@@ -289,6 +290,10 @@ export const executeHeartbeatTask = (
     outboundMessagesRepository: OutboundMessagesRepository
     userProfileRepository: UserProfileRepository
     defaultChatId: number | null
+    sessionBindingsRepository?: {
+      getSessionIdByTelegramChatId?: (chatId: number) => string | null
+    }
+    nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
   },
   jobPayload: string | null,
   startedAt: number
@@ -337,6 +342,17 @@ export const executeHeartbeatTask = (
       dependencies.outboundMessagesRepository,
       startedAt
     )
+    dependencies.nonInteractiveContextCaptureService?.captureQueuedTextMessage({
+      sourceSessionId:
+        dependencies.sessionBindingsRepository?.getSessionIdByTelegramChatId?.(chatId) ?? null,
+      sourceLane: "scheduler",
+      sourceKind: "heartbeat_onboarding",
+      sourceRef: `${timezoneDate}:onboarding`,
+      content: onboardingText,
+      messageIds: result.messageIds,
+      enqueueStatus: result.status,
+      timestamp: startedAt,
+    })
 
     return {
       status: "success",
@@ -409,6 +425,18 @@ export const executeHeartbeatTask = (
     dependencies.outboundMessagesRepository,
     startedAt
   )
+
+  dependencies.nonInteractiveContextCaptureService?.captureQueuedTextMessage({
+    sourceSessionId:
+      dependencies.sessionBindingsRepository?.getSessionIdByTelegramChatId?.(chatId) ?? null,
+    sourceLane: "scheduler",
+    sourceKind: "heartbeat_digest",
+    sourceRef: fingerprint,
+    content: heartbeatContent,
+    messageIds: enqueueResult.messageIds,
+    enqueueStatus: enqueueResult.status,
+    timestamp: startedAt,
+  })
 
   dependencies.userProfileRepository.setLastDigestAt(startedAt, startedAt)
 
