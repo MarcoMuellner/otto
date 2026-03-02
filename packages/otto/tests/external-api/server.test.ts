@@ -6,6 +6,7 @@ import pino from "pino"
 import { afterEach, describe, expect, it } from "vitest"
 
 import { buildExternalApiServer, resolveExternalApiConfig } from "../../src/external-api/server.js"
+import { PromptFileAccessError } from "../../src/prompt-management/index.js"
 import type {
   CommandAuditRecord,
   JobRecord,
@@ -712,6 +713,126 @@ describe("buildExternalApiServer", () => {
     expect(response.statusCode).toBe(503)
     expect(response.json()).toEqual({
       error: "service_unavailable",
+    })
+
+    await app.close()
+  })
+
+  it("lists and reads prompt files with ownership metadata", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      promptManagement: {
+        listPromptFiles: async () => {
+          return [
+            {
+              source: "user",
+              relativePath: "layers/media-web.md",
+              editable: true,
+            },
+          ]
+        },
+        readPromptFile: async ({ source, relativePath }) => {
+          return {
+            source,
+            relativePath,
+            editable: source === "user",
+            content: "# Prompt",
+          }
+        },
+      },
+    })
+
+    // Act
+    const listResponse = await app.inject({
+      method: "GET",
+      url: "/external/prompts/files",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+    const readResponse = await app.inject({
+      method: "GET",
+      url: "/external/prompts/file?source=user&path=layers/media-web.md",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(listResponse.statusCode).toBe(200)
+    expect(listResponse.json()).toEqual({
+      files: [
+        {
+          source: "user",
+          relativePath: "layers/media-web.md",
+          editable: true,
+        },
+      ],
+    })
+    expect(readResponse.statusCode).toBe(200)
+    expect(readResponse.json()).toEqual({
+      file: {
+        source: "user",
+        relativePath: "layers/media-web.md",
+        editable: true,
+        content: "# Prompt",
+      },
+    })
+
+    await app.close()
+  })
+
+  it("blocks out-of-scope prompt file writes with safe errors", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      promptManagement: {
+        writePromptFile: async () => {
+          throw new PromptFileAccessError(
+            "invalid_path",
+            "Prompt file path must remain within prompt root directories"
+          )
+        },
+      },
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "PUT",
+      url: "/external/prompts/file",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        source: "system",
+        path: "layers/core-persona.md",
+        content: "# Not allowed",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: "invalid_request",
     })
 
     await app.close()

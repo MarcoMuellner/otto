@@ -43,7 +43,12 @@ import type {
   InteractivePromptResolution,
   PromptProvenance,
   InteractivePromptSurface,
+  PromptFileEntry,
+  PromptFileReadResult,
+  PromptFileWriteResult,
+  PromptLayerSource,
 } from "../prompt-management/index.js"
+import { PromptFileAccessError } from "../prompt-management/index.js"
 import type {
   CommandAuditRecord,
   JobRecord,
@@ -152,9 +157,19 @@ type ExternalApiServerDependencies = {
     updateFlowDefaults: (flowDefaults: OttoModelFlowDefaults) => Promise<OttoModelFlowDefaults>
   }
   promptManagement?: {
-    resolveInteractiveSystemPrompt: (
+    resolveInteractiveSystemPrompt?: (
       surface: InteractivePromptSurface
     ) => Promise<InteractivePromptResolution>
+    listPromptFiles?: () => Promise<PromptFileEntry[]>
+    readPromptFile?: (input: {
+      source: PromptLayerSource
+      relativePath: string
+    }) => Promise<PromptFileReadResult>
+    writePromptFile?: (input: {
+      source: PromptLayerSource
+      relativePath: string
+      content: string
+    }) => Promise<PromptFileWriteResult>
   }
 }
 
@@ -197,6 +212,19 @@ const interactivePromptSurfaceSchema = z.enum(["telegram", "web", "cli"])
 
 const interactivePromptQuerySchema = z.object({
   surface: interactivePromptSurfaceSchema.optional().default("web"),
+})
+
+const promptFileSourceSchema = z.enum(["system", "user"])
+
+const promptFileQuerySchema = z.object({
+  source: promptFileSourceSchema,
+  path: z.string().trim().min(1),
+})
+
+const updatePromptFileRequestSchema = z.object({
+  source: promptFileSourceSchema,
+  path: z.string().trim().min(1),
+  content: z.string(),
 })
 
 const taskListRecordSchema = z.object({
@@ -370,6 +398,29 @@ const interactivePromptResponseSchema = z.object({
   warnings: z.array(interactivePromptWarningSchema),
 })
 
+const promptFileEntrySchema = z.object({
+  source: promptFileSourceSchema,
+  relativePath: z.string().trim().min(1),
+  editable: z.boolean(),
+})
+
+const promptFilesResponseSchema = z.object({
+  files: z.array(promptFileEntrySchema),
+})
+
+const promptFileResponseSchema = z.object({
+  file: promptFileEntrySchema.extend({
+    content: z.string(),
+  }),
+})
+
+const promptFileUpdateResponseSchema = z.object({
+  status: z.literal("updated"),
+  file: promptFileEntrySchema.extend({
+    updatedAt: z.number().int(),
+  }),
+})
+
 const serviceStatusSchema = z.enum(["ok", "degraded", "disabled"])
 
 const systemServiceSchema = z.object({
@@ -478,6 +529,36 @@ const resolveTaskMutationErrorResponse = (error: TaskMutationError) => {
     statusCode: 409,
     body: {
       error: "state_conflict",
+      message: error.message,
+    },
+  }
+}
+
+const resolvePromptFileErrorResponse = (error: PromptFileAccessError) => {
+  if (error.code === "invalid_path") {
+    return {
+      statusCode: 400,
+      body: {
+        error: "invalid_request",
+        message: error.message,
+      },
+    }
+  }
+
+  if (error.code === "not_found") {
+    return {
+      statusCode: 404,
+      body: {
+        error: "not_found",
+        message: error.message,
+      },
+    }
+  }
+
+  return {
+    statusCode: 403,
+    body: {
+      error: "forbidden_mutation",
       message: error.message,
     },
   }
@@ -725,7 +806,7 @@ export const buildExternalApiServer = (
   })
 
   app.get("/external/prompts/interactive", async (request, reply) => {
-    if (!dependencies.promptManagement) {
+    if (!dependencies.promptManagement?.resolveInteractiveSystemPrompt) {
       return reply.code(503).send({ error: "service_unavailable" })
     }
 
@@ -757,6 +838,80 @@ export const buildExternalApiServer = (
         { error: err.message },
         "External API interactive prompt resolution failed"
       )
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/prompts/files", async (_request, reply) => {
+    if (!dependencies.promptManagement?.listPromptFiles) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const files = await dependencies.promptManagement.listPromptFiles()
+      return reply.code(200).send(promptFilesResponseSchema.parse({ files }))
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API prompt file listing failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/prompts/file", async (request, reply) => {
+    if (!dependencies.promptManagement?.readPromptFile) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const query = promptFileQuerySchema.parse(request.query)
+      const file = await dependencies.promptManagement.readPromptFile({
+        source: query.source,
+        relativePath: query.path,
+      })
+
+      return reply.code(200).send(promptFileResponseSchema.parse({ file }))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof PromptFileAccessError) {
+        const failure = resolvePromptFileErrorResponse(error)
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API prompt file read failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.put("/external/prompts/file", async (request, reply) => {
+    if (!dependencies.promptManagement?.writePromptFile) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = updatePromptFileRequestSchema.parse(request.body)
+      const file = await dependencies.promptManagement.writePromptFile({
+        source: payload.source,
+        relativePath: payload.path,
+        content: payload.content,
+      })
+
+      return reply.code(200).send(promptFileUpdateResponseSchema.parse({ status: "updated", file }))
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof PromptFileAccessError) {
+        const failure = resolvePromptFileErrorResponse(error)
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API prompt file write failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

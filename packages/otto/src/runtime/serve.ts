@@ -30,7 +30,12 @@ import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
 import { createUserProfileRepository } from "../persistence/repositories.js"
-import { resolveInteractiveSystemPrompt } from "../prompt-management/index.js"
+import {
+  listManagedPromptFiles,
+  readManagedPromptFile,
+  resolveInteractiveSystemPrompt,
+  writeManagedPromptFile,
+} from "../prompt-management/index.js"
 import {
   materializeEffectiveOpencodeConfig,
   syncOpencodeToolsPackageJson,
@@ -294,6 +299,24 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
             ottoHome: config.ottoHome,
             surface,
             logger,
+          })
+        },
+        listPromptFiles: async () => {
+          return await listManagedPromptFiles({ ottoHome: config.ottoHome })
+        },
+        readPromptFile: async (input) => {
+          return await readManagedPromptFile({
+            ottoHome: config.ottoHome,
+            source: input.source,
+            relativePath: input.relativePath,
+          })
+        },
+        writePromptFile: async (input) => {
+          return await writeManagedPromptFile({
+            ottoHome: config.ottoHome,
+            source: input.source,
+            relativePath: input.relativePath,
+            content: input.content,
           })
         },
       },
