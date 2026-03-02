@@ -1,5 +1,9 @@
 # Ticket 001 - Voice Media Intake and Safety Limits
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Handle Telegram voice updates, download media safely, and enforce size/time constraints.

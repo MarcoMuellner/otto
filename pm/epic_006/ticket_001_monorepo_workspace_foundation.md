@@ -2,7 +2,7 @@
 
 ## Status
 
-- `state`: `completed`
+- `state`: `done`
 
 ## Objective
 

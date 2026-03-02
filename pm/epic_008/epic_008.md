@@ -4,7 +4,7 @@
 
 - `id`: `epic_008`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `done`
 - `goal`: deliver a small, runtime-first model management surface so Marco can see available OpenCode models and switch defaults per flow, with optional per-job override.
 
 ## Why

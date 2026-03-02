@@ -1,5 +1,9 @@
 # Ticket 009 - Proactive One-Shot Evaluation Engine
 
+## Status
+
+- `state`: `done`
+
 > Superseded by Epic 003 (`pm/epic_003/ticket_002_proactive_evaluator.md`).
 
 ## Objective

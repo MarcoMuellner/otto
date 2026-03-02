@@ -1,5 +1,9 @@
 # Ticket 001 - Telegram Worker Foundation
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Create a dedicated Telegram worker runtime with clear process boundaries and lifecycle hooks, without yet implementing full bot behavior.

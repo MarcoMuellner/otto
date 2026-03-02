@@ -1,5 +1,9 @@
 # Ticket 001 - Approval Workflow for Write Actions
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Enforce explicit user approval for unsupervised write actions before execution.

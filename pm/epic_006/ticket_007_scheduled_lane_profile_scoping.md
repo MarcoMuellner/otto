@@ -1,5 +1,9 @@
 # Ticket 007 - Scheduled Lane and Profile Scoping for Extensions
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Apply extension activation safely across interactive and scheduled contexts using existing OpenCode/task profile policy overlays.

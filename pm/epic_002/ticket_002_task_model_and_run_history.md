@@ -1,5 +1,9 @@
 # Ticket 002 - Task Model, Schedule Engine, and Run History
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Define durable task records (recurring + one-shot) and immutable run history, then implement schedule updates after each run.

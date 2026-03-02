@@ -1,5 +1,9 @@
 # Ticket 010 - Heartbeat Pipeline (Morning/Midday/Evening)
 
+## Status
+
+- `state`: `done`
+
 > Superseded by Epic 004 (`pm/epic_004/ticket_001_heartbeat_pipeline.md`).
 
 ## Objective

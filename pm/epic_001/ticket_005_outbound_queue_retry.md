@@ -1,5 +1,9 @@
 # Ticket 005 - Outbound Queue, Retry, and Dedupe
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Add a durable outbound delivery queue for proactive messages with retry/backoff and idempotent send behavior.

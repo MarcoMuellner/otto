@@ -1,5 +1,9 @@
 # Ticket 012 - Onboarding, User Profile, Quiet Hours, and Ops Hardening
 
+## Status
+
+- `state`: `done`
+
 > Superseded by Epic 004 (`pm/epic_004/`).
 
 ## Objective

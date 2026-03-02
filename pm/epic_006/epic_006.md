@@ -4,7 +4,7 @@
 
 - `id`: `epic_006`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `done`
 - `goal`: deliver a monorepo-based extension platform where Otto can install, enable, and validate versioned extensions that contribute OpenCode tools, skills, and MCP definitions without hardcoded runtime logic.
 
 ## Why

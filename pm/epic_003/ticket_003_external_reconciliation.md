@@ -1,5 +1,9 @@
 # Ticket 003 - External Reconciliation (Google Tasks)
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Observe external task completion and reconcile proactive reminders automatically.

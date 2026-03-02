@@ -1,5 +1,9 @@
 # Ticket 006 - Scheduler Runtime (One-Shot + Heartbeat Framework)
 
+## Status
+
+- `state`: `done`
+
 > Superseded by Epic 002 (`pm/epic_002/`).
 > Use `pm/epic_002/ticket_001_minute_scheduler_kernel.md` onward.
 

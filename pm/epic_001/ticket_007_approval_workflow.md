@@ -1,5 +1,9 @@
 # Ticket 007 - Approval Workflow for Write Actions
 
+## Status
+
+- `state`: `done`
+
 > Superseded by Epic 003 (`pm/epic_003/ticket_001_approval_workflow.md`).
 
 ## Objective

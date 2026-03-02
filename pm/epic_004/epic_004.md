@@ -4,7 +4,7 @@
 
 - `id`: `epic_004`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `done`
 - `goal`: deliver daily heartbeat value, user profile onboarding, quiet-hours policy, and operator observability.
 
 ## Why

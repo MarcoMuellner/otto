@@ -4,7 +4,7 @@
 
 - `id`: `epic_009`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `done`
 - `goal`: enable Otto to auto-escalate long interactive requests into background one-shot jobs so Marco can continue chatting while work runs and completes asynchronously.
 
 ## Why

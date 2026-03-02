@@ -4,7 +4,7 @@
 
 - `id`: `epic_007`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `done`
 - `goal`: deliver a deployable web control plane for Otto with a separate UI process and a runtime-owned external API, so Marco can run Otto day-to-day without CLI fallback for in-scope operations.
 
 ## Why

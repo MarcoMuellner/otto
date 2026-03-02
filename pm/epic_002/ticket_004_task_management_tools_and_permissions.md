@@ -1,5 +1,9 @@
 # Ticket 004 - Task Management Tools and Permission Lanes
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Add task management tools (create/update/delete/list) with strict execution context policy.

@@ -1,5 +1,9 @@
 # Ticket 003 - Persistent State Schema and Repositories
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Introduce SQLite-backed persistence for orchestration state while reusing OpenCode sessions for conversation history.

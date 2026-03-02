@@ -4,7 +4,7 @@
 
 - `id`: `epic_001`
 - `type`: epic ticket
-- `state`: `completed`
+- `state`: `done`
 - `completed_through_ticket`: `ticket_005`
 - `goal`: deliver the production-ready Telegram runtime foundation (worker security, session continuity, persistence, outbound queue, and tool bridge plumbing).
 

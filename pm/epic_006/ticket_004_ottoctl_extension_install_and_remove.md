@@ -1,5 +1,9 @@
 # Ticket 004 - `ottoctl extension` Install and Remove Commands
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Add CLI commands to discover and install/remove catalog extensions into local versioned store.

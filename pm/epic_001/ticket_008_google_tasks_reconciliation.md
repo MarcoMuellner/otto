@@ -1,5 +1,9 @@
 # Ticket 008 - Google Tasks Adapter and Completion Reconciliation
 
+## Status
+
+- `state`: `done`
+
 > Superseded by Epic 003 (`pm/epic_003/ticket_003_external_reconciliation.md`).
 
 ## Objective

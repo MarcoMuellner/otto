@@ -1,5 +1,9 @@
 # Ticket 004 - Inbound Telegram Chat Bridge
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Implement inbound 1:1 text message handling from Telegram to OpenCode sessions, including reply delivery back to Telegram.

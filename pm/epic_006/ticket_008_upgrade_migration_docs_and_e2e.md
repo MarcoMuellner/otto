@@ -1,5 +1,9 @@
 # Ticket 008 - Upgrade Migration, Documentation, and End-to-End Validation
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Finalize extension platform rollout with migration support, operator documentation, and end-to-end validation.

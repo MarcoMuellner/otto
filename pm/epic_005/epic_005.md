@@ -4,7 +4,7 @@
 
 - `id`: `epic_005`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `done`
 - `goal`: support Telegram voice input and transcription as first-class inbound communication.
 
 ## Why

@@ -1,5 +1,9 @@
 # Ticket 003 - Extension Store and Activation State Persistence
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Implement durable extension storage and activation state model in Otto runtime home.

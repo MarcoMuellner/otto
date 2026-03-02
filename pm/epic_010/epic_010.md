@@ -4,7 +4,7 @@
 
 - `id`: `epic_010`
 - `type`: epic ticket
-- `state`: `planned`
+- `state`: `done`
 - `goal`: introduce a dedicated prompt-management system with layered resolution, user-safe customization, and explicit runtime provenance across interactive and job execution flows.
 
 ## Why

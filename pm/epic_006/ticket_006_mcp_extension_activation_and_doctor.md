@@ -1,5 +1,9 @@
 # Ticket 006 - MCP Extension Activation and `doctor` Checks
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Support MCP contribution from extensions and provide diagnostics for missing requirements and auth prerequisites.

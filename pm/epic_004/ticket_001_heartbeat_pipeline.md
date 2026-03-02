@@ -1,5 +1,9 @@
 # Ticket 001 - Heartbeat Pipeline
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Send concise morning/midday/evening heartbeat summaries using profile timezone and queue delivery.

@@ -1,5 +1,9 @@
 # Ticket 011 - Voice Message Intake and Transcription
 
+## Status
+
+- `state`: `done`
+
 > Superseded by Epic 005 (`pm/epic_005/`).
 
 ## Objective

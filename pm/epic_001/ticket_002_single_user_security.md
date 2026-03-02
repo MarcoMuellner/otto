@@ -1,5 +1,9 @@
 # Ticket 002 - Single-User DM Security Gate
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Enforce strict Telegram access control so only one allowed user in direct messages can interact with Otto.

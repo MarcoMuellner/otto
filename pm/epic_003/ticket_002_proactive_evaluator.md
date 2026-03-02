@@ -1,5 +1,9 @@
 # Ticket 002 - Proactive Evaluator and Tool-Driven Action Emission
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Evaluate due obligations and emit proactive actions/messages through explicit tools.

@@ -1,5 +1,9 @@
 # Ticket 003 - Task Profiles in Config and ottoctl Operations
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Support user-configurable task profile files in config space and provide control-plane commands to manage them.

@@ -1,5 +1,9 @@
 # Ticket 001 - Minute Scheduler Kernel and Claim/Lock Semantics
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Implement the one-minute scheduler runtime that scans due tasks and claims execution safely.

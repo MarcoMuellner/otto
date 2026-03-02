@@ -1,5 +1,9 @@
 # Ticket 005 - Extension Enable/Disable for Tools and Skills
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Enable and disable installed extensions so their tools and skills are available to OpenCode runtime via deterministic activation wiring.

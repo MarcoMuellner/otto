@@ -1,5 +1,9 @@
 # Ticket 002 - Extension Manifest and Catalog Contract
 
+## Status
+
+- `state`: `done`
+
 ## Objective
 
 Define extension manifest schema and catalog layout so extensions are validated and discoverable before install/enable logic is introduced.
