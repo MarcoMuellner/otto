@@ -1,10 +1,11 @@
 import type { Logger } from "pino"
 
 import type { DoctorMode } from "../cli/command.js"
+import { fastDoctorChecks } from "./checks/fast/index.js"
 import { runDoctorEngine } from "./engine.js"
 import type { DoctorCheckDefinition, DoctorVerdict } from "./contracts.js"
 
-const doctorChecks: DoctorCheckDefinition[] = []
+const doctorChecks: DoctorCheckDefinition[] = [...fastDoctorChecks]
 
 export type DoctorRunSummary = {
   mode: DoctorMode
