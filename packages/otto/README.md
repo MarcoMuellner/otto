@@ -110,6 +110,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl model refresh`
   - `ottoctl model defaults show`
   - `ottoctl model defaults set <flow> <provider/model|inherit>`
+  - `ottoctl prompt` (interactive prompt picker and editor launcher)
   - `ottoctl heartbeat status` (show current heartbeat delivery mode)
   - `ottoctl heartbeat mode <observe|mute>` (observe = always compact updates, mute = suppress normal heartbeats)
   - `ottoctl extension list`

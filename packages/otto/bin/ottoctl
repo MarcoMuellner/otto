@@ -1033,8 +1033,16 @@ run_model_cli() {
   NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/model-cli.mjs" "$@"
 }
 
+run_prompt_cli() {
+  NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/prompt-cli.mjs" "$@"
+}
+
 cmd_model() {
   run_model_cli model "$@"
+}
+
+cmd_prompt() {
+  run_prompt_cli "$@"
 }
 
 cmd_extension() {
@@ -1713,6 +1721,7 @@ Usage:
   ottoctl model refresh
   ottoctl model defaults show
   ottoctl model defaults set <flow> <provider/model|inherit>
+  ottoctl prompt
   ottoctl heartbeat status
   ottoctl heartbeat mode <observe|mute>
   ottoctl extension list
@@ -1768,6 +1777,10 @@ main() {
     model)
       shift
       cmd_model "$@"
+      ;;
+    prompt)
+      shift
+      cmd_prompt "$@"
       ;;
     heartbeat)
       shift
