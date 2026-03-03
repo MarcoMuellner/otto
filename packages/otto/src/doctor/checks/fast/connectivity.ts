@@ -1,3 +1,5 @@
+import http from "node:http"
+import https from "node:https"
 import { performance } from "node:perf_hooks"
 
 import { z } from "zod"
@@ -14,6 +16,49 @@ type ConnectivityCheckDependencies = {
 const healthResponseSchema = z.object({
   status: z.string().trim().min(1),
 })
+
+const RETRY_ATTEMPTS = 3
+const RETRY_DELAY_MS = 150
+
+const probeWithNodeHttp = async (
+  url: URL,
+  token: string
+): Promise<{ statusCode: number; body: string }> => {
+  return await new Promise((resolve, reject) => {
+    const client = url.protocol === "https:" ? https : http
+    const request = client.request(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port,
+        path: `${url.pathname}${url.search}`,
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      },
+      (response) => {
+        let body = ""
+        response.setEncoding("utf8")
+        response.on("data", (chunk) => {
+          body += chunk
+        })
+        response.on("end", () => {
+          resolve({
+            statusCode: response.statusCode ?? 0,
+            body,
+          })
+        })
+      }
+    )
+
+    request.on("error", (error) => {
+      reject(error)
+    })
+
+    request.end()
+  })
+}
 
 export const createFastConnectivityCheck = (
   dependencies: ConnectivityCheckDependencies = {}
@@ -50,25 +95,52 @@ export const createFastConnectivityCheck = (
       const endpoint = "/external/health"
       const url = new URL(endpoint, context.baseUrl)
 
-      let response: Response
-      try {
-        response = await fetchImpl(url, {
-          method: "GET",
-          headers: {
-            authorization: `Bearer ${context.token}`,
-          },
-        })
-      } catch (error) {
-        const err = error as Error
+      let response: Response | null = null
+      let lastError: Error | null = null
+
+      for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          response = await fetchImpl(url, {
+            method: "GET",
+            headers: {
+              authorization: `Bearer ${context.token}`,
+            },
+          })
+          lastError = null
+          break
+        } catch (error) {
+          lastError = error as Error
+
+          if (attempt < RETRY_ATTEMPTS) {
+            await new Promise((resolve) => {
+              setTimeout(resolve, RETRY_DELAY_MS * attempt)
+            })
+          }
+        }
+      }
+
+      if (!response && dependencies.fetchImpl === undefined) {
+        try {
+          const fallback = await probeWithNodeHttp(url, context.token)
+          response = new Response(fallback.body, {
+            status: fallback.statusCode >= 100 ? fallback.statusCode : 500,
+          })
+        } catch (error) {
+          lastError = error as Error
+        }
+      }
+
+      if (!response) {
         return {
           severity: "error",
           summary: "External API connectivity probe failed",
           evidence: [
             {
               code: "EXTERNAL_API_UNREACHABLE",
-              message: err.message,
+              message: lastError?.message ?? "unknown fetch error",
               details: {
                 endpoint,
+                attempts: RETRY_ATTEMPTS,
                 durationMs: Math.round(now() - startedAt),
               },
             },

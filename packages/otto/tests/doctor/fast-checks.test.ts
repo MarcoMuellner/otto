@@ -55,6 +55,29 @@ describe("fast doctor checks", () => {
     })
   })
 
+  it("retries transient connectivity fetch failures before succeeding", async () => {
+    // Arrange
+    let attempts = 0
+    const check = createFastConnectivityCheck({
+      environment: testEnvironment,
+      fetchImpl: async () => {
+        attempts += 1
+        if (attempts < 3) {
+          throw new Error("fetch failed")
+        }
+
+        return Response.json({ status: "ok" }, { status: 200 })
+      },
+    })
+
+    // Act
+    const result = await check.run({ mode: "fast" })
+
+    // Assert
+    expect(result.severity).toBe("ok")
+    expect(attempts).toBe(3)
+  })
+
   it("returns error when critical services are degraded", async () => {
     // Arrange
     const check = createFastSystemStatusCheck({
@@ -129,6 +152,42 @@ describe("fast doctor checks", () => {
     expect(result.evidence[0]).toMatchObject({
       code: "NON_CRITICAL_SERVICE_DEGRADED",
     })
+  })
+
+  it("retries transient system-status fetch failures before succeeding", async () => {
+    // Arrange
+    let attempts = 0
+    const check = createFastSystemStatusCheck({
+      environment: testEnvironment,
+      fetchImpl: async () => {
+        attempts += 1
+        if (attempts < 3) {
+          throw new Error("fetch failed")
+        }
+
+        return Response.json(
+          {
+            status: "ok",
+            services: [
+              {
+                id: "runtime",
+                label: "Otto Runtime",
+                status: "ok",
+                message: "Healthy",
+              },
+            ],
+          },
+          { status: 200 }
+        )
+      },
+    })
+
+    // Act
+    const result = await check.run({ mode: "fast" })
+
+    // Assert
+    expect(result.severity).toBe("ok")
+    expect(attempts).toBe(3)
   })
 
   it("returns ok when all CLI smoke commands pass", async () => {
