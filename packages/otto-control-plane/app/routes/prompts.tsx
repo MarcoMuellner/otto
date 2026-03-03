@@ -170,8 +170,15 @@ export default function PromptsRoute() {
   const isNavigating = navigation.state !== "idle"
 
   const [files, setFiles] = useState<PromptFileEntry[]>(data.files)
+  const [showSystemFiles, setShowSystemFiles] = useState(false)
+  const [fileFilter, setFileFilter] = useState("")
   const [selectedKey, setSelectedKey] = useState<string | null>(
-    data.files.length > 0 ? `${data.files[0]!.source}:${data.files[0]!.relativePath}` : null
+    (() => {
+      const firstEditableFile = data.files.find((file) => file.editable)
+      const fallbackFile = data.files[0]
+      const candidate = firstEditableFile ?? fallbackFile
+      return candidate ? `${candidate.source}:${candidate.relativePath}` : null
+    })()
   )
   const [activeFile, setActiveFile] = useState<PromptFileResponse["file"] | null>(null)
   const [editorContent, setEditorContent] = useState("")
@@ -200,12 +207,104 @@ export default function PromptsRoute() {
 
   const hasUnsavedChanges = editorContent !== originalContent
 
+  const normalizedFileFilter = fileFilter.trim().toLowerCase()
+
+  const editableFiles = useMemo(() => {
+    return files.filter((file) => {
+      if (!file.editable) {
+        return false
+      }
+
+      if (normalizedFileFilter.length === 0) {
+        return true
+      }
+
+      return file.relativePath.toLowerCase().includes(normalizedFileFilter)
+    })
+  }, [files, normalizedFileFilter])
+
+  const systemFiles = useMemo(() => {
+    return files.filter((file) => {
+      if (file.source !== "system") {
+        return false
+      }
+
+      if (normalizedFileFilter.length === 0) {
+        return true
+      }
+
+      return file.relativePath.toLowerCase().includes(normalizedFileFilter)
+    })
+  }, [files, normalizedFileFilter])
+
+  const visibleFiles = useMemo(() => {
+    if (showSystemFiles) {
+      return [...editableFiles, ...systemFiles]
+    }
+
+    return editableFiles
+  }, [editableFiles, showSystemFiles, systemFiles])
+
+  const hasFilteredResults = useMemo(() => {
+    if (showSystemFiles) {
+      return editableFiles.length > 0 || systemFiles.length > 0
+    }
+
+    return editableFiles.length > 0
+  }, [editableFiles.length, showSystemFiles, systemFiles.length])
+
+  useEffect(() => {
+    if (visibleFiles.length === 0) {
+      setSelectedKey(null)
+      return
+    }
+
+    const hasSelectedFile =
+      selectedKey !== null &&
+      visibleFiles.some((file) => `${file.source}:${file.relativePath}` === selectedKey)
+
+    if (hasSelectedFile) {
+      return
+    }
+
+    const candidate = visibleFiles[0]
+
+    if (candidate) {
+      setSelectedKey(`${candidate.source}:${candidate.relativePath}`)
+    }
+  }, [selectedKey, visibleFiles])
+
+  const renderFileButton = (file: PromptFileEntry) => {
+    const key = `${file.source}:${file.relativePath}`
+    const isSelected = selectedKey === key
+    const isSystemFile = file.source === "system"
+
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={() => setSelectedKey(key)}
+        className={`w-full rounded border px-2.5 py-2 text-left transition-colors ${
+          isSelected
+            ? isSystemFile
+              ? "border-[rgba(161,98,7,0.45)] bg-[rgba(255,240,208,0.9)]"
+              : "border-[rgba(26,26,26,0.22)] bg-[rgba(26,26,26,0.05)]"
+            : isSystemFile
+              ? "border-[rgba(161,98,7,0.22)] bg-[rgba(255,248,229,0.85)] hover:bg-[rgba(255,243,214,0.95)]"
+              : "border-[rgba(26,26,26,0.08)] bg-white hover:bg-[rgba(26,26,26,0.03)]"
+        }`}
+      >
+        <p className="m-0 text-sm text-[#1a1a1a]">{file.relativePath}</p>
+        <p className="m-0 mt-1 font-mono text-[10px] tracking-[0.08em] text-[#777777] uppercase">
+          {file.editable ? "editable" : "read-only"} | {file.source}
+        </p>
+      </button>
+    )
+  }
+
   useEffect(() => {
     setFiles(data.files)
-    if (!selectedKey && data.files.length > 0) {
-      setSelectedKey(`${data.files[0]!.source}:${data.files[0]!.relativePath}`)
-    }
-  }, [data.files, selectedKey])
+  }, [data.files])
 
   useEffect(() => {
     if (!selectedFileEntry) {
@@ -303,46 +402,77 @@ export default function PromptsRoute() {
         </Card>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[300px_minmax(0,1fr)]">
-        <Card className="min-h-0">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <Card className="flex min-h-0 flex-col overflow-hidden">
           <CardHeader className="pb-2">
-            <CardTitle>Prompt Files</CardTitle>
+            <CardTitle>Files</CardTitle>
           </CardHeader>
-          <CardContent className="hide-scrollbar max-h-[35dvh] space-y-2 overflow-y-auto lg:max-h-none">
-            {files.length === 0 ? (
-              <p className="m-0 text-sm text-[#777777]">No prompt markdown files found.</p>
-            ) : (
-              files.map((file) => {
-                const key = `${file.source}:${file.relativePath}`
-                const isSelected = selectedKey === key
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSelectedKey(key)}
-                    className={`w-full rounded border px-2.5 py-2 text-left transition-colors ${
-                      isSelected
-                        ? "border-[rgba(26,26,26,0.22)] bg-[rgba(26,26,26,0.05)]"
-                        : "border-[rgba(26,26,26,0.08)] bg-white hover:bg-[rgba(26,26,26,0.03)]"
-                    }`}
-                  >
-                    <p className="m-0 text-sm text-[#1a1a1a]">{file.relativePath}</p>
-                    <p className="m-0 mt-1 font-mono text-[10px] tracking-[0.08em] text-[#777777] uppercase">
-                      {file.source} {file.editable ? "• editable" : "• read-only"}
-                    </p>
-                  </button>
-                )
-              })
-            )}
+          <CardContent className="flex min-h-0 flex-1 flex-col gap-2 pb-4">
+            <input
+              type="search"
+              value={fileFilter}
+              onChange={(event) => setFileFilter(event.target.value)}
+              placeholder="Search files"
+              className="w-full rounded border border-[rgba(26,26,26,0.12)] bg-white px-2.5 py-2 text-sm text-[#1a1a1a]"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSystemFiles((current) => !current)}
+            >
+              {showSystemFiles ? "Hide read-only system files" : "Show read-only system files"}
+            </Button>
+            <p className="m-0 text-xs text-[#666666]">
+              {editableFiles.length} editable{editableFiles.length === 1 ? "" : "s"}
+              {showSystemFiles
+                ? `, ${systemFiles.length} system file${systemFiles.length === 1 ? "" : "s"}`
+                : ""}
+            </p>
+            <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto pr-1 pb-2">
+              {!hasFilteredResults ? (
+                <p className="m-0 text-sm text-[#777777]">No files match this filter.</p>
+              ) : (
+                <div className="space-y-3">
+                  {editableFiles.length > 0 ? (
+                    <section className="space-y-2">
+                      <p className="m-0 font-mono text-[10px] tracking-[0.08em] text-[#777777] uppercase">
+                        Editable prompts
+                      </p>
+                      <div className="space-y-2">
+                        {editableFiles.map((file) => renderFileButton(file))}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {showSystemFiles && systemFiles.length > 0 ? (
+                    <section className="space-y-2">
+                      <p className="m-0 font-mono text-[10px] tracking-[0.08em] text-[#a16207] uppercase">
+                        System prompts (read-only)
+                      </p>
+                      <div className="space-y-2">
+                        {systemFiles.map((file) => renderFileButton(file))}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
         <div className="grid min-h-0 grid-cols-1 gap-3">
           <Card className="min-h-0">
             <CardHeader className="pb-2">
-              <CardTitle>Editor</CardTitle>
+              <CardTitle>Prompt Editor</CardTitle>
             </CardHeader>
             <CardContent className="grid min-h-0 gap-2">
+              {activeFile ? (
+                <p className="m-0 text-xs text-[#666666]">
+                  <span className="font-mono text-[#1a1a1a]">{activeFile.relativePath}</span> |{" "}
+                  {activeFile.editable ? "editable" : "read-only system file"}
+                </p>
+              ) : null}
               {isNavigating ? <p className="m-0 text-xs text-[#888888]">Refreshing...</p> : null}
               {loadingError ? <p className="m-0 text-sm text-[#b42318]">{loadingError}</p> : null}
               {saveError ? <p className="m-0 text-sm text-[#b42318]">{saveError}</p> : null}
@@ -356,77 +486,96 @@ export default function PromptsRoute() {
                 onChange={(event) => setEditorContent(event.target.value)}
                 readOnly={Boolean(activeFile && !activeFile.editable)}
                 placeholder={isLoadingFile ? "Loading prompt..." : "Select a prompt file"}
-                className="hide-scrollbar min-h-[220px] w-full flex-1 resize-none rounded-lg border border-[rgba(26,26,26,0.12)] bg-[rgba(255,255,255,0.9)] px-3 py-2 font-mono text-xs leading-relaxed text-[#1a1a1a]"
+                className="hide-scrollbar min-h-[320px] w-full flex-1 resize-none rounded-lg border border-[rgba(26,26,26,0.12)] bg-[rgba(255,255,255,0.9)] px-3 py-2 font-mono text-xs leading-relaxed text-[#1a1a1a]"
               />
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!hasUnsavedChanges || !activeFile?.editable || isSavingFile}
-                  onClick={() => setEditorContent(originalContent)}
-                >
-                  Revert
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!hasUnsavedChanges || !activeFile?.editable || isSavingFile}
-                  onClick={() => void handleSave()}
-                >
-                  {isSavingFile ? "Saving..." : "Save"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle>Effective Chain (Web Interactive)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {data.interactiveProvenance ? (
-                <>
-                  <p className="m-0 text-sm text-[#1a1a1a]">
-                    Route <span className="font-mono">{data.interactiveProvenance.routeKey}</span> •
-                    source{" "}
-                    <span className="font-mono">{data.interactiveProvenance.mappingSource}</span>
+              {activeFile?.editable ? (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="m-0 text-xs text-[#666666]">
+                    {hasUnsavedChanges ? "Unsaved changes" : "No pending changes"}
                   </p>
-                  <ul className="mt-2 grid grid-cols-1 gap-2 p-0">
-                    {renderProvenanceLayers(data.interactiveProvenance)}
-                  </ul>
-                </>
-              ) : (
-                <p className="m-0 text-sm text-[#777777]">
-                  Interactive prompt provenance unavailable.
-                </p>
-              )}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!hasUnsavedChanges || isSavingFile}
+                      onClick={() => setEditorContent(originalContent)}
+                    >
+                      Revert
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!hasUnsavedChanges || isSavingFile}
+                      onClick={() => void handleSave()}
+                    >
+                      {isSavingFile ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle>Recent Executions</CardTitle>
+              <CardTitle>Diagnostics</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {data.recentProvenance.length === 0 ? (
-                <p className="m-0 text-sm text-[#777777]">No recent runs with prompt provenance.</p>
-              ) : (
-                data.recentProvenance.map((entry) => (
-                  <div
-                    key={`${entry.jobId}:${entry.runId}`}
-                    className="rounded border border-[rgba(26,26,26,0.08)] bg-[rgba(248,248,248,0.6)] px-2.5 py-2"
-                  >
-                    <p className="m-0 text-xs text-[#1a1a1a]">
-                      <span className="font-mono">{entry.jobType}</span> • {entry.status} •{" "}
-                      {formatDateTime(entry.startedAt)}
+              <details>
+                <summary className="cursor-pointer text-sm text-[#1a1a1a]">
+                  Effective chain (web interactive)
+                </summary>
+                <div className="mt-2">
+                  {data.interactiveProvenance ? (
+                    <>
+                      <p className="m-0 text-sm text-[#1a1a1a]">
+                        Route{" "}
+                        <span className="font-mono">{data.interactiveProvenance.routeKey}</span> |
+                        source{" "}
+                        <span className="font-mono">
+                          {data.interactiveProvenance.mappingSource}
+                        </span>
+                      </p>
+                      <ul className="mt-2 grid grid-cols-1 gap-2 p-0">
+                        {renderProvenanceLayers(data.interactiveProvenance)}
+                      </ul>
+                    </>
+                  ) : (
+                    <p className="m-0 text-sm text-[#777777]">
+                      Interactive prompt provenance unavailable.
                     </p>
-                    <p className="m-0 mt-1 font-mono text-[11px] text-[#666666]">
-                      route {entry.provenance.routeKey} ({entry.provenance.mappingSource})
+                  )}
+                </div>
+              </details>
+
+              <details>
+                <summary className="cursor-pointer text-sm text-[#1a1a1a]">
+                  Recent executions
+                </summary>
+                <div className="hide-scrollbar mt-2 max-h-[44dvh] space-y-2 overflow-y-auto pr-1">
+                  {data.recentProvenance.length === 0 ? (
+                    <p className="m-0 text-sm text-[#777777]">
+                      No recent runs with prompt provenance.
                     </p>
-                  </div>
-                ))
-              )}
+                  ) : (
+                    data.recentProvenance.map((entry) => (
+                      <div
+                        key={`${entry.jobId}:${entry.runId}`}
+                        className="rounded border border-[rgba(26,26,26,0.08)] bg-[rgba(248,248,248,0.6)] px-2.5 py-2"
+                      >
+                        <p className="m-0 text-xs text-[#1a1a1a]">
+                          <span className="font-mono">{entry.jobType}</span> | {entry.status} |{" "}
+                          {formatDateTime(entry.startedAt)}
+                        </p>
+                        <p className="m-0 mt-1 font-mono text-[11px] text-[#666666]">
+                          route {entry.provenance.routeKey} ({entry.provenance.mappingSource})
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </details>
             </CardContent>
           </Card>
         </div>
