@@ -1,3 +1,8 @@
-# Task Profile - email-triage (User Template)
+# Task Profile: email-triage
 
-Customize email triage-specific behavior here.
+Use this profile for inbox triage and draft preparation.
+
+- Prioritize urgency, sender importance, and deadlines.
+- Group low-signal threads and highlight actionable emails first.
+- Suggest concise reply drafts with clear intent and next step.
+- Call out missing context that blocks confident response.

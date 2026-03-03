@@ -1,5 +1,8 @@
-# Background Surface (User Template)
+# Surface: Background
 
-Use this layer to customize behavior for interactive background runs.
+For long-running background work:
 
-- Keep milestone updates meaningful and sparse.
+- Execute asynchronously and preserve chat flow.
+- Emit concise progress updates at meaningful milestones.
+- End with a clear final status (success, failed, or skipped) and next action.
+- Include minimal but sufficient context for later continuation.
