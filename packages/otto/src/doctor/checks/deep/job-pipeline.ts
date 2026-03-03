@@ -10,6 +10,7 @@ import type { DoctorCheckDefinition, DoctorCheckOutput } from "../../contracts.j
 import { cleanupDoctorJobArtifact } from "../../probes/cleanup.js"
 import { evaluateDoctorProbeGate } from "../../probes/registry.js"
 import type { DoctorProbeDefinition } from "../../probes/contracts.js"
+import { resolveSchedulerConfig } from "../../../scheduler/config.js"
 
 type DeepJobPipelineDependencies = {
   now?: () => number
@@ -29,7 +30,8 @@ type WaitForRunCompletionResult = {
 }
 
 const POLL_INTERVAL_MS = 500
-const POLL_TIMEOUT_MS = 30_000
+const MIN_POLL_TIMEOUT_MS = 30_000
+const TICK_BUFFER_MS = 15_000
 
 const defaultProbeDefinition: DoctorProbeDefinition = {
   id: "probe.job-pipeline.mutating",
@@ -45,6 +47,18 @@ const sleepWithTimer = async (durationMs: number): Promise<void> => {
 
 const buildDoctorJobId = (now: number): string => {
   return `doctor.job-pipeline.${now}.${randomUUID().slice(0, 8)}`
+}
+
+const resolvePollTimeoutMs = (
+  environment: NodeJS.ProcessEnv,
+  explicitTimeoutMs?: number
+): number => {
+  if (explicitTimeoutMs !== undefined) {
+    return explicitTimeoutMs
+  }
+
+  const schedulerTickMs = resolveSchedulerConfig(environment).tickMs
+  return Math.max(MIN_POLL_TIMEOUT_MS, schedulerTickMs + TICK_BUFFER_MS)
 }
 
 const waitForRunCompletion = async (
@@ -109,7 +123,7 @@ export const createDeepJobPipelineCheck = (
   const sleep = dependencies.sleep ?? sleepWithTimer
   const environment = dependencies.environment ?? process.env
   const pollIntervalMs = dependencies.pollIntervalMs ?? POLL_INTERVAL_MS
-  const pollTimeoutMs = dependencies.pollTimeoutMs ?? POLL_TIMEOUT_MS
+  const pollTimeoutMs = resolvePollTimeoutMs(environment, dependencies.pollTimeoutMs)
   const probeDefinition = dependencies.probeDefinition ?? defaultProbeDefinition
 
   return {

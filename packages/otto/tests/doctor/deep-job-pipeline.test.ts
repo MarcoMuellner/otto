@@ -197,4 +197,45 @@ describe("deep job pipeline check", () => {
       code: "PROBE_SKIPPED_CLEANUP_NOT_GUARANTEED",
     })
   })
+
+  it("uses scheduler tick-derived default poll timeout when not explicitly configured", async () => {
+    // Arrange
+    const probeJobId = "doctor.job.pipeline.derived-timeout"
+    let clock = 1_000
+
+    const apiClient: DoctorExternalApiClient = {
+      createJob: async () => createTaskMutationResult(probeJobId, "created"),
+      runJobNow: async () => createTaskMutationResult(probeJobId, "run_now_scheduled"),
+      getJob: async () => createJobRecord(probeJobId),
+      listJobRuns: async () => ({
+        taskId: probeJobId,
+        total: 1,
+        limit: 5,
+        offset: 0,
+        runs: [],
+      }),
+      deleteJob: async () => createTaskMutationResult(probeJobId, "deleted"),
+      cancelBackgroundJob: async () => null,
+    }
+
+    const check = createDeepJobPipelineCheck({
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms
+      },
+      pollIntervalMs: 10_000,
+      environment: {
+        OTTO_SCHEDULER_TICK_MS: "60000",
+      },
+      apiClient,
+    })
+
+    // Act
+    const result = await check.run({ mode: "deep" })
+
+    // Assert
+    expect(result.severity).toBe("error")
+    expect(result.evidence.some((entry) => entry.code === "DEEP_JOB_PROBE_RUN_TIMEOUT")).toBe(true)
+    expect(result.evidence.some((entry) => entry.message.includes("after 75000ms"))).toBe(true)
+  })
 })
