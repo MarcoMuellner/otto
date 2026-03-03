@@ -90,6 +90,10 @@ const resolveStoreVersionPath = (
   return path.join(ottoHome, "extensions", "store", extensionId, version)
 }
 
+const resolveRuntimeExtensionToolsPath = (ottoHome: string, extensionId: string): string => {
+  return path.join(ottoHome, ".opencode", "tools", "extensions", extensionId)
+}
+
 const resolvePathWithinRoot = (rootPath: string, declaredPath: string, field: string): string => {
   const resolvedRoot = path.resolve(rootPath)
   const resolvedTarget = path.resolve(resolvedRoot, declaredPath)
@@ -173,19 +177,21 @@ const defaultListToolScriptPaths =
   (ottoHome: string) =>
   async (input: { extensionId: string; version: string; toolsPath: string }): Promise<string[]> => {
     const storeVersionPath = resolveStoreVersionPath(ottoHome, input.extensionId, input.version)
-    const rootPath = resolvePathWithinRoot(
+    resolvePathWithinRoot(
       storeVersionPath,
       input.toolsPath,
       `payload.tools.path for '${input.extensionId}@${input.version}'`
     )
 
+    const runtimeToolsPath = resolveRuntimeExtensionToolsPath(ottoHome, input.extensionId)
+
     try {
-      await access(rootPath, constants.F_OK)
+      await access(runtimeToolsPath, constants.F_OK)
     } catch {
       return []
     }
 
-    return await listToolScriptsRecursive(rootPath)
+    return await listToolScriptsRecursive(runtimeToolsPath)
   }
 
 const defaultStartMcpCommandProbe = async (input: {

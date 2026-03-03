@@ -1,3 +1,5 @@
+import http from "node:http"
+import https from "node:https"
 import { readFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -10,6 +12,9 @@ type DoctorExternalApiContext = {
   baseUrl: string
   token: string
 }
+
+const RETRY_ATTEMPTS = 3
+const RETRY_DELAY_MS = 150
 
 const taskMutationResultSchema = z.object({
   id: z.string().trim().min(1),
@@ -176,14 +181,87 @@ const requestJson = async <T>(input: {
   body?: unknown
   notFoundAsNull?: boolean
 }): Promise<T | null> => {
-  const response = await input.fetchImpl(new URL(input.endpoint, input.context.baseUrl), {
-    method: input.method,
-    headers: {
-      authorization: `Bearer ${input.context.token}`,
-      ...(input.body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
-  })
+  const url = new URL(input.endpoint, input.context.baseUrl)
+  const payload = input.body === undefined ? undefined : JSON.stringify(input.body)
+
+  let response: Response | null = null
+  let lastError: Error | null = null
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      response = await input.fetchImpl(url, {
+        method: input.method,
+        headers: {
+          authorization: `Bearer ${input.context.token}`,
+          ...(payload === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(payload === undefined ? {} : { body: payload }),
+      })
+      lastError = null
+      break
+    } catch (error) {
+      lastError = error as Error
+
+      if (attempt < RETRY_ATTEMPTS) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, RETRY_DELAY_MS * attempt)
+        })
+      }
+    }
+  }
+
+  if (!response && input.fetchImpl === fetch) {
+    try {
+      const fallback = await new Promise<{ statusCode: number; body: string }>(
+        (resolve, reject) => {
+          const client = url.protocol === "https:" ? https : http
+          const request = client.request(
+            {
+              protocol: url.protocol,
+              hostname: url.hostname,
+              port: url.port,
+              path: `${url.pathname}${url.search}`,
+              method: input.method,
+              headers: {
+                authorization: `Bearer ${input.context.token}`,
+                ...(payload === undefined ? {} : { "content-type": "application/json" }),
+              },
+            },
+            (nodeResponse) => {
+              let body = ""
+              nodeResponse.setEncoding("utf8")
+              nodeResponse.on("data", (chunk) => {
+                body += chunk
+              })
+              nodeResponse.on("end", () => {
+                resolve({ statusCode: nodeResponse.statusCode ?? 0, body })
+              })
+            }
+          )
+
+          request.on("error", (error) => {
+            reject(error)
+          })
+
+          if (payload !== undefined) {
+            request.write(payload)
+          }
+
+          request.end()
+        }
+      )
+
+      response = new Response(fallback.body, {
+        status: fallback.statusCode >= 100 ? fallback.statusCode : 500,
+      })
+    } catch (error) {
+      lastError = error as Error
+    }
+  }
+
+  if (!response) {
+    throw new Error(lastError?.message ?? `External API request failed for ${input.endpoint}`)
+  }
 
   if (input.notFoundAsNull && response.status === 404) {
     return null
