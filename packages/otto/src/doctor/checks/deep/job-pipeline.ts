@@ -32,6 +32,8 @@ type WaitForRunCompletionResult = {
 const POLL_INTERVAL_MS = 500
 const MIN_POLL_TIMEOUT_MS = 30_000
 const TICK_BUFFER_MS = 15_000
+const MIN_CHECK_TIMEOUT_MS = 40_000
+const CHECK_TIMEOUT_BUFFER_MS = 15_000
 
 const defaultProbeDefinition: DoctorProbeDefinition = {
   id: "probe.job-pipeline.mutating",
@@ -124,6 +126,7 @@ export const createDeepJobPipelineCheck = (
   const environment = dependencies.environment ?? process.env
   const pollIntervalMs = dependencies.pollIntervalMs ?? POLL_INTERVAL_MS
   const pollTimeoutMs = resolvePollTimeoutMs(environment, dependencies.pollTimeoutMs)
+  const checkTimeoutMs = Math.max(MIN_CHECK_TIMEOUT_MS, pollTimeoutMs + CHECK_TIMEOUT_BUFFER_MS)
   const probeDefinition = dependencies.probeDefinition ?? defaultProbeDefinition
 
   return {
@@ -131,7 +134,7 @@ export const createDeepJobPipelineCheck = (
     phase: "deep.runtime",
     tier: "deep",
     lockKey: probeDefinition.lockKey,
-    timeoutMs: 40_000,
+    timeoutMs: checkTimeoutMs,
     run: async (): Promise<DoctorCheckOutput> => {
       const evidence: DoctorCheckOutput["evidence"] = []
       const gateDecision = evaluateDoctorProbeGate(probeDefinition)

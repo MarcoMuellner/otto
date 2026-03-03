@@ -238,4 +238,16 @@ describe("deep job pipeline check", () => {
     expect(result.evidence.some((entry) => entry.code === "DEEP_JOB_PROBE_RUN_TIMEOUT")).toBe(true)
     expect(result.evidence.some((entry) => entry.message.includes("after 75000ms"))).toBe(true)
   })
+
+  it("sets check timeout above derived poll timeout budget", async () => {
+    // Arrange
+    const check = createDeepJobPipelineCheck({
+      environment: {
+        OTTO_SCHEDULER_TICK_MS: "60000",
+      },
+    })
+
+    // Assert
+    expect(check.timeoutMs).toBe(90_000)
+  })
 })

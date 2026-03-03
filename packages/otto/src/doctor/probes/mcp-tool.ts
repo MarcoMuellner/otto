@@ -230,6 +230,23 @@ const extractJsonObject = (value: string): string | null => {
   return value.slice(start, end + 1)
 }
 
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null
+  }
+
+  return value as Record<string, unknown>
+}
+
+const asString = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 const fetchJson = async (input: {
   url: string
   method: "GET" | "POST" | "DELETE"
@@ -515,11 +532,9 @@ const defaultRunToolSessionProbe =
           title: `doctor probe ${input.integrationId}/${input.toolName}`,
         },
       })
-      sessionId =
-        typeof createdPayload === "object" && createdPayload !== null
-          ? (((createdPayload as { data?: { id?: unknown } }).data?.id as string | undefined) ??
-            null)
-          : null
+      const createdRecord = asRecord(createdPayload)
+      const createdDataRecord = createdRecord ? asRecord(createdRecord.data) : null
+      sessionId = asString(createdRecord?.id) ?? asString(createdDataRecord?.id)
       if (!sessionId) {
         return {
           ok: false,
@@ -540,10 +555,9 @@ const defaultRunToolSessionProbe =
         method: "GET",
         headers,
       })
-      const configuredModel =
-        typeof configPayload === "object" && configPayload !== null
-          ? ((configPayload as { data?: { model?: unknown } }).data?.model as string | undefined)
-          : undefined
+      const configRecord = asRecord(configPayload)
+      const configDataRecord = configRecord ? asRecord(configRecord.data) : null
+      const configuredModel = asString(configRecord?.model) ?? asString(configDataRecord?.model)
       if (!configuredModel) {
         return {
           ok: false,
@@ -581,10 +595,8 @@ const defaultRunToolSessionProbe =
       })
 
       const chatPayload = await Promise.race([chatPromise, timedChatPromise])
-      const responseData =
-        typeof chatPayload === "object" && chatPayload !== null
-          ? ((chatPayload as { data?: unknown }).data ?? null)
-          : null
+      const chatRecord = asRecord(chatPayload)
+      const responseData = chatRecord && "data" in chatRecord ? chatRecord.data : chatPayload
       const responseText = extractTextParts(responseData)
       const jsonSlice = extractJsonObject(responseText)
       if (!jsonSlice) {
