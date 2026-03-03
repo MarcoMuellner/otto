@@ -3,11 +3,11 @@ import { constants } from "node:fs"
 import { access, readFile, readdir } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 
 import { parseJsonc } from "otto-extension-sdk"
 import { z } from "zod"
 
+import { resolveOttoConfigPath } from "../../config/otto-config.js"
 import { createExtensionStateRepository } from "../../extensions/state.js"
 import type { DoctorLiveProbeDefinition } from "./executor.js"
 
@@ -37,11 +37,36 @@ type DeepMcpToolProbeDependencies = {
   }) => Promise<
     { ok: true; durationMs: number } | { ok: false; reason: string; durationMs: number }
   >
-  loadToolModuleProbe?: (filePath: string) => Promise<{ ok: true } | { ok: false; reason: string }>
+  runToolSessionProbe?: (input: {
+    integrationId: string
+    extensionVersion: string
+    toolName: string
+    toolPath: string
+  }) => Promise<
+    | {
+        ok: true
+        statusCode: "OK" | "TOOL_CALL_FAILED" | "TOOL_VALIDATION_FAILED"
+        durationMs: number
+        details?: Record<string, unknown>
+      }
+    | {
+        ok: false
+        statusCode:
+          | "SESSION_CREATE_FAILED"
+          | "SESSION_CHAT_FAILED"
+          | "SESSION_PROTOCOL_FAILED"
+          | "SESSION_DELETE_FAILED"
+        reason: string
+        durationMs: number
+        details?: Record<string, unknown>
+      }
+  >
 }
 
 const toolFilePattern = /\.(ts|js|mjs|cjs)$/
 const MCP_STARTUP_SHUTDOWN_GRACE_MS = 500
+const TOOL_SESSION_TIMEOUT_MS = 12_000
+const DEFAULT_OPENCODE_BASE_URL = "http://127.0.0.1:4096"
 
 const mcpServerConfigSchema = z
   .object({
@@ -74,6 +99,13 @@ const deepProbeManifestSchema = z.object({
 
 type DeepProbeManifest = z.infer<typeof deepProbeManifestSchema>
 
+const toolProbeStatusSchema = z.object({
+  doctorProbe: z.literal("tool-live"),
+  tool: z.string().trim().min(1),
+  statusCode: z.enum(["OK", "TOOL_CALL_FAILED", "TOOL_VALIDATION_FAILED"]),
+  details: z.string().trim().optional(),
+})
+
 const resolveOttoHome = (environment: NodeJS.ProcessEnv, explicitOttoHome?: string): string => {
   if (explicitOttoHome && explicitOttoHome.trim().length > 0) {
     return explicitOttoHome
@@ -92,6 +124,145 @@ const resolveStoreVersionPath = (
 
 const resolveRuntimeExtensionToolsPath = (ottoHome: string, extensionId: string): string => {
   return path.join(ottoHome, ".opencode", "tools", "extensions", extensionId)
+}
+
+const resolveOpencodeBaseUrl = async (environment: NodeJS.ProcessEnv): Promise<string> => {
+  const fromEnv = environment.OPENCODE_BASE_URL?.trim()
+  if (fromEnv) {
+    return fromEnv
+  }
+
+  const homeDirectory = environment.HOME?.trim() || os.homedir()
+  const configPath = resolveOttoConfigPath(homeDirectory)
+
+  let source: string
+  try {
+    source = await readFile(configPath, "utf8")
+  } catch (error) {
+    const fileError = error as NodeJS.ErrnoException
+    if (fileError.code === "ENOENT") {
+      return DEFAULT_OPENCODE_BASE_URL
+    }
+
+    return DEFAULT_OPENCODE_BASE_URL
+  }
+
+  const parsed = parseJsonc(source)
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return DEFAULT_OPENCODE_BASE_URL
+  }
+
+  const portValue =
+    typeof (parsed as { opencode?: { port?: unknown } }).opencode?.port === "number"
+      ? (parsed as { opencode?: { port?: number } }).opencode?.port
+      : null
+
+  if (
+    typeof portValue !== "number" ||
+    !Number.isInteger(portValue) ||
+    portValue < 1 ||
+    portValue > 65535
+  ) {
+    return DEFAULT_OPENCODE_BASE_URL
+  }
+
+  return `http://127.0.0.1:${portValue}`
+}
+
+const parseModelSelection = (model: string): { providerId: string; modelId: string } => {
+  const slashIndex = model.indexOf("/")
+  if (slashIndex <= 0 || slashIndex === model.length - 1) {
+    throw new Error(`OpenCode model must be in provider/model format, received: ${model}`)
+  }
+
+  return {
+    providerId: model.slice(0, slashIndex),
+    modelId: model.slice(slashIndex + 1),
+  }
+}
+
+const toolProbePrompt = (toolName: string): string => {
+  return [
+    "Otto doctor live probe.",
+    `You must call the tool '${toolName}' exactly once using an empty argument object {}.`,
+    "Return plain JSON only (no markdown) with this exact schema:",
+    `{"doctorProbe":"tool-live","tool":"${toolName}","statusCode":"OK|TOOL_CALL_FAILED|TOOL_VALIDATION_FAILED","details":"short reason"}`,
+    "If the call succeeds, use statusCode=OK.",
+    "If the call fails due to business/runtime error, use statusCode=TOOL_CALL_FAILED.",
+    "If the call fails because required args are missing/invalid, use statusCode=TOOL_VALIDATION_FAILED.",
+  ].join("\n")
+}
+
+const extractTextParts = (payload: unknown): string => {
+  if (typeof payload !== "object" || payload === null) {
+    return ""
+  }
+
+  const parts = (payload as { parts?: unknown }).parts
+  if (!Array.isArray(parts)) {
+    return ""
+  }
+
+  return parts
+    .map((part) => {
+      if (typeof part !== "object" || part === null) {
+        return ""
+      }
+
+      const typed = part as { type?: unknown; text?: unknown }
+      if (typed.type !== "text" || typeof typed.text !== "string") {
+        return ""
+      }
+
+      return typed.text
+    })
+    .filter((value) => value.length > 0)
+    .join("\n")
+}
+
+const extractJsonObject = (value: string): string | null => {
+  const start = value.indexOf("{")
+  const end = value.lastIndexOf("}")
+  if (start < 0 || end < start) {
+    return null
+  }
+
+  return value.slice(start, end + 1)
+}
+
+const fetchJson = async (input: {
+  url: string
+  method: "GET" | "POST" | "DELETE"
+  headers: Record<string, string>
+  body?: Record<string, unknown>
+}): Promise<unknown> => {
+  const response = await fetch(input.url, {
+    method: input.method,
+    headers: {
+      ...input.headers,
+      ...(input.body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
+  })
+
+  const text = await response.text()
+  if (!response.ok) {
+    throw new Error(
+      `OpenCode endpoint ${input.method} ${input.url} failed (${response.status}): ${
+        text || "no response body"
+      }`
+    )
+  }
+
+  if (!text.trim()) {
+    return null
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error(`OpenCode endpoint ${input.method} ${input.url} returned invalid JSON`)
+  }
 }
 
 const resolvePathWithinRoot = (rootPath: string, declaredPath: string, field: string): string => {
@@ -297,29 +468,218 @@ const defaultStartMcpCommandProbe = async (input: {
   })
 }
 
-const defaultLoadToolModuleProbe = async (
-  filePath: string
-): Promise<{ ok: true } | { ok: false; reason: string }> => {
-  try {
-    const loaded = await import(pathToFileURL(filePath).href)
-    const hasDefault = "default" in loaded
+const defaultRunToolSessionProbe =
+  (environment: NodeJS.ProcessEnv) =>
+  async (input: {
+    integrationId: string
+    extensionVersion: string
+    toolName: string
+    toolPath: string
+  }): Promise<
+    | {
+        ok: true
+        statusCode: "OK" | "TOOL_CALL_FAILED" | "TOOL_VALIDATION_FAILED"
+        durationMs: number
+        details?: Record<string, unknown>
+      }
+    | {
+        ok: false
+        statusCode:
+          | "SESSION_CREATE_FAILED"
+          | "SESSION_CHAT_FAILED"
+          | "SESSION_PROTOCOL_FAILED"
+          | "SESSION_DELETE_FAILED"
+        reason: string
+        durationMs: number
+        details?: Record<string, unknown>
+      }
+  > => {
+    const startedAt = Date.now()
+    const baseUrl = await resolveOpencodeBaseUrl(environment)
 
-    if (!hasDefault) {
+    const authToken = environment.OPENCODE_AUTH_TOKEN?.trim()
+    const headers: Record<string, string> = authToken
+      ? {
+          authorization: `Bearer ${authToken}`,
+        }
+      : {}
+
+    let sessionId: string | null = null
+
+    try {
+      const createdPayload = await fetchJson({
+        url: `${baseUrl}/session`,
+        method: "POST",
+        headers,
+        body: {
+          title: `doctor probe ${input.integrationId}/${input.toolName}`,
+        },
+      })
+      sessionId =
+        typeof createdPayload === "object" && createdPayload !== null
+          ? (((createdPayload as { data?: { id?: unknown } }).data?.id as string | undefined) ??
+            null)
+          : null
+      if (!sessionId) {
+        return {
+          ok: false,
+          statusCode: "SESSION_CREATE_FAILED",
+          reason: "OpenCode session creation did not return an id",
+          durationMs: Math.max(0, Date.now() - startedAt),
+          details: {
+            integrationId: input.integrationId,
+            extensionVersion: input.extensionVersion,
+            toolName: input.toolName,
+            toolPath: input.toolPath,
+          },
+        }
+      }
+
+      const configPayload = await fetchJson({
+        url: `${baseUrl}/config`,
+        method: "GET",
+        headers,
+      })
+      const configuredModel =
+        typeof configPayload === "object" && configPayload !== null
+          ? ((configPayload as { data?: { model?: unknown } }).data?.model as string | undefined)
+          : undefined
+      if (!configuredModel) {
+        return {
+          ok: false,
+          statusCode: "SESSION_CHAT_FAILED",
+          reason: "OpenCode config is missing a default model",
+          durationMs: Math.max(0, Date.now() - startedAt),
+        }
+      }
+
+      const model = parseModelSelection(configuredModel)
+
+      const chatPromise = fetchJson({
+        url: `${baseUrl}/session/${encodeURIComponent(sessionId)}/chat`,
+        method: "POST",
+        headers,
+        body: {
+          providerID: model.providerId,
+          modelID: model.modelId,
+          parts: [
+            {
+              type: "text",
+              text: toolProbePrompt(input.toolName),
+            },
+          ],
+          tools: {
+            [input.toolName]: true,
+          },
+        },
+      })
+
+      const timedChatPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Tool session probe timed out after ${TOOL_SESSION_TIMEOUT_MS}ms`))
+        }, TOOL_SESSION_TIMEOUT_MS)
+      })
+
+      const chatPayload = await Promise.race([chatPromise, timedChatPromise])
+      const responseData =
+        typeof chatPayload === "object" && chatPayload !== null
+          ? ((chatPayload as { data?: unknown }).data ?? null)
+          : null
+      const responseText = extractTextParts(responseData)
+      const jsonSlice = extractJsonObject(responseText)
+      if (!jsonSlice) {
+        return {
+          ok: false,
+          statusCode: "SESSION_PROTOCOL_FAILED",
+          reason: "Tool session probe did not return JSON result",
+          durationMs: Math.max(0, Date.now() - startedAt),
+          details: {
+            integrationId: input.integrationId,
+            extensionVersion: input.extensionVersion,
+            toolName: input.toolName,
+            toolPath: input.toolPath,
+            responseText,
+          },
+        }
+      }
+
+      const parsedJson = JSON.parse(jsonSlice)
+      const parsed = toolProbeStatusSchema.safeParse(parsedJson)
+      if (!parsed.success) {
+        return {
+          ok: false,
+          statusCode: "SESSION_PROTOCOL_FAILED",
+          reason: "Tool session probe returned invalid status payload",
+          durationMs: Math.max(0, Date.now() - startedAt),
+          details: {
+            integrationId: input.integrationId,
+            extensionVersion: input.extensionVersion,
+            toolName: input.toolName,
+            toolPath: input.toolPath,
+            responseJson: parsedJson,
+          },
+        }
+      }
+
+      if (parsed.data.tool !== input.toolName) {
+        return {
+          ok: false,
+          statusCode: "SESSION_PROTOCOL_FAILED",
+          reason: `Tool session probe returned mismatched tool '${parsed.data.tool}' (expected '${input.toolName}')`,
+          durationMs: Math.max(0, Date.now() - startedAt),
+          details: {
+            integrationId: input.integrationId,
+            extensionVersion: input.extensionVersion,
+            toolName: input.toolName,
+            toolPath: input.toolPath,
+            responseJson: parsedJson,
+          },
+        }
+      }
+
+      return {
+        ok: true,
+        statusCode: parsed.data.statusCode,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        details: {
+          integrationId: input.integrationId,
+          extensionVersion: input.extensionVersion,
+          toolName: input.toolName,
+          toolPath: input.toolPath,
+          responseDetails: parsed.data.details ?? null,
+        },
+      }
+    } catch (error) {
+      const err = error as Error
       return {
         ok: false,
-        reason: "Tool module has no default export",
+        statusCode: "SESSION_CHAT_FAILED",
+        reason: err.message,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        details: {
+          integrationId: input.integrationId,
+          extensionVersion: input.extensionVersion,
+          toolName: input.toolName,
+          toolPath: input.toolPath,
+        },
+      }
+    } finally {
+      if (sessionId) {
+        try {
+          await fetch(`${baseUrl}/session/${encodeURIComponent(sessionId)}/abort`, {
+            method: "POST",
+            headers,
+          })
+          await fetch(`${baseUrl}/session/${encodeURIComponent(sessionId)}`, {
+            method: "DELETE",
+            headers,
+          })
+        } catch {
+          // Best-effort oneshot cleanup only.
+        }
       }
     }
-
-    return { ok: true }
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : "Unknown tool module import error"
-    return {
-      ok: false,
-      reason,
-    }
   }
-}
 
 const toProbeSafeId = (value: string): string => {
   return value
@@ -345,7 +705,8 @@ export const createMcpToolLiveProbes = async (
   const listToolScriptPaths =
     dependencies.listToolScriptPaths ?? defaultListToolScriptPaths(ottoHome)
   const startMcpCommandProbe = dependencies.startMcpCommandProbe ?? defaultStartMcpCommandProbe
-  const loadToolModuleProbe = dependencies.loadToolModuleProbe ?? defaultLoadToolModuleProbe
+  const runToolSessionProbe =
+    dependencies.runToolSessionProbe ?? defaultRunToolSessionProbe(environment)
 
   const enabled = await listEnabledExtensions()
   const probes: DoctorLiveProbeDefinition[] = []
@@ -480,27 +841,58 @@ export const createMcpToolLiveProbes = async (
       for (const toolPath of toolPaths) {
         const probeName = toProbeSafeId(path.basename(toolPath, path.extname(toolPath)))
         probes.push({
-          id: `probe.tool.${toProbeSafeId(manifest.id)}.${probeName}.module-load`,
+          id: `probe.tool.${toProbeSafeId(manifest.id)}.${probeName}.oneshot-session`,
           integrationId: manifest.id,
           mutating: false,
           cleanupRequired: false,
           cleanupGuaranteed: false,
           lockKey,
           execute: async () => {
-            const loaded = await loadToolModuleProbe(toolPath)
-            if (!loaded.ok) {
+            const sessionProbe = await runToolSessionProbe({
+              integrationId: manifest.id,
+              extensionVersion: manifest.version,
+              toolName: path.basename(toolPath, path.extname(toolPath)),
+              toolPath,
+            })
+
+            if (!sessionProbe.ok) {
               return {
                 severity: "error",
-                summary: `Tool module '${path.basename(toolPath)}' failed live load probe`,
+                summary: `Tool '${path.basename(toolPath)}' failed one-shot OpenCode session probe`,
                 evidence: [
                   {
-                    code: "DEEP_TOOL_MODULE_LOAD_FAILED",
-                    message: `Tool module '${path.basename(toolPath)}' failed import for '${manifest.id}'`,
+                    code: "DEEP_TOOL_SESSION_PROBE_FAILED",
+                    message: `Tool '${path.basename(toolPath)}' failed OpenCode session probe for '${manifest.id}'`,
                     details: {
                       extensionId: manifest.id,
                       extensionVersion: manifest.version,
                       toolFile: toolPath,
-                      reason: loaded.reason,
+                      statusCode: sessionProbe.statusCode,
+                      reason: sessionProbe.reason,
+                      durationMs: sessionProbe.durationMs,
+                      ...(sessionProbe.details ? { probeDetails: sessionProbe.details } : {}),
+                    },
+                  },
+                ],
+              }
+            }
+
+            if (sessionProbe.statusCode !== "OK") {
+              const isValidationIssue = sessionProbe.statusCode === "TOOL_VALIDATION_FAILED"
+              return {
+                severity: isValidationIssue ? "warning" : "error",
+                summary: `Tool '${path.basename(toolPath)}' returned ${sessionProbe.statusCode} in one-shot session probe`,
+                evidence: [
+                  {
+                    code: "DEEP_TOOL_SESSION_STATUS_NON_OK",
+                    message: `Tool '${path.basename(toolPath)}' reported ${sessionProbe.statusCode}`,
+                    details: {
+                      extensionId: manifest.id,
+                      extensionVersion: manifest.version,
+                      toolFile: toolPath,
+                      statusCode: sessionProbe.statusCode,
+                      durationMs: sessionProbe.durationMs,
+                      ...(sessionProbe.details ? { probeDetails: sessionProbe.details } : {}),
                     },
                   },
                 ],
@@ -509,15 +901,18 @@ export const createMcpToolLiveProbes = async (
 
             return {
               severity: "ok",
-              summary: `Tool module '${path.basename(toolPath)}' live load probe succeeded`,
+              summary: `Tool '${path.basename(toolPath)}' one-shot OpenCode session probe succeeded`,
               evidence: [
                 {
-                  code: "DEEP_TOOL_MODULE_LOAD_OK",
-                  message: `Tool module '${path.basename(toolPath)}' imported successfully`,
+                  code: "DEEP_TOOL_SESSION_PROBE_OK",
+                  message: `Tool '${path.basename(toolPath)}' executed through OpenCode one-shot session`,
                   details: {
                     extensionId: manifest.id,
                     extensionVersion: manifest.version,
                     toolFile: toolPath,
+                    statusCode: sessionProbe.statusCode,
+                    durationMs: sessionProbe.durationMs,
+                    ...(sessionProbe.details ? { probeDetails: sessionProbe.details } : {}),
                   },
                 },
               ],

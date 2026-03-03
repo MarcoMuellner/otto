@@ -41,8 +41,10 @@ describe("deep MCP/tool live check", () => {
         ok: true,
         durationMs: 10,
       }),
-      loadToolModuleProbe: async () => ({
+      runToolSessionProbe: async () => ({
         ok: true,
+        statusCode: "OK",
+        durationMs: 10,
       }),
     })
 
@@ -51,7 +53,7 @@ describe("deep MCP/tool live check", () => {
 
     // Assert
     expect(ids).toContain("probe.mcp.anylist.anylist.startup")
-    expect(ids).toContain("probe.tool.anylist.anylist.module-load")
+    expect(ids).toContain("probe.tool.anylist.anylist.oneshot-session")
   })
 
   it("skips probes blocked by cleanup safety gate", async () => {
