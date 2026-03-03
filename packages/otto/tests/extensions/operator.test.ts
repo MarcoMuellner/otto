@@ -249,5 +249,8 @@ describe("extension operator service", () => {
     await expect(
       readFile(path.join(ottoHome, ".opencode", "package.json"), "utf8")
     ).resolves.toContain('"anylist": "^0.8.5"')
+    await expect(
+      readFile(path.join(ottoHome, ".opencode", "package.json"), "utf8")
+    ).resolves.toContain('"better-sqlite3": "^11.8.1"')
   })
 })

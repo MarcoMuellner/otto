@@ -2,7 +2,7 @@ import { access } from "node:fs/promises"
 import path from "node:path"
 import { homedir } from "node:os"
 import { constants } from "node:fs"
-import { DatabaseSync } from "node:sqlite"
+import Database from "better-sqlite3"
 
 const DEFAULT_INTERACTIVE_CONTEXT_LIMIT = 20
 const MIN_INTERACTIVE_CONTEXT_LIMIT = 5
@@ -218,7 +218,7 @@ const readInteractiveContextEvents = (
   databasePath: string,
   sourceSessionId: string
 ): ContextEventRow[] => {
-  const db = new DatabaseSync(databasePath, { readOnly: true })
+  const db = new Database(databasePath, { readonly: true })
 
   try {
     const windowSizeRow = db

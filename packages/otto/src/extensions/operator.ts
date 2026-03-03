@@ -17,6 +17,11 @@ import {
   resolveExtensionPersistencePaths,
 } from "./state.js"
 
+const INTERNAL_OPENCODE_RUNTIME_DEPENDENCIES: Record<string, string> = {
+  "@opencode-ai/plugin": "^1.2.6",
+  "better-sqlite3": "^11.8.1",
+}
+
 const resolveLatestVersion = (versions: string[]): string | null => {
   if (versions.length === 0) {
     return null
@@ -328,9 +333,9 @@ export const syncOpencodeToolsPackageJson = async (ottoHome: string): Promise<vo
   const packageJsonPath = path.join(packageRootPath, "package.json")
   const result = await buildOpencodeToolsPackageJson(ottoHome, repository)
 
-  if (!result.hasDependencies) {
-    await rm(packageJsonPath, { force: true })
-    return
+  const dependencies = {
+    ...INTERNAL_OPENCODE_RUNTIME_DEPENDENCIES,
+    ...result.dependencies,
   }
 
   await mkdir(packageRootPath, { recursive: true })
@@ -341,7 +346,7 @@ export const syncOpencodeToolsPackageJson = async (ottoHome: string): Promise<vo
         name: "otto-opencode-tools-runtime",
         private: true,
         type: "module",
-        dependencies: result.dependencies,
+        dependencies,
       },
       null,
       2

@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@opencode-ai/plugin": "^1.2.6"
+    "@opencode-ai/plugin": "^1.2.6",
+    "better-sqlite3": "^11.8.1"
   }
 }
