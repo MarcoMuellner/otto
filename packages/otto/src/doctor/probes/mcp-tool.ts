@@ -570,7 +570,7 @@ const defaultRunToolSessionProbe =
       const model = parseModelSelection(configuredModel)
 
       const chatPromise = fetchJson({
-        url: `${baseUrl}/session/${encodeURIComponent(sessionId)}/chat`,
+        url: `${baseUrl}/session/${encodeURIComponent(sessionId)}/message`,
         method: "POST",
         headers,
         body: {
