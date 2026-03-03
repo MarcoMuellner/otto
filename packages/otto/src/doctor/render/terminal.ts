@@ -11,6 +11,35 @@ type RenderDoctorTerminalOutputInput = {
   incidentWriteError?: string | null
 }
 
+const RESET = "\u001B[0m"
+const BOLD = "\u001B[1m"
+const DIM = "\u001B[2m"
+const FG_GREEN = "\u001B[32m"
+const FG_YELLOW = "\u001B[33m"
+const FG_RED = "\u001B[31m"
+const FG_CYAN = "\u001B[36m"
+const FG_WHITE = "\u001B[37m"
+
+const isColorEnabled = (): boolean => {
+  return process.stdout.isTTY === true && process.env.NO_COLOR !== "1"
+}
+
+const paint = (value: string, color: string, options?: { bold?: boolean; dim?: boolean }): string => {
+  if (!isColorEnabled()) {
+    return value
+  }
+
+  const prefixes = [color]
+  if (options?.bold) {
+    prefixes.push(BOLD)
+  }
+  if (options?.dim) {
+    prefixes.push(DIM)
+  }
+
+  return `${prefixes.join("")}${value}${RESET}`
+}
+
 const verdictLabel: Record<DoctorVerdict, string> = {
   green: "GREEN",
   yellow: "YELLOW",
@@ -21,6 +50,18 @@ const severityLabel: Record<DoctorSeverity, string> = {
   ok: "OK",
   warning: "WARN",
   error: "ERR",
+}
+
+const verdictColor: Record<DoctorVerdict, string> = {
+  green: FG_GREEN,
+  yellow: FG_YELLOW,
+  red: FG_RED,
+}
+
+const severityColor: Record<DoctorSeverity, string> = {
+  ok: FG_GREEN,
+  warning: FG_YELLOW,
+  error: FG_RED,
 }
 
 const isSkippedCheck = (check: DoctorCheckResult): boolean => {
@@ -95,7 +136,10 @@ const formatProblemCheck = (check: DoctorCheckResult): string => {
   const firstEvidence = check.evidence[0]
   const codePart = firstEvidence ? ` (${firstEvidence.code})` : ""
   const skipped = isSkippedCheck(check) ? " [skipped]" : ""
-  return `- ${severityLabel[check.severity]} ${check.id}${skipped}${codePart}: ${check.summary}`
+  const badge = paint(`[${severityLabel[check.severity]}]`, severityColor[check.severity], {
+    bold: true,
+  })
+  return `- ${badge} ${check.id}${skipped}${codePart}: ${check.summary}`
 }
 
 /**
@@ -105,8 +149,14 @@ const formatProblemCheck = (check: DoctorCheckResult): string => {
 export const renderDoctorTerminalOutput = (input: RenderDoctorTerminalOutputInput): string => {
   const { result } = input
   const lines: string[] = []
+  const divider = paint("------------------------------------------------------------", FG_WHITE, {
+    dim: true,
+  })
+  const verdict = paint(verdictLabel[result.verdict], verdictColor[result.verdict], { bold: true })
 
-  lines.push(`Doctor verdict: ${verdictLabel[result.verdict]}`)
+  lines.push(paint("OTTO DOCTOR", FG_CYAN, { bold: true }))
+  lines.push(divider)
+  lines.push(`Doctor verdict: ${verdict}`)
   lines.push(
     `Mode: ${result.mode} | Duration: ${result.durationMs}ms | Checks: ${result.checks.length} | Internal failure: ${result.internalFailure ? "yes" : "no"}`
   )
@@ -117,6 +167,7 @@ export const renderDoctorTerminalOutput = (input: RenderDoctorTerminalOutputInpu
   )
 
   if (problemChecks.length > 0) {
+    lines.push("")
     lines.push("Problems:")
     for (const check of problemChecks) {
       lines.push(formatProblemCheck(check))
@@ -125,6 +176,7 @@ export const renderDoctorTerminalOutput = (input: RenderDoctorTerminalOutputInpu
 
   const hints = collectRemediationHints(result)
   if (hints.length > 0) {
+    lines.push("")
     lines.push("Remediation hints:")
     for (const hint of hints.slice(0, 4)) {
       lines.push(`- ${hint}`)
@@ -132,12 +184,16 @@ export const renderDoctorTerminalOutput = (input: RenderDoctorTerminalOutputInpu
   }
 
   if (input.incidentPath) {
+    lines.push("")
     lines.push(`Incident report: ${input.incidentPath}`)
   }
 
   if (input.incidentWriteError) {
+    lines.push("")
     lines.push(`Incident report error: ${input.incidentWriteError}`)
   }
+
+  lines.push(divider)
 
   return lines.join("\n")
 }

@@ -19,9 +19,10 @@ type CreateLoggerInput = {
 export const createLogger = (input: CreateLoggerInput = {}): Logger => {
   const env = input.env ?? resolveRuntimeEnv()
   const prettyLogs = input.prettyLogs ?? process.env.OTTO_PRETTY_LOGS === "1"
+  const envLogLevel = process.env.OTTO_LOG_LEVEL?.trim()
   const options = buildLoggerOptions({
     env,
-    logLevel: input.logLevel,
+    logLevel: input.logLevel ?? (envLogLevel && envLogLevel.length > 0 ? envLogLevel : undefined),
     serviceName: input.serviceName,
     prettyLogs,
   })

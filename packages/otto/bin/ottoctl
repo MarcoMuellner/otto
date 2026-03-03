@@ -1723,11 +1723,11 @@ cmd_doctor() {
   fi
 
   if [[ "${mode_arg}" == "--deep" ]]; then
-    NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/index.mjs" doctor --deep
+    NODE_ENV=production NODE_NO_WARNINGS=1 OTTO_HOME="${OTTO_HOME}" OTTO_LOG_LEVEL=error node "${CURRENT_LINK}/dist/index.mjs" doctor --deep
     return
   fi
 
-  NODE_ENV=production OTTO_HOME="${OTTO_HOME}" node "${CURRENT_LINK}/dist/index.mjs" doctor
+  NODE_ENV=production NODE_NO_WARNINGS=1 OTTO_HOME="${OTTO_HOME}" OTTO_LOG_LEVEL=error node "${CURRENT_LINK}/dist/index.mjs" doctor
 }
 
 cmd_help() {
