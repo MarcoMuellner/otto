@@ -248,7 +248,14 @@ describe("watchdog", () => {
       resultJson: null,
       createdAt: 1_100,
     })
-    jobsRepository.markRunFinished("run-a-1", "failed", 1_120, "validation_error", zodIssuePayload, null)
+    jobsRepository.markRunFinished(
+      "run-a-1",
+      "failed",
+      1_120,
+      "validation_error",
+      zodIssuePayload,
+      null
+    )
 
     jobsRepository.insertRun({
       id: "run-a-2",
@@ -262,7 +269,14 @@ describe("watchdog", () => {
       resultJson: null,
       createdAt: 2_100,
     })
-    jobsRepository.markRunFinished("run-a-2", "failed", 2_120, "validation_error", zodIssuePayload, null)
+    jobsRepository.markRunFinished(
+      "run-a-2",
+      "failed",
+      2_120,
+      "validation_error",
+      zodIssuePayload,
+      null
+    )
 
     jobsRepository.insertRun({
       id: "run-b-1",
@@ -303,7 +317,9 @@ describe("watchdog", () => {
     const [queuedMessage] = outboundMessagesRepository.listDue(10_000)
 
     // Assert
-    expect(queuedMessage?.content).toContain("Watchdog alert: 3 failed task runs in last 120m (threshold 1).")
+    expect(queuedMessage?.content).toContain(
+      "Watchdog alert: 3 failed task runs in last 120m (threshold 1)."
+    )
     expect(queuedMessage?.content).toContain(
       "- 2x interactive_background_oneshot: validation failed (version, source, request)"
     )
