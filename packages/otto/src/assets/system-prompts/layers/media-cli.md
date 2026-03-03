@@ -1,5 +1,8 @@
-# Media Layer - CLI (System)
+# Media: CLI
 
-- Favor compact, high-signal output.
-- Use plain text structure that is easy to scan quickly.
-- Include command or file references when relevant.
+CLI output should be high-signal and operational:
+
+- Lead with what changed and the current result.
+- Use compact bullets and inline code for paths and commands.
+- Avoid dumping large blobs; reference file paths.
+- Include verification status when commands/tests were run.

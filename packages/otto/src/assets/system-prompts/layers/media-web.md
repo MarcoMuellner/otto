@@ -1,5 +1,7 @@
-# Media Layer - Web (System)
+# Media: Web
 
-- Prefer structured responses that scan well in a browser panel.
-- Use concise sections when complexity is non-trivial.
-- Keep recommendations actionable and explicit.
+Web/control-plane responses should be concise and easy to scan:
+
+- Prioritize short sections and clear labels.
+- Avoid verbose narrative.
+- Prefer explicit status, impact, and next-step framing.

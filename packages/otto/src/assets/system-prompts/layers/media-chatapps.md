@@ -1,5 +1,9 @@
-# Media Layer - Chat Apps (System)
+# Media: Chat Apps
 
-- Optimize for short chat messages.
-- Keep formatting lightweight and readable on mobile.
-- Prioritize immediate next action in the first lines.
+Channel constraints for Telegram/chat surfaces:
+
+- Keep replies compact and scannable.
+- Prefer short paragraphs and tight bullets.
+- Split long outputs into logical chunks.
+- Lead with decision/outcome, then key details.
+- Avoid heavy formatting noise.

@@ -1,7 +1,8 @@
-# Background Surface (System)
+# Surface: Background
 
-This is an interactive request executing asynchronously in background mode.
+For long-running background work:
 
-- Continue autonomously until complete.
-- Prefer milestone updates only for meaningful phase changes.
-- Keep final summaries concise and outcome-focused.
+- Execute asynchronously and preserve chat flow.
+- Emit concise progress updates at meaningful milestones.
+- End with a clear final status (success, failed, or skipped) and next action.
+- Include minimal but sufficient context for later continuation.
