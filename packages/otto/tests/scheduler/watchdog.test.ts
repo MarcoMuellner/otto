@@ -167,4 +167,151 @@ describe("watchdog", () => {
 
     db.close()
   })
+
+  it("summarizes noisy failure reasons into compact grouped alert lines", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+
+    jobsRepository.createTask({
+      id: "task-a",
+      type: "interactive_background_oneshot",
+      status: "paused",
+      scheduleType: "recurring",
+      profileId: null,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    jobsRepository.createTask({
+      id: "task-b",
+      type: "lueften_watch",
+      status: "paused",
+      scheduleType: "recurring",
+      profileId: null,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const zodIssuePayload = JSON.stringify([
+      {
+        code: "invalid_value",
+        values: [1],
+        path: ["version"],
+        message: "Invalid input",
+      },
+      {
+        expected: "object",
+        code: "invalid_type",
+        path: ["source"],
+        message: "Invalid input",
+      },
+      {
+        expected: "object",
+        code: "invalid_type",
+        path: ["request"],
+        message: "Invalid input",
+      },
+    ])
+
+    jobsRepository.insertRun({
+      id: "run-a-1",
+      jobId: "task-a",
+      scheduledFor: 1_000,
+      startedAt: 1_100,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 1_100,
+    })
+    jobsRepository.markRunFinished("run-a-1", "failed", 1_120, "validation_error", zodIssuePayload, null)
+
+    jobsRepository.insertRun({
+      id: "run-a-2",
+      jobId: "task-a",
+      scheduledFor: 2_000,
+      startedAt: 2_100,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 2_100,
+    })
+    jobsRepository.markRunFinished("run-a-2", "failed", 2_120, "validation_error", zodIssuePayload, null)
+
+    jobsRepository.insertRun({
+      id: "run-b-1",
+      jobId: "task-b",
+      scheduledFor: 3_000,
+      startedAt: 3_100,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 3_100,
+    })
+    jobsRepository.markRunFinished(
+      "run-b-1",
+      "failed",
+      3_120,
+      "execution_timeout",
+      "timeout while executing scheduled lueften run",
+      null
+    )
+
+    // Act
+    checkTaskFailures(
+      {
+        jobsRepository,
+        outboundMessagesRepository,
+        defaultChatId: 777,
+      },
+      {
+        lookbackMinutes: 120,
+        maxFailures: 20,
+        threshold: 1,
+        notify: true,
+      },
+      () => 5_000
+    )
+    const [queuedMessage] = outboundMessagesRepository.listDue(10_000)
+
+    // Assert
+    expect(queuedMessage?.content).toContain("Watchdog alert: 3 failed task runs in last 120m (threshold 1).")
+    expect(queuedMessage?.content).toContain(
+      "- 2x interactive_background_oneshot: validation failed (version, source, request)"
+    )
+    expect(queuedMessage?.content).toContain(
+      "- lueften_watch: timeout while executing scheduled lueften run"
+    )
+    expect(queuedMessage?.content).not.toContain('"expected":"object"')
+
+    db.close()
+  })
 })

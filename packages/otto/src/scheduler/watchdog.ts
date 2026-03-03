@@ -14,6 +14,8 @@ export const WATCHDOG_TASK_ID = "system-watchdog-failures"
 export const WATCHDOG_TASK_TYPE = "watchdog_failures"
 export const WATCHDOG_DEFAULT_CADENCE_MINUTES = 30
 const WATCHDOG_MESSAGE_MAX_ITEMS = 10
+const WATCHDOG_REASON_MAX_LENGTH = 180
+const WATCHDOG_JOB_TYPE_MAX_LENGTH = 110
 
 const ensureWatchdogTaskInputSchema = z.object({
   cadenceMinutes: z
@@ -149,15 +151,106 @@ const buildWatchdogMessage = (
   lookbackMinutes: number,
   threshold: number
 ): string => {
-  const lines = failures.slice(0, WATCHDOG_MESSAGE_MAX_ITEMS).map((failure) => {
-    const reason = failure.errorMessage ?? failure.errorCode ?? "unknown error"
-    return `- ${failure.jobType} (${failure.jobId}): ${reason}`
+  const groupedFailures = new Map<string, { count: number; jobType: string; reason: string }>()
+  for (const failure of failures) {
+    const reason = summarizeFailureReason(failure.errorMessage, failure.errorCode)
+    const key = `${failure.jobType}::${reason}`
+    const existing = groupedFailures.get(key)
+    if (existing) {
+      existing.count += 1
+      continue
+    }
+
+    groupedFailures.set(key, {
+      count: 1,
+      jobType: failure.jobType,
+      reason,
+    })
+  }
+
+  const sorted = [...groupedFailures.values()].sort((left, right) => right.count - left.count)
+  const visible = sorted.slice(0, WATCHDOG_MESSAGE_MAX_ITEMS)
+  const lines = visible.map((failureGroup) => {
+    const frequency = failureGroup.count > 1 ? `${failureGroup.count}x ` : ""
+    const jobType = shortenText(failureGroup.jobType, WATCHDOG_JOB_TYPE_MAX_LENGTH)
+    return `- ${frequency}${jobType}: ${failureGroup.reason}`
   })
+
+  const hiddenCount = sorted.length - visible.length
+  if (hiddenCount > 0) {
+    lines.push(`- +${hiddenCount} more failure pattern(s)`)
+  }
 
   return [
     `Watchdog alert: ${failures.length} failed task runs in last ${lookbackMinutes}m (threshold ${threshold}).`,
     ...lines,
   ].join("\n")
+}
+
+const summarizeFailureReason = (errorMessage: string | null, errorCode: string | null): string => {
+  const primaryReason = compactWhitespace(errorMessage ?? "")
+  if (primaryReason.length > 0) {
+    const issueSummary = summarizeStructuredValidationIssues(primaryReason)
+    return shortenText(issueSummary ?? primaryReason, WATCHDOG_REASON_MAX_LENGTH)
+  }
+
+  if (errorCode && errorCode.trim().length > 0) {
+    return shortenText(compactWhitespace(errorCode), WATCHDOG_REASON_MAX_LENGTH)
+  }
+
+  return "unknown error"
+}
+
+const summarizeStructuredValidationIssues = (rawReason: string): string | null => {
+  if (!rawReason.startsWith("[")) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(rawReason)
+    if (!Array.isArray(parsed)) {
+      return null
+    }
+
+    const fields = parsed
+      .map((issue) => {
+        if (typeof issue !== "object" || issue == null) {
+          return null
+        }
+
+        const pathValue = "path" in issue ? issue.path : undefined
+        if (!Array.isArray(pathValue) || pathValue.length === 0) {
+          return null
+        }
+
+        const normalizedPath = pathValue.filter((segment) => typeof segment === "string").join(".")
+        if (normalizedPath.length === 0) {
+          return null
+        }
+
+        return normalizedPath
+      })
+      .filter((field): field is string => field != null)
+
+    if (fields.length === 0) {
+      return null
+    }
+
+    const uniqueFields = [...new Set(fields)]
+    return `validation failed (${uniqueFields.join(", ")})`
+  } catch {
+    return null
+  }
+}
+
+const compactWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim()
+
+const shortenText = (value: string, maxLength: number): string => {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  return `${value.slice(0, maxLength - 3)}...`
 }
 
 const buildWatchdogDedupeKey = (
