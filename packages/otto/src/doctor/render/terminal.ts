@@ -24,7 +24,11 @@ const isColorEnabled = (): boolean => {
   return process.stdout.isTTY === true && process.env.NO_COLOR !== "1"
 }
 
-const paint = (value: string, color: string, options?: { bold?: boolean; dim?: boolean }): string => {
+const paint = (
+  value: string,
+  color: string,
+  options?: { bold?: boolean; dim?: boolean }
+): string => {
   if (!isColorEnabled()) {
     return value
   }
