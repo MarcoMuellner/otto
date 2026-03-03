@@ -239,6 +239,7 @@ describe("extension operator service", () => {
     await harness.publishExtensionVersion("calendar", "1.0.0", {
       toolDependencies: {
         anylist: "^0.8.5",
+        "@opencode-ai/plugin": "1.2.15",
       },
     })
 
@@ -252,5 +253,8 @@ describe("extension operator service", () => {
     await expect(
       readFile(path.join(ottoHome, ".opencode", "package.json"), "utf8")
     ).resolves.toContain('"better-sqlite3": "^11.8.1"')
+    await expect(
+      readFile(path.join(ottoHome, ".opencode", "package.json"), "utf8")
+    ).resolves.toContain('"@opencode-ai/plugin": "1.2.6"')
   })
 })

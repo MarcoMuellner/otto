@@ -29,7 +29,7 @@ type WaitForRunCompletionResult = {
 }
 
 const POLL_INTERVAL_MS = 500
-const POLL_TIMEOUT_MS = 15_000
+const POLL_TIMEOUT_MS = 30_000
 
 const defaultProbeDefinition: DoctorProbeDefinition = {
   id: "probe.job-pipeline.mutating",

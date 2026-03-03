@@ -116,6 +116,36 @@ describe("fast doctor checks", () => {
     })
   })
 
+  it("returns warning when a critical service is still starting", async () => {
+    // Arrange
+    const check = createFastSystemStatusCheck({
+      environment: testEnvironment,
+      fetchImpl: async () => {
+        return Response.json(
+          {
+            status: "degraded",
+            services: [
+              {
+                id: "scheduler",
+                label: "Scheduler",
+                status: "degraded",
+                message: "Scheduler is starting",
+              },
+            ],
+          },
+          { status: 200 }
+        )
+      },
+    })
+
+    // Act
+    const result = await check.run({ mode: "fast" })
+
+    // Assert
+    expect(result.severity).toBe("warning")
+    expect(result.summary).toContain("still starting")
+  })
+
   it("returns warning when only non-critical services are degraded", async () => {
     // Arrange
     const check = createFastSystemStatusCheck({

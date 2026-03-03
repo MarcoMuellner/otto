@@ -18,7 +18,7 @@ import {
 } from "./state.js"
 
 const INTERNAL_OPENCODE_RUNTIME_DEPENDENCIES: Record<string, string> = {
-  "@opencode-ai/plugin": "^1.2.6",
+  "@opencode-ai/plugin": "1.2.6",
   "better-sqlite3": "^11.8.1",
 }
 
@@ -334,8 +334,8 @@ export const syncOpencodeToolsPackageJson = async (ottoHome: string): Promise<vo
   const result = await buildOpencodeToolsPackageJson(ottoHome, repository)
 
   const dependencies = {
-    ...INTERNAL_OPENCODE_RUNTIME_DEPENDENCIES,
     ...result.dependencies,
+    ...INTERNAL_OPENCODE_RUNTIME_DEPENDENCIES,
   }
 
   await mkdir(packageRootPath, { recursive: true })

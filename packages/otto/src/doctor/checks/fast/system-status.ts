@@ -33,6 +33,17 @@ const systemStatusResponseSchema = z.object({
   ),
 })
 
+const isStartupDegraded = (service: {
+  status: "ok" | "degraded" | "disabled"
+  message: string
+}): boolean => {
+  if (service.status !== "degraded") {
+    return false
+  }
+
+  return service.message.toLowerCase().includes("starting")
+}
+
 const RETRY_ATTEMPTS = 3
 const RETRY_DELAY_MS = 150
 
@@ -242,7 +253,9 @@ export const createFastSystemStatusCheck = (
       }
 
       const nonOkServices = parsed.data.services.filter((service) => service.status !== "ok")
-      const criticalIssues = nonOkServices.filter((service) => criticalServiceIds.has(service.id))
+      const criticalIssues = nonOkServices.filter(
+        (service) => criticalServiceIds.has(service.id) && !isStartupDegraded(service)
+      )
 
       if (criticalIssues.length > 0) {
         return {
@@ -263,9 +276,12 @@ export const createFastSystemStatusCheck = (
       }
 
       if (nonOkServices.length > 0) {
+        const hasStartupTransitions = nonOkServices.some((service) => isStartupDegraded(service))
         return {
           severity: "warning",
-          summary: "Non-critical runtime services are degraded",
+          summary: hasStartupTransitions
+            ? "Runtime services are still starting"
+            : "Non-critical runtime services are degraded",
           evidence: nonOkServices.map((service) => ({
             code: "NON_CRITICAL_SERVICE_DEGRADED",
             message: `${service.label} is ${service.status}`,
