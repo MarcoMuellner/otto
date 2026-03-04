@@ -1819,4 +1819,131 @@ describe("buildInternalApiServer", () => {
 
     await app.close()
   })
+
+  it("returns watchdog prompt from user source when available", async () => {
+    // Arrange
+    const promptManagement = {
+      readPromptFile: vi.fn(async (input: { source: "system" | "user"; relativePath: string }) => {
+        if (input.source === "user") {
+          return { content: "# User watchdog\nUser editable content\n" }
+        }
+
+        return { content: "# System watchdog\nSystem content\n" }
+      }),
+      writePromptFile: vi.fn(async () => ({ updatedAt: Date.now() })),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      promptManagement,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/prompts/watchdog/get",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      source: "user",
+      path: "layers/surface-watchdog.md",
+      content: "# User watchdog\nUser editable content\n",
+    })
+    expect(promptManagement.readPromptFile).toHaveBeenCalledWith({
+      source: "user",
+      relativePath: "layers/surface-watchdog.md",
+    })
+
+    await app.close()
+  })
+
+  it("writes watchdog prompt to user-owned surface file", async () => {
+    // Arrange
+    const promptManagement = {
+      readPromptFile: vi.fn(async () => ({ content: "unused" })),
+      writePromptFile: vi.fn(async () => ({ updatedAt: 123_456 })),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      promptManagement,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/prompts/watchdog/set",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        content: "# Updated watchdog surface\nNew behavior",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      status: "updated",
+      source: "user",
+      path: "layers/surface-watchdog.md",
+      updatedAt: 123_456,
+    })
+    expect(promptManagement.writePromptFile).toHaveBeenCalledWith({
+      source: "user",
+      relativePath: "layers/surface-watchdog.md",
+      content: "# Updated watchdog surface\nNew behavior",
+    })
+
+    await app.close()
+  })
 })

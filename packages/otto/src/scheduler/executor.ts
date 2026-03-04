@@ -29,7 +29,13 @@ import {
   loadTaskProfile,
   loadTaskRuntimeBaseConfig,
 } from "./task-config.js"
-import { checkTaskFailures, WATCHDOG_TASK_TYPE, watchdogPayloadSchema } from "./watchdog.js"
+import {
+  buildWatchdogFallbackMessage,
+  enqueueWatchdogAlert,
+  evaluateTaskFailures,
+  WATCHDOG_TASK_TYPE,
+  watchdogPayloadSchema,
+} from "./watchdog.js"
 
 const taskExecutionResultSchema = z.object({
   status: z.enum(["success", "failed", "skipped"]),
@@ -48,6 +54,17 @@ const taskExecutionResultSchema = z.object({
 type TaskExecutionResult = z.infer<typeof taskExecutionResultSchema>
 type TaskExecutionParseOutcome = {
   result: TaskExecutionResult
+  rawOutput: string | null
+  parseErrorCode: string | null
+  parseErrorMessage: string | null
+}
+
+const watchdogAlertMessageSchema = z.object({
+  message: z.string().trim().min(1),
+})
+
+type WatchdogAlertMessageParseOutcome = {
+  message: string | null
   rawOutput: string | null
   parseErrorCode: string | null
   parseErrorMessage: string | null
@@ -189,6 +206,37 @@ type BackgroundLifecycleContext = {
   runId: string
   sourceSessionId: string | null
   sourceChatId: number | null
+}
+
+const buildWatchdogAlertInterpretationPrompt = (input: {
+  lookbackMinutes: number
+  threshold: number
+  failedCount: number
+  failures: Array<{
+    runId: string
+    jobId: string
+    jobType: string
+    startedAt: number
+    errorCode: string | null
+    errorMessage: string | null
+  }>
+}): string => {
+  return [
+    "You are generating a concise watchdog alert message for Telegram.",
+    "",
+    "Return ONLY valid JSON with this exact shape:",
+    '{"message":"<alert text>"}',
+    "",
+    "Rules for message:",
+    "- One short headline line with count/lookback/threshold.",
+    "- Then compact bullet lines grouping failure patterns by jobType + reason.",
+    "- Max 8 bullet lines.",
+    "- Keep it practical and non-alarmist.",
+    "- No markdown code fences.",
+    "",
+    "Failure window data:",
+    JSON.stringify(input),
+  ].join("\n")
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | null => {
@@ -452,6 +500,63 @@ const parseStructuredResult = (assistantText: string): TaskExecutionParseOutcome
   }
 }
 
+const parseWatchdogAlertMessage = (assistantText: string): WatchdogAlertMessageParseOutcome => {
+  const trimmed = assistantText.trim()
+  if (trimmed.length === 0) {
+    return {
+      message: null,
+      rawOutput: null,
+      parseErrorCode: "invalid_watchdog_alert_json",
+      parseErrorMessage: "Watchdog alert output returned empty output",
+    }
+  }
+
+  const validateParsedMessage = (parsed: unknown): WatchdogAlertMessageParseOutcome => {
+    const validated = watchdogAlertMessageSchema.safeParse(parsed)
+    if (!validated.success) {
+      return {
+        message: null,
+        rawOutput: trimmed,
+        parseErrorCode: "invalid_watchdog_alert_schema",
+        parseErrorMessage: validated.error.message,
+      }
+    }
+
+    return {
+      message: validated.data.message,
+      rawOutput: null,
+      parseErrorCode: null,
+      parseErrorMessage: null,
+    }
+  }
+
+  try {
+    return validateParsedMessage(JSON.parse(trimmed))
+  } catch {
+    const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)\s*```/i)
+
+    if (!fencedMatch?.[1]) {
+      return {
+        message: null,
+        rawOutput: trimmed,
+        parseErrorCode: "invalid_watchdog_alert_json",
+        parseErrorMessage: "Watchdog alert output must be valid JSON",
+      }
+    }
+
+    try {
+      return validateParsedMessage(JSON.parse(fencedMatch[1]))
+    } catch {
+      return {
+        message: null,
+        rawOutput: trimmed,
+        parseErrorCode: "invalid_watchdog_alert_json",
+        parseErrorMessage: "Watchdog alert output must be valid JSON",
+      }
+    }
+  }
+}
+
 const serializePersistedResult = (
   result: TaskExecutionResult,
   rawOutput: string | null
@@ -644,7 +749,8 @@ const enqueueBackgroundLifecycleMessage = (
 const executeWatchdogTask = async (
   dependencies: TaskExecutionEngineDependencies,
   job: ClaimedJobRecord,
-  nowTimestamp: number
+  nowTimestamp: number,
+  watchdogSystemPrompt: string
 ): Promise<TaskExecutionResult> => {
   const payloadParsed = parseTaskPayload(job.payload)
   if (payloadParsed.error) {
@@ -656,13 +762,10 @@ const executeWatchdogTask = async (
     return toFailureResult("invalid_watchdog_payload", validatedPayload.error.message)
   }
 
-  const checkResult = checkTaskFailures(
+  const evaluation = evaluateTaskFailures(
     {
       jobsRepository: dependencies.jobsRepository,
-      outboundMessagesRepository: dependencies.outboundMessagesRepository,
       defaultChatId: dependencies.defaultWatchdogChatId,
-      sessionBindingsRepository: dependencies.sessionBindingsRepository,
-      nonInteractiveContextCaptureService: dependencies.nonInteractiveContextCaptureService,
     },
     {
       ...validatedPayload.data,
@@ -671,21 +774,106 @@ const executeWatchdogTask = async (
     () => nowTimestamp
   )
 
-  if (checkResult.shouldAlert && checkResult.notificationStatus === "no_chat_id") {
+  if (evaluation.shouldAlert && validatedPayload.data.notify && !evaluation.resolvedChatId) {
     return toFailureResult(
       "watchdog_notification_unavailable",
       "Watchdog detected failures but no Telegram chat id is configured for alerts"
     )
   }
 
+  let notificationStatus: "not_requested" | "enqueued" | "duplicate" | "no_chat_id" =
+    "not_requested"
+  let watchdogMessageSource: "llm" | "fallback" | "none" = "none"
+
+  if (evaluation.notifyRequested && evaluation.shouldAlert) {
+    let messageContent = buildWatchdogFallbackMessage(
+      evaluation.failures,
+      evaluation.lookbackMinutes,
+      evaluation.threshold
+    )
+    watchdogMessageSource = "fallback"
+
+    if (watchdogSystemPrompt.trim().length > 0) {
+      try {
+        const bindingKey = `scheduler:task:${job.id}:assistant`
+        const existingBinding = dependencies.sessionBindingsRepository.getByBindingKey(bindingKey)
+        const sessionId = await dependencies.sessionGateway.ensureSession(
+          existingBinding?.sessionId ?? null
+        )
+
+        if (existingBinding?.sessionId !== sessionId) {
+          dependencies.sessionBindingsRepository.upsert(bindingKey, sessionId, nowTimestamp)
+        }
+
+        const assistantOutput = await dependencies.sessionGateway.promptSession(
+          sessionId,
+          buildWatchdogAlertInterpretationPrompt({
+            lookbackMinutes: evaluation.lookbackMinutes,
+            threshold: evaluation.threshold,
+            failedCount: evaluation.failedCount,
+            failures: evaluation.failures,
+          }),
+          {
+            systemPrompt: watchdogSystemPrompt,
+            agent: "assistant",
+            modelContext: {
+              flow: "watchdogFailures",
+              jobModelRef: job.modelRef,
+            },
+          }
+        )
+
+        const parsedAlert = parseWatchdogAlertMessage(assistantOutput)
+        if (parsedAlert.message) {
+          messageContent = parsedAlert.message
+          watchdogMessageSource = "llm"
+        } else {
+          dependencies.logger.warn(
+            {
+              jobId: job.id,
+              parseErrorCode: parsedAlert.parseErrorCode,
+              parseErrorMessage: parsedAlert.parseErrorMessage,
+              rawOutput: parsedAlert.rawOutput,
+            },
+            "Watchdog alert generation returned invalid output; using fallback formatter"
+          )
+        }
+      } catch (error) {
+        const err = error as Error
+        dependencies.logger.warn(
+          {
+            jobId: job.id,
+            error: err.message,
+          },
+          "Watchdog alert generation unavailable; using fallback formatter"
+        )
+      }
+    }
+
+    const enqueueResult = enqueueWatchdogAlert(
+      {
+        outboundMessagesRepository: dependencies.outboundMessagesRepository,
+        sessionBindingsRepository: dependencies.sessionBindingsRepository,
+        nonInteractiveContextCaptureService: dependencies.nonInteractiveContextCaptureService,
+      },
+      {
+        chatId: evaluation.resolvedChatId,
+        dedupeKey: evaluation.dedupeKey,
+        messageContent,
+        nowTimestamp,
+      }
+    )
+    notificationStatus = enqueueResult.notificationStatus
+  }
+
   const notificationSummary =
-    checkResult.notificationStatus === "not_requested"
+    notificationStatus === "not_requested"
       ? "notification skipped"
-      : `notification ${checkResult.notificationStatus}`
+      : `notification ${notificationStatus}${watchdogMessageSource === "none" ? "" : ` (${watchdogMessageSource})`}`
 
   return {
     status: "success",
-    summary: `Watchdog checked ${checkResult.failedCount} failed runs (${notificationSummary})`,
+    summary: `Watchdog checked ${evaluation.failedCount} failed runs (${notificationSummary})`,
     errors: [],
   }
 }
@@ -741,7 +929,12 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             runId,
             serializePromptProvenance(runPromptProvenance)
           )
-          result = await executeWatchdogTask(dependencies, job, startedAt)
+          result = await executeWatchdogTask(
+            dependencies,
+            job,
+            startedAt,
+            promptResolution.systemPrompt ?? ""
+          )
         } else if (job.type === HEARTBEAT_TASK_TYPE) {
           const heartbeatResult = executeHeartbeatTask(
             {

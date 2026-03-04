@@ -33,7 +33,7 @@ import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbou
 import { enqueueTelegramFile } from "../telegram-worker/outbound-enqueue.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
 import { stageOutboundTelegramFile } from "../telegram-worker/outbound-file-staging.js"
-import type { PromptProvenance } from "../prompt-management/index.js"
+import { PromptFileAccessError, type PromptProvenance } from "../prompt-management/index.js"
 import type {
   CommandAuditRecord,
   FailedJobRunRecord,
@@ -52,6 +52,7 @@ const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
 const TELEGRAM_OUTBOUND_MAX_FILE_BYTES = 20 * 1024 * 1024
 const DEFAULT_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS = 120
+const WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH = "layers/surface-watchdog.md"
 
 export type InternalApiConfig = {
   host: string
@@ -123,6 +124,17 @@ type InternalApiServerDependencies = {
     setMuteUntil: (muteUntil: number | null, updatedAt?: number) => void
   }
   nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
+  promptManagement?: {
+    readPromptFile: (input: {
+      source: "system" | "user"
+      relativePath: string
+    }) => Promise<{ content: string }>
+    writePromptFile: (input: {
+      source: "user"
+      relativePath: string
+      content: string
+    }) => Promise<{ updatedAt: number }>
+  }
 }
 
 const queueTelegramMessageApiSchema = z.object({
@@ -241,6 +253,15 @@ const setNotificationProfileApiSchema = z
   })
   .extend(notificationProfileUpdateSchema.shape)
 
+const getWatchdogPromptApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+})
+
+const setWatchdogPromptApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  content: z.string().trim().min(1),
+})
+
 const spawnBackgroundJobApiSchema = z.object({
   lane: executionLaneSchema.optional().default("interactive"),
   sessionId: z.string().trim().min(1).optional(),
@@ -339,6 +360,18 @@ const parsePromptProvenanceJson = (value: string | null | undefined): PromptProv
   } catch {
     return null
   }
+}
+
+const resolvePromptFileErrorResponse = (error: PromptFileAccessError): { statusCode: number } => {
+  if (error.code === "invalid_path") {
+    return { statusCode: 400 }
+  }
+
+  if (error.code === "forbidden_write") {
+    return { statusCode: 403 }
+  }
+
+  return { statusCode: 404 }
 }
 
 const resolveSourceSessionIdFromInput = (
@@ -1891,6 +1924,173 @@ export const buildInternalApiServer = (
         { error: err.message },
         "Internal API notification profile set failed"
       )
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/prompts/watchdog/get", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    if (!dependencies.promptManagement?.readPromptFile) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = getWatchdogPromptApiSchema.parse(request.body)
+
+      let content = ""
+      let source: "user" | "system" = "user"
+      try {
+        const userPrompt = await dependencies.promptManagement.readPromptFile({
+          source: "user",
+          relativePath: WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH,
+        })
+        content = userPrompt.content
+        source = "user"
+      } catch (error) {
+        if (!(error instanceof PromptFileAccessError) || error.code !== "not_found") {
+          throw error
+        }
+
+        const systemPrompt = await dependencies.promptManagement.readPromptFile({
+          source: "system",
+          relativePath: WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH,
+        })
+        content = systemPrompt.content
+        source = "system"
+      }
+
+      writeCommandAudit(dependencies, {
+        command: "get_watchdog_prompt",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          source,
+          path: WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH,
+          length: content.length,
+        }),
+      })
+
+      return reply.code(200).send({
+        source,
+        path: WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH,
+        content,
+      })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "get_watchdog_prompt",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof PromptFileAccessError) {
+        const failure = resolvePromptFileErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "get_watchdog_prompt",
+          lane: null,
+          status: "failed",
+          errorMessage: error.code,
+        })
+        return reply.code(failure.statusCode).send({ error: error.code, message: error.message })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "get_watchdog_prompt",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API watchdog prompt get failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/prompts/watchdog/set", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    if (!dependencies.promptManagement?.writePromptFile) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = setWatchdogPromptApiSchema.parse(request.body)
+      const writeResult = await dependencies.promptManagement.writePromptFile({
+        source: "user",
+        relativePath: WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH,
+        content: payload.content,
+      })
+
+      writeCommandAudit(dependencies, {
+        command: "set_watchdog_prompt",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          source: "user",
+          path: WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH,
+          updatedAt: writeResult.updatedAt,
+          length: payload.content.length,
+        }),
+      })
+
+      return reply.code(200).send({
+        status: "updated",
+        source: "user",
+        path: WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH,
+        updatedAt: writeResult.updatedAt,
+      })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "set_watchdog_prompt",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof PromptFileAccessError) {
+        const failure = resolvePromptFileErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "set_watchdog_prompt",
+          lane: null,
+          status: "failed",
+          errorMessage: error.code,
+        })
+        return reply.code(failure.statusCode).send({ error: error.code, message: error.message })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "set_watchdog_prompt",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API watchdog prompt set failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

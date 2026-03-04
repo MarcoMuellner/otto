@@ -203,6 +203,23 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       taskAuditRepository,
       commandAuditRepository,
       nonInteractiveContextCaptureService,
+      promptManagement: {
+        readPromptFile: async (input) => {
+          return await readManagedPromptFile({
+            ottoHome: config.ottoHome,
+            source: input.source,
+            relativePath: input.relativePath,
+          })
+        },
+        writePromptFile: async (input) => {
+          return await writeManagedPromptFile({
+            ottoHome: config.ottoHome,
+            source: input.source,
+            relativePath: input.relativePath,
+            content: input.content,
+          })
+        },
+      },
     })
     systemServiceStates.internal_api = {
       ...systemServiceStates.internal_api,

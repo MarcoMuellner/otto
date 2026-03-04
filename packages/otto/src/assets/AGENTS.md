@@ -38,3 +38,9 @@ This is the Otto personal assistant workspace.
 - For requests like "show task <job_id>", call `show_background_task` with the exact raw `job_id`.
 - For requests like "cancel task <job_id>", call `cancel_background_task` with the exact raw `job_id`.
 - Keep all user-facing references to background tasks keyed by raw `job_id`.
+
+## Watchdog Prompt Controls
+
+- To inspect the editable watchdog prompt layer, call `get_watchdog_prompt`.
+- To update watchdog alert writing behavior, call `set_watchdog_prompt` with full markdown content.
+- These tools target `prompts/layers/surface-watchdog.md` (user-owned override), not system-owned files.

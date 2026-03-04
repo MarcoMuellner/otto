@@ -100,6 +100,18 @@ type OutboundMessagesRepository = {
   }) => "enqueued" | "duplicate"
 }
 
+export type WatchdogFailureEvaluation = {
+  lookbackMinutes: number
+  maxFailures: number
+  threshold: number
+  failedCount: number
+  shouldAlert: boolean
+  notifyRequested: boolean
+  resolvedChatId: number | null
+  dedupeKey: string | null
+  failures: FailedJobRunRecord[]
+}
+
 export type CheckTaskFailuresResult = {
   lookbackMinutes: number
   maxFailures: number
@@ -110,6 +122,11 @@ export type CheckTaskFailuresResult = {
   notificationStatus: "not_requested" | "enqueued" | "duplicate" | "no_chat_id"
   dedupeKey: string | null
   failures: FailedJobRunRecord[]
+}
+
+export type EnqueueWatchdogAlertResult = {
+  notified: boolean
+  notificationStatus: "enqueued" | "duplicate" | "no_chat_id"
 }
 
 export type EnsureWatchdogTaskResult = {
@@ -185,6 +202,14 @@ const buildWatchdogMessage = (
     `Watchdog alert: ${failures.length} failed task runs in last ${lookbackMinutes}m (threshold ${threshold}).`,
     ...lines,
   ].join("\n")
+}
+
+export const buildWatchdogFallbackMessage = (
+  failures: FailedJobRunRecord[],
+  lookbackMinutes: number,
+  threshold: number
+): string => {
+  return buildWatchdogMessage(failures, lookbackMinutes, threshold)
 }
 
 const summarizeFailureReason = (errorMessage: string | null, errorCode: string | null): string => {
@@ -348,6 +373,62 @@ export const checkTaskFailures = (
   input: CheckTaskFailuresInput = {},
   now = Date.now
 ): CheckTaskFailuresResult => {
+  const evaluation = evaluateTaskFailures(dependencies, input, now)
+
+  if (!evaluation.notifyRequested || !evaluation.shouldAlert) {
+    return {
+      lookbackMinutes: evaluation.lookbackMinutes,
+      maxFailures: evaluation.maxFailures,
+      threshold: evaluation.threshold,
+      failedCount: evaluation.failedCount,
+      shouldAlert: evaluation.shouldAlert,
+      notified: false,
+      notificationStatus: "not_requested",
+      dedupeKey: null,
+      failures: evaluation.failures,
+    }
+  }
+
+  const messageContent = buildWatchdogMessage(
+    evaluation.failures,
+    evaluation.lookbackMinutes,
+    evaluation.threshold
+  )
+  const enqueueResult = enqueueWatchdogAlert(
+    {
+      outboundMessagesRepository: dependencies.outboundMessagesRepository,
+      sessionBindingsRepository: dependencies.sessionBindingsRepository,
+      nonInteractiveContextCaptureService: dependencies.nonInteractiveContextCaptureService,
+    },
+    {
+      chatId: evaluation.resolvedChatId,
+      dedupeKey: evaluation.dedupeKey,
+      messageContent,
+      nowTimestamp: now(),
+    }
+  )
+
+  return {
+    lookbackMinutes: evaluation.lookbackMinutes,
+    maxFailures: evaluation.maxFailures,
+    threshold: evaluation.threshold,
+    failedCount: evaluation.failedCount,
+    shouldAlert: evaluation.shouldAlert,
+    notified: enqueueResult.notified,
+    notificationStatus: enqueueResult.notificationStatus,
+    dedupeKey: evaluation.dedupeKey,
+    failures: evaluation.failures,
+  }
+}
+
+export const evaluateTaskFailures = (
+  dependencies: {
+    jobsRepository: FailedRunsRepository
+    defaultChatId: number | null
+  },
+  input: CheckTaskFailuresInput = {},
+  now = Date.now
+): WatchdogFailureEvaluation => {
   const parsedInput = checkTaskFailuresInputSchema.parse(input)
   const nowTimestamp = now()
   const sinceTimestamp = nowTimestamp - parsedInput.lookbackMinutes * 60_000
@@ -361,68 +442,12 @@ export const checkTaskFailures = (
   const failedCount = failures.length
   const shouldAlert = failedCount >= parsedInput.threshold
 
-  if (!parsedInput.notify || !shouldAlert) {
-    return {
-      lookbackMinutes: parsedInput.lookbackMinutes,
-      maxFailures: parsedInput.maxFailures,
-      threshold: parsedInput.threshold,
-      failedCount,
-      shouldAlert,
-      notified: false,
-      notificationStatus: "not_requested",
-      dedupeKey: null,
-      failures,
-    }
-  }
-
+  const notifyRequested = parsedInput.notify
   const resolvedChatId = parsedInput.chatId ?? dependencies.defaultChatId
-  if (!resolvedChatId) {
-    return {
-      lookbackMinutes: parsedInput.lookbackMinutes,
-      maxFailures: parsedInput.maxFailures,
-      threshold: parsedInput.threshold,
-      failedCount,
-      shouldAlert,
-      notified: false,
-      notificationStatus: "no_chat_id",
-      dedupeKey: null,
-      failures,
-    }
-  }
-
-  const dedupeKey = buildWatchdogDedupeKey(
-    failures,
-    parsedInput.lookbackMinutes,
-    parsedInput.threshold
-  )
-  const messageContent = buildWatchdogMessage(
-    failures,
-    parsedInput.lookbackMinutes,
-    parsedInput.threshold
-  )
-  const enqueueResult = enqueueTelegramMessage(
-    {
-      chatId: resolvedChatId,
-      content: messageContent,
-      dedupeKey,
-      priority: "high",
-    },
-    dependencies.outboundMessagesRepository,
-    nowTimestamp
-  )
-
-  dependencies.nonInteractiveContextCaptureService?.captureQueuedTextMessage({
-    sourceSessionId:
-      dependencies.sessionBindingsRepository?.getSessionIdByTelegramChatId?.(resolvedChatId) ??
-      null,
-    sourceLane: "scheduler",
-    sourceKind: "watchdog_alert",
-    sourceRef: dedupeKey,
-    content: messageContent,
-    messageIds: enqueueResult.messageIds,
-    enqueueStatus: enqueueResult.status,
-    timestamp: nowTimestamp,
-  })
+  const dedupeKey =
+    notifyRequested && shouldAlert && resolvedChatId
+      ? buildWatchdogDedupeKey(failures, parsedInput.lookbackMinutes, parsedInput.threshold)
+      : null
 
   return {
     lookbackMinutes: parsedInput.lookbackMinutes,
@@ -430,9 +455,60 @@ export const checkTaskFailures = (
     threshold: parsedInput.threshold,
     failedCount,
     shouldAlert,
-    notified: enqueueResult.status === "enqueued",
-    notificationStatus: enqueueResult.status,
+    notifyRequested,
+    resolvedChatId,
     dedupeKey,
     failures,
+  }
+}
+
+export const enqueueWatchdogAlert = (
+  dependencies: {
+    outboundMessagesRepository: OutboundMessagesRepository
+    sessionBindingsRepository?: {
+      getSessionIdByTelegramChatId?: (chatId: number) => string | null
+    }
+    nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
+  },
+  input: {
+    chatId: number | null
+    dedupeKey: string | null
+    messageContent: string
+    nowTimestamp: number
+  }
+): EnqueueWatchdogAlertResult => {
+  if (!input.chatId) {
+    return {
+      notified: false,
+      notificationStatus: "no_chat_id",
+    }
+  }
+
+  const enqueueResult = enqueueTelegramMessage(
+    {
+      chatId: input.chatId,
+      content: input.messageContent,
+      dedupeKey: input.dedupeKey,
+      priority: "high",
+    },
+    dependencies.outboundMessagesRepository,
+    input.nowTimestamp
+  )
+
+  dependencies.nonInteractiveContextCaptureService?.captureQueuedTextMessage({
+    sourceSessionId:
+      dependencies.sessionBindingsRepository?.getSessionIdByTelegramChatId?.(input.chatId) ?? null,
+    sourceLane: "scheduler",
+    sourceKind: "watchdog_alert",
+    sourceRef: input.dedupeKey,
+    content: input.messageContent,
+    messageIds: enqueueResult.messageIds,
+    enqueueStatus: enqueueResult.status,
+    timestamp: input.nowTimestamp,
+  })
+
+  return {
+    notified: enqueueResult.status === "enqueued",
+    notificationStatus: enqueueResult.status,
   }
 }

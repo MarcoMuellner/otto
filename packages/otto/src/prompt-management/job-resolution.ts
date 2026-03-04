@@ -17,6 +17,7 @@ const JOB_ROUTE_LAYER_TYPES = [
 ] as const satisfies ReadonlyArray<PromptLayerType>
 const TASK_PROFILE_DIRECTORY_NAME = "task-profiles"
 const TASK_PROFILE_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
+const WATCHDOG_EDITABLE_SURFACE_RELATIVE_PATH = "layers/surface-watchdog.md"
 
 export type JobPromptFlow = Exclude<PromptRouteFlow, "interactive">
 
@@ -161,6 +162,29 @@ export const resolveJobSystemPrompt = async (input: {
       continue
     }
 
+    if (
+      input.flow === "watchdog" &&
+      layer === "surface" &&
+      reference.source === "system" &&
+      reference.path === WATCHDOG_EDITABLE_SURFACE_RELATIVE_PATH
+    ) {
+      const userOverride = await loadPromptLayerInputFromRelativePath({
+        ottoHome: input.ottoHome,
+        source: "user",
+        relativePath: reference.path,
+      })
+
+      if (userOverride.input.status !== "missing") {
+        layerReferences[layer] = {
+          source: "user",
+          path: reference.path,
+        }
+        layerAbsolutePaths[layer] = userOverride.absolutePath
+        layerInputs[layer] = userOverride.input
+        continue
+      }
+    }
+
     const loaded = await loadPromptLayerInputFromReference({
       ottoHome: input.ottoHome,
       reference,
@@ -269,8 +293,20 @@ export const resolveJobSystemPrompt = async (input: {
     ...compositionWarnings.map((warning) => toWarning(warning.code, warning.message)),
   ]
 
+  const provenanceRoute = {
+    ...resolvedRoute,
+    route: {
+      ...resolvedRoute.route,
+      layers: {
+        ...resolvedRoute.route.layers,
+        ...layerReferences,
+        ...(taskProfileReference ? { "task-profile": taskProfileReference } : {}),
+      },
+    },
+  }
+
   const provenance = buildPromptProvenance({
-    resolvedRoute,
+    resolvedRoute: provenanceRoute,
     layers: composition.layers,
     warnings,
   })

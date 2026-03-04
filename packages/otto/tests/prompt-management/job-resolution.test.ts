@@ -103,6 +103,7 @@ const buildSystemMapping = (): Record<string, unknown> => {
       "watchdog-default": {
         layers: {
           "core-persona": { source: "system", path: "layers/watchdog.md" },
+          surface: { source: "system", path: "layers/surface-watchdog.md" },
         },
       },
     },
@@ -169,6 +170,10 @@ describe("resolveJobSystemPrompt", () => {
         { relativePath: "layers/media-cli.md", markdown: "## Media\nCLI media" },
         { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nSystem watchdog" },
         {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nWatchdog surface",
+        },
+        {
           relativePath: "task-profiles/general-reminder.md",
           markdown: "## Task Profile\nSystem reminder profile",
         },
@@ -213,6 +218,10 @@ describe("resolveJobSystemPrompt", () => {
         },
         { relativePath: "layers/media-chatapps.md", markdown: "## Media\nChatapps media" },
         { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nSystem watchdog" },
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nWatchdog surface",
+        },
       ],
     })
 
@@ -243,6 +252,10 @@ describe("resolveJobSystemPrompt", () => {
         { relativePath: "layers/surface-scheduled.md", markdown: "## Surface\nScheduled surface" },
         { relativePath: "layers/media-cli.md", markdown: "## Media\nCLI media" },
         { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nSystem watchdog" },
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nWatchdog surface",
+        },
       ],
       userLayers: [{ relativePath: "secrets.md", markdown: "## Secret\nDo not load" }],
     })
@@ -310,6 +323,10 @@ describe("resolveJobSystemPrompt", () => {
       },
       systemLayers: [
         { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nSystem watchdog" },
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nWatchdog surface",
+        },
       ],
       userLayers: [
         { relativePath: "layers/watchdog-user.md", markdown: "# Watchdog\nUser watchdog" },
@@ -325,10 +342,97 @@ describe("resolveJobSystemPrompt", () => {
     // Assert
     expect(resolved.mappingSource).toBe("system")
     expect(resolved.routeKey).toBe("watchdog-default")
-    expect(resolved.systemPrompt).toBe("# Watchdog\nSystem watchdog")
+    expect(resolved.systemPrompt).toBe(
+      "# Watchdog\nSystem watchdog\n\n## Surface\nWatchdog surface"
+    )
     expect(
       resolved.warnings.some((warning) => warning.code === "watchdog_user_override_blocked")
     ).toBe(true)
+  })
+
+  it("allows watchdog surface layer content to be overridden from user prompt file", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+
+    await writePromptWorkspace({
+      ottoHome: tempRoot,
+      systemMapping: buildSystemMapping(),
+      systemLayers: [
+        { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nSystem watchdog" },
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nSystem watchdog surface",
+        },
+      ],
+      userLayers: [
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nUser watchdog surface",
+        },
+      ],
+    })
+
+    // Act
+    const resolved = await resolveJobSystemPrompt({
+      ottoHome: tempRoot,
+      flow: "watchdog",
+    })
+
+    // Assert
+    expect(resolved.mappingSource).toBe("system")
+    expect(resolved.routeKey).toBe("watchdog-default")
+    expect(resolved.systemPrompt).toBe(
+      "# Watchdog\nSystem watchdog\n\n## Surface\nUser watchdog surface"
+    )
+
+    const surfaceLayer = resolved.provenance.layers.find((layer) => layer.layer === "surface")
+    expect(surfaceLayer?.source).toBe("user")
+    expect(surfaceLayer?.path).toBe("layers/surface-watchdog.md")
+  })
+
+  it("does not allow watchdog core-persona to be overridden from user prompt files", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+
+    await writePromptWorkspace({
+      ottoHome: tempRoot,
+      systemMapping: buildSystemMapping(),
+      systemLayers: [
+        { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nSystem watchdog core" },
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nSystem watchdog surface",
+        },
+      ],
+      userLayers: [
+        { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nUser watchdog core" },
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nUser watchdog surface",
+        },
+      ],
+    })
+
+    // Act
+    const resolved = await resolveJobSystemPrompt({
+      ottoHome: tempRoot,
+      flow: "watchdog",
+    })
+
+    // Assert
+    expect(resolved.systemPrompt).toBe(
+      "# Watchdog\nSystem watchdog core\n\n## Surface\nUser watchdog surface"
+    )
+
+    const coreLayer = resolved.provenance.layers.find((layer) => layer.layer === "core-persona")
+    const surfaceLayer = resolved.provenance.layers.find((layer) => layer.layer === "surface")
+
+    expect(coreLayer?.source).toBe("system")
+    expect(coreLayer?.path).toBe("layers/watchdog.md")
+    expect(surfaceLayer?.source).toBe("user")
+    expect(surfaceLayer?.path).toBe("layers/surface-watchdog.md")
   })
 
   it("logs missing and invalid user layers while continuing with empty layer behavior", async () => {
@@ -361,6 +465,10 @@ describe("resolveJobSystemPrompt", () => {
       systemLayers: [
         { relativePath: "layers/core.md", markdown: "# Core\nSystem core" },
         { relativePath: "layers/watchdog.md", markdown: "# Watchdog\nSystem watchdog" },
+        {
+          relativePath: "layers/surface-watchdog.md",
+          markdown: "## Surface\nWatchdog surface",
+        },
       ],
       userLayers: [{ relativePath: "layers/media-empty.md", markdown: "   " }],
     })

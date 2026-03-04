@@ -200,6 +200,7 @@ const writeMinimalPromptWorkspace = async (
           "watchdog-default": {
             layers: {
               "core-persona": { source: "system", path: "layers/watchdog.md" },
+              surface: { source: "system", path: "layers/surface-watchdog.md" },
             },
           },
         },
@@ -249,6 +250,16 @@ const writeMinimalPromptWorkspace = async (
   await writeFile(
     path.join(systemPromptsDirectory, "layers", "watchdog.md"),
     "# Watchdog\nSystem watchdog\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(systemPromptsDirectory, "layers", "surface-watchdog.md"),
+    "## Surface\nWatchdog surface\n",
+    "utf8"
+  )
+  await writeFile(
+    path.join(userPromptsDirectory, "layers", "surface-watchdog.md"),
+    "## Surface\nUser watchdog surface\n",
     "utf8"
   )
 
@@ -1049,6 +1060,13 @@ describe("task execution engine", () => {
       throw new Error("Expected due watchdog claim")
     }
 
+    const promptSession = vi.fn(async () =>
+      JSON.stringify({
+        message:
+          "Watchdog alert: 1 failed run in last 120m (threshold 1).\n- email-triage: Tool call failed",
+      })
+    )
+
     const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
       logger,
@@ -1059,12 +1077,7 @@ describe("task execution engine", () => {
       outboundMessagesRepository,
       sessionGateway: {
         ensureSession: async () => "session-3",
-        promptSession: async () =>
-          JSON.stringify({
-            status: "success",
-            summary: "unused",
-            errors: [],
-          }),
+        promptSession,
       },
       defaultWatchdogChatId: 777,
       userProfileRepository: {
@@ -1082,9 +1095,130 @@ describe("task execution engine", () => {
     expect(runs[0]?.status).toBe("success")
     expect(runs[0]?.resultJson).toContain("Watchdog checked")
     expect(outboundMessagesRepository.listDue(10_000)).toHaveLength(1)
+    expect(outboundMessagesRepository.listDue(10_000)[0]?.content).toContain("email-triage")
+    expect(promptSession).toHaveBeenCalledTimes(1)
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ warningCode: "watchdog_user_override_blocked" }),
       expect.stringContaining("watchdog")
+    )
+
+    db.close()
+  })
+
+  it("falls back to built-in watchdog formatter when model output is invalid", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
+
+    jobsRepository.createTask({
+      id: "task-failed-fallback",
+      type: "email-triage",
+      status: "paused",
+      scheduleType: "recurring",
+      profileId: null,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    jobsRepository.insertRun({
+      id: "run-failed-fallback",
+      jobId: "task-failed-fallback",
+      scheduledFor: 1_000,
+      startedAt: 1_100,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 1_100,
+    })
+    jobsRepository.markRunFinished(
+      "run-failed-fallback",
+      "failed",
+      1_150,
+      "tool_failure",
+      "Tool call failed",
+      null
+    )
+
+    jobsRepository.createTask({
+      id: "watchdog-task-fallback",
+      type: "watchdog_failures",
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: null,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: JSON.stringify({
+        lookbackMinutes: 120,
+        maxFailures: 20,
+        threshold: 1,
+        notify: true,
+      }),
+      lastRunAt: null,
+      nextRunAt: 2_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const claimed = jobsRepository.claimDue(2_000, 10, "lock-fallback", 60_000, 2_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due watchdog claim")
+    }
+
+    const logger = createLoggerStub()
+    const engine = createTaskExecutionEngine({
+      logger,
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-watchdog-fallback",
+        promptSession: async () => "not valid json",
+      },
+      defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => 2_500,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const queued = outboundMessagesRepository.listDue(10_000)
+    expect(queued).toHaveLength(1)
+    expect(queued[0]?.content).toContain("Watchdog alert: 1 failed task runs")
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parseErrorCode: "invalid_watchdog_alert_json",
+      }),
+      "Watchdog alert generation returned invalid output; using fallback formatter"
     )
 
     db.close()
