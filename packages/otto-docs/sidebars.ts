@@ -21,6 +21,7 @@ const sidebars: SidebarsConfig = {
         "operator-guide/setup-and-first-start",
         "operator-guide/service-lifecycle-and-health-checks",
         "operator-guide/update-workflow",
+        "operator-guide/docs-platform-rollout-and-rollback",
         "operator-guide/docs-surface-static-vs-live",
         "operator-guide/incident-triage",
         "operator-guide/troubleshooting-runtime-state-and-processes",

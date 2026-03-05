@@ -17,6 +17,11 @@ Dedicated runtime process that serves Otto docs artifacts from release bundles.
   (or host/port fallback).
 - Requests require an `Authorization: Bearer <token>` header and never persist the token server-side.
 
+## Service Health
+
+- `GET /api/health` returns service health metadata (`status`, `pageCount`, available docs
+  `versions`, and live proxy path) for smoke checks and observability.
+
 ## Docs Search/Open API
 
 - `GET /api/docs/search?q=<query>&version=<optional>&limit=<optional>`

@@ -2,8 +2,9 @@
 
 ## Status
 
-- `state`: `planned`
+- `state`: `done`
 - `category`: `feature`
+- `implementation`: `done`
 
 ## Objective
 
@@ -52,3 +53,11 @@ Harden the full docs platform rollout with security boundaries, end-to-end valid
 ## Deployability
 
 - Deployable hardening slice that closes rollout risk before broad adoption.
+
+## Implementation Notes
+
+- Added end-to-end docs platform hardening coverage in `packages/otto/tests/e2e/docs-platform.test.ts`, including operator flow checks (static docs + live auth boundary), explicit live-upstream failure behavior, and Otto self-query checks (`search` + `open`, including `/live` live-data fetch).
+- Added docs service health endpoint `GET /api/health` in `packages/otto-docs-service/src/server.ts` and expanded docs service tests in `packages/otto-docs-service/tests/server.test.ts` for health smoke validation and `upstream_unreachable` live-proxy regression coverage.
+- Strengthened static/public boundary gates in `scripts/docs/merge-release-docs.mjs` by rejecting live token storage/runtime hook markers in public artifact output while preserving static operator reference content.
+- Added dedicated CI hardening workflow `.github/workflows/docs-platform-e2e.yml` to run docs service tests, docs platform e2e tests, and static docs build/merge integrity boundary checks on docs-platform changes.
+- Added rollout and rollback runbook page `packages/otto-docs/docs/operator-guide/docs-platform-rollout-and-rollback.md` and linked it from operator guide navigation.

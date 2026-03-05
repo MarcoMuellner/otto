@@ -5,7 +5,7 @@
 - `id`: `epic_014`
 - `type`: epic ticket
 - `category`: `feature`
-- `state`: `planned`
+- `state`: `done`
 - `goal`: ship a version-bound, operator-first docs platform that also powers Otto self-awareness by exposing transparent runtime state, active processes, limits, decisions, and open risks through a deployed docs surface and internal tools.
 
 ## Why
@@ -42,7 +42,7 @@ Otto needs one trusted source where operators and Otto itself can answer what is
 5. `ticket_005`: Authenticated live docs views for deployed runtime. (done)
 6. `ticket_006`: Otto internal docs tools (`search`/`open`) with automatic auth. (done)
 7. `ticket_007`: Complete operator docs coverage for `ottoctl` and operations. (done)
-8. `ticket_008`: End-to-end hardening, security gates, and rollout runbook.
+8. `ticket_008`: End-to-end hardening, security gates, and rollout runbook. (done)
 
 ## Out of Scope
 

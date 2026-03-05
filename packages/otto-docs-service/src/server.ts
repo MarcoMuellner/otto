@@ -596,6 +596,28 @@ const handleDocsOpen = (
   );
 };
 
+const handleHealth = (
+  response: ServerResponse,
+  config: DocsServiceConfig,
+): void => {
+  const pages = resolveDocsIndex(config.siteDirectory);
+  const versions = Array.from(
+    new Set(pages.map((page) => page.version)),
+  ).sort();
+
+  response.statusCode = 200;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.end(
+    JSON.stringify({
+      status: "ok",
+      service: "docs-service",
+      pageCount: pages.length,
+      versions,
+      liveProxyPath: "/api/live/self-awareness",
+    }),
+  );
+};
+
 const readBearerToken = (request: IncomingMessage): string | null => {
   const authorization = request.headers.authorization;
   if (!authorization) {
@@ -683,6 +705,21 @@ const handleRequest = (
 
   if (relativeRequestPath === "/api/live/self-awareness") {
     return forwardLiveSelfAwareness(request, response, config);
+  }
+
+  if (relativeRequestPath === "/api/health") {
+    if (method === "HEAD") {
+      response.statusCode = 200;
+      response.end();
+      return;
+    }
+
+    if (method !== "GET") {
+      sendError(response, 405, "method_not_allowed");
+      return;
+    }
+
+    return handleHealth(response, config);
   }
 
   if (relativeRequestPath === "/api/docs/search") {
