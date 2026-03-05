@@ -18,6 +18,8 @@ on:
       - "packages/otto/.prettierrc.json"
       - "packages/otto/.oxlintrc.json"
       - "packages/otto-control-plane/**"
+      - "packages/otto-docs-service/**"
+      - "packages/otto-docs/**"
       - "packages/otto-extension-sdk/**"
       - "install.sh"
       - "pnpm-lock.yaml"
@@ -45,6 +47,8 @@ on:
       - "packages/otto/.prettierrc.json"
       - "packages/otto/.oxlintrc.json"
       - "packages/otto-control-plane/**"
+      - "packages/otto-docs-service/**"
+      - "packages/otto-docs/**"
       - "packages/otto-extension-sdk/**"
       - "install.sh"
       - "pnpm-lock.yaml"
@@ -137,7 +141,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          mkdir -p release/stage/bin release/stage/scripts release/stage/control-plane
+          mkdir -p release/stage/bin release/stage/scripts release/stage/control-plane release/stage/docs-service release/stage/docs-site
           chmod +x packages/otto/bin/ottoctl packages/otto/install.sh packages/otto/scripts/install-parakeet-v3.sh packages/otto/scripts/parakeet-worker.py
           cp -R packages/otto/dist release/stage/dist
           cp packages/otto/bin/ottoctl release/stage/bin/ottoctl
@@ -147,6 +151,10 @@ jobs:
           cp packages/otto/install.sh release/stage/install.sh
           cp packages/otto/package.json release/stage/package.json
           cp packages/otto/README.md release/stage/README.md
+          cp -R packages/otto-docs-service/dist release/stage/docs-service/dist
+          cp packages/otto-docs-service/package.json release/stage/docs-service/package.json
+          cp packages/otto-docs-service/README.md release/stage/docs-service/README.md
+          cp -R packages/otto-docs/build/. release/stage/docs-site
           pnpm --filter otto-control-plane --prod deploy --config.inject-workspace-packages=true --config.force-legacy-deploy=true release/stage/control-plane
           rm -rf release/stage/control-plane/app release/stage/control-plane/tests release/stage/control-plane/scripts release/stage/control-plane/.react-router release/stage/control-plane/README.md
           tar -czf "release/otto-${{ steps.meta.outputs.version }}.tgz" -C release/stage .
@@ -166,6 +174,10 @@ jobs:
             "./install.sh"
             "./package.json"
             "./README.md"
+            "./docs-service/dist/index.mjs"
+            "./docs-service/package.json"
+            "./docs-site/index.html"
+            "./docs-site/docs/intro/index.html"
             "./control-plane/build/server/index.js"
             "./control-plane/build/client/assets/"
             "./control-plane/node_modules/@react-router/serve"

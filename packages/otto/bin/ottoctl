@@ -17,6 +17,12 @@ CONTROL_PLANE_PLIST_LABEL="com.otto.assistant.control-plane"
 CONTROL_PLANE_PLIST_FILE="${HOME}/Library/LaunchAgents/${CONTROL_PLANE_PLIST_LABEL}.plist"
 DEFAULT_CONTROL_PLANE_HOST="0.0.0.0"
 DEFAULT_CONTROL_PLANE_PORT="4173"
+DOCS_SERVICE_NAME="otto-docs-service"
+DOCS_PLIST_LABEL="com.otto.assistant.docs"
+DOCS_PLIST_FILE="${HOME}/Library/LaunchAgents/${DOCS_PLIST_LABEL}.plist"
+DEFAULT_DOCS_HOST="0.0.0.0"
+DEFAULT_DOCS_PORT="4174"
+DEFAULT_DOCS_BASE_PATH="/"
 DEFAULT_REPO="MarcoMuellner/otto"
 OTTO_HOME=""
 TASK_CONFIG_DIR=""
@@ -148,6 +154,60 @@ resolve_control_plane_port() {
   echo "${port}"
 }
 
+resolve_docs_host() {
+  local host="${OTTO_DOCS_HOST:-${DEFAULT_DOCS_HOST}}"
+  host="${host//[[:space:]]/}"
+
+  if [[ -z "${host}" ]]; then
+    echo "${DEFAULT_DOCS_HOST}"
+    return
+  fi
+
+  echo "${host}"
+}
+
+resolve_docs_port() {
+  local port="${OTTO_DOCS_PORT:-${DEFAULT_DOCS_PORT}}"
+  port="${port//[[:space:]]/}"
+
+  if [[ -z "${port}" ]]; then
+    echo "${DEFAULT_DOCS_PORT}"
+    return
+  fi
+
+  if [[ ! "${port}" =~ ^[0-9]+$ ]] || [[ "${port}" -lt 1 ]] || [[ "${port}" -gt 65535 ]]; then
+    warn "Invalid OTTO_DOCS_PORT '${port}', falling back to ${DEFAULT_DOCS_PORT}"
+    echo "${DEFAULT_DOCS_PORT}"
+    return
+  fi
+
+  echo "${port}"
+}
+
+resolve_docs_base_path() {
+  local base_path="${OTTO_DOCS_BASE_PATH:-${DEFAULT_DOCS_BASE_PATH}}"
+  base_path="${base_path//[[:space:]]/}"
+
+  if [[ -z "${base_path}" || "${base_path}" == "/" ]]; then
+    echo "/"
+    return
+  fi
+
+  if [[ "${base_path}" != /* ]]; then
+    base_path="/${base_path}"
+  fi
+
+  while [[ "${base_path}" == *"//"* ]]; do
+    base_path="${base_path//\/\//\/}"
+  done
+
+  while [[ "${base_path}" != "/" && "${base_path}" == */ ]]; do
+    base_path="${base_path%/}"
+  done
+
+  echo "${base_path}"
+}
+
 prepend_path_entry() {
   local current_path="$1"
   local entry="$2"
@@ -197,6 +257,23 @@ has_control_plane_release() {
   serve_cli="$(control_plane_serve_cli_path)"
 
   [[ -f "${server_path}" ]] && [[ -f "${serve_cli}" ]]
+}
+
+docs_service_entry_path() {
+  echo "${CURRENT_LINK}/docs-service/dist/index.mjs"
+}
+
+docs_service_site_path() {
+  echo "${CURRENT_LINK}/docs-site"
+}
+
+has_docs_release() {
+  local entry_path
+  entry_path="$(docs_service_entry_path)"
+  local site_path
+  site_path="$(docs_service_site_path)"
+
+  [[ -f "${entry_path}" ]] && [[ -d "${site_path}" ]]
 }
 
 ensure_runtime_env_file() {
@@ -1366,6 +1443,7 @@ install_service_linux() {
   local user_dir="${HOME}/.config/systemd/user"
   local service_file="${user_dir}/${SERVICE_NAME}.service"
   local control_plane_service_file="${user_dir}/${CONTROL_PLANE_SERVICE_NAME}.service"
+  local docs_service_file="${user_dir}/${DOCS_SERVICE_NAME}.service"
 
   mkdir -p "${user_dir}"
 
@@ -1432,11 +1510,59 @@ EOF
     warn "Control-plane artifact missing in current release; skipping control-plane service install"
   fi
 
+  if has_docs_release; then
+    local docs_host
+    docs_host="$(resolve_docs_host)"
+    local docs_port
+    docs_port="$(resolve_docs_port)"
+    local docs_base_path
+    docs_base_path="$(resolve_docs_base_path)"
+    local docs_entry
+    docs_entry="$(docs_service_entry_path)"
+    local docs_site
+    docs_site="$(docs_service_site_path)"
+
+    cat > "${docs_service_file}" <<EOF
+[Unit]
+Description=Otto Docs Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${node_path} ${docs_entry}
+WorkingDirectory=${CURRENT_LINK}/docs-service
+Restart=on-failure
+RestartSec=5
+EnvironmentFile=-${RUNTIME_ENV_FILE}
+Environment=HOME=${HOME}
+Environment=PATH=${service_path}
+Environment=NODE_ENV=production
+Environment=OTTO_DOCS_HOST=${docs_host}
+Environment=OTTO_DOCS_PORT=${docs_port}
+Environment=OTTO_DOCS_BASE_PATH=${docs_base_path}
+Environment=OTTO_DOCS_SITE_DIR=${docs_site}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=otto-docs-service
+
+[Install]
+WantedBy=default.target
+EOF
+  else
+    systemctl --user disable --now "${DOCS_SERVICE_NAME}" >/dev/null 2>&1 || true
+    rm -f "${docs_service_file}"
+    warn "Docs service artifact missing in current release; skipping docs service install"
+  fi
+
   systemctl --user daemon-reload
   systemctl --user enable "${SERVICE_NAME}" >/dev/null
 
   if has_control_plane_release; then
     systemctl --user enable "${CONTROL_PLANE_SERVICE_NAME}" >/dev/null
+  fi
+
+  if has_docs_release; then
+    systemctl --user enable "${DOCS_SERVICE_NAME}" >/dev/null
   fi
 
   if command -v loginctl >/dev/null 2>&1; then
@@ -1546,6 +1672,67 @@ EOF
     rm -f "${CONTROL_PLANE_PLIST_FILE}"
     warn "Control-plane artifact missing in current release; skipping control-plane service install"
   fi
+
+  if has_docs_release; then
+    local docs_host
+    docs_host="$(resolve_docs_host)"
+    local docs_port
+    docs_port="$(resolve_docs_port)"
+    local docs_base_path
+    docs_base_path="$(resolve_docs_base_path)"
+    local docs_entry
+    docs_entry="$(docs_service_entry_path)"
+    local docs_site
+    docs_site="$(docs_service_site_path)"
+
+    cat > "${DOCS_PLIST_FILE}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${DOCS_PLIST_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${node_path}</string>
+    <string>${docs_entry}</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>${CURRENT_LINK}/docs-service</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${HOME}</string>
+    <key>PATH</key>
+    <string>${service_path}</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+${runtime_env_keys}
+    <key>OTTO_DOCS_HOST</key>
+    <string>${docs_host}</string>
+    <key>OTTO_DOCS_PORT</key>
+    <string>${docs_port}</string>
+    <key>OTTO_DOCS_BASE_PATH</key>
+    <string>${docs_base_path}</string>
+    <key>OTTO_DOCS_SITE_DIR</key>
+    <string>${docs_site}</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>${HOME}/.local/share/otto/logs/docs-service.log</string>
+  <key>StandardErrorPath</key>
+  <string>${HOME}/.local/share/otto/logs/docs-service.err.log</string>
+</dict>
+</plist>
+EOF
+  else
+    launchctl bootout "gui/$(id -u)" "${DOCS_PLIST_FILE}" >/dev/null 2>&1 || true
+    rm -f "${DOCS_PLIST_FILE}"
+    warn "Docs service artifact missing in current release; skipping docs service install"
+  fi
 }
 
 install_service() {
@@ -1572,6 +1759,12 @@ start_service() {
     else
       systemctl --user stop "${CONTROL_PLANE_SERVICE_NAME}" >/dev/null 2>&1 || true
     fi
+
+    if has_docs_release; then
+      systemctl --user start "${DOCS_SERVICE_NAME}"
+    else
+      systemctl --user stop "${DOCS_SERVICE_NAME}" >/dev/null 2>&1 || true
+    fi
   else
     launchctl bootout "gui/$(id -u)" "${PLIST_FILE}" >/dev/null 2>&1 || true
     launchctl bootstrap "gui/$(id -u)" "${PLIST_FILE}"
@@ -1584,6 +1777,14 @@ start_service() {
     else
       launchctl bootout "gui/$(id -u)" "${CONTROL_PLANE_PLIST_FILE}" >/dev/null 2>&1 || true
     fi
+
+    if has_docs_release; then
+      launchctl bootout "gui/$(id -u)" "${DOCS_PLIST_FILE}" >/dev/null 2>&1 || true
+      launchctl bootstrap "gui/$(id -u)" "${DOCS_PLIST_FILE}"
+      launchctl kickstart -k "gui/$(id -u)/${DOCS_PLIST_LABEL}"
+    else
+      launchctl bootout "gui/$(id -u)" "${DOCS_PLIST_FILE}" >/dev/null 2>&1 || true
+    fi
   fi
 }
 
@@ -1592,9 +1793,11 @@ stop_service() {
   platform="$(detect_platform)"
 
   if [[ "${platform}" == "linux" ]]; then
+    systemctl --user stop "${DOCS_SERVICE_NAME}" >/dev/null 2>&1 || true
     systemctl --user stop "${CONTROL_PLANE_SERVICE_NAME}" >/dev/null 2>&1 || true
     systemctl --user stop "${SERVICE_NAME}"
   else
+    launchctl bootout "gui/$(id -u)" "${DOCS_PLIST_FILE}" >/dev/null 2>&1 || true
     launchctl bootout "gui/$(id -u)" "${CONTROL_PLANE_PLIST_FILE}" >/dev/null 2>&1 || true
     launchctl bootout "gui/$(id -u)" "${PLIST_FILE}" >/dev/null 2>&1 || true
   fi

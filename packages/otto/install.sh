@@ -26,6 +26,30 @@ require_cmd() {
   fi
 }
 
+normalize_docs_base_path() {
+  local base_path="$1"
+  base_path="${base_path//[[:space:]]/}"
+
+  if [[ -z "${base_path}" || "${base_path}" == "/" ]]; then
+    echo "/"
+    return
+  fi
+
+  if [[ "${base_path}" != /* ]]; then
+    base_path="/${base_path}"
+  fi
+
+  while [[ "${base_path}" == *"//"* ]]; do
+    base_path="${base_path//\/\//\/}"
+  done
+
+  while [[ "${base_path}" != "/" && "${base_path}" == */ ]]; do
+    base_path="${base_path%/}"
+  done
+
+  echo "${base_path}"
+}
+
 detect_shell_rc_file() {
   local shell_name
   shell_name="$(basename "${SHELL:-}")"
@@ -199,10 +223,15 @@ main() {
 
   local control_plane_host="${OTTO_CONTROL_PLANE_HOST:-0.0.0.0}"
   local control_plane_port="${OTTO_CONTROL_PLANE_PORT:-4173}"
+  local docs_host="${OTTO_DOCS_HOST:-0.0.0.0}"
+  local docs_port="${OTTO_DOCS_PORT:-4174}"
+  local docs_base_path
+  docs_base_path="$(normalize_docs_base_path "${OTTO_DOCS_BASE_PATH:-/}")"
 
   success "Otto installed successfully"
   success "Control command: ottoctl"
   success "Control plane UI: http://${control_plane_host}:${control_plane_port}"
+  success "Docs service: http://${docs_host}:${docs_port}${docs_base_path}"
 
   if ! command -v ottoctl >/dev/null 2>&1; then
     local rc_file

@@ -63,6 +63,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - `ottoctl extension disable` removes the installed extension footprint (runtime + store)
 - `ottoctl update` prompts for Telegram credentials when missing and stores them at `~/.local/share/otto/secrets/telegram.env` (skip is allowed)
 - Control-plane service bind env (optional): `OTTO_CONTROL_PLANE_HOST` (default `0.0.0.0`), `OTTO_CONTROL_PLANE_PORT` (default `4173`)
+- Docs service bind env (optional): `OTTO_DOCS_HOST` (default `0.0.0.0`), `OTTO_DOCS_PORT` (default `4174`), `OTTO_DOCS_BASE_PATH` (default `/`)
 
 ## Install (Release Artifact)
 
@@ -124,7 +125,7 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/install.sh | ba
   - `ottoctl update --nightly` (latest nightly)
   - `ottoctl update --pr <number>` (nightly artifact for a specific pull request)
   - `ottoctl update --repo <owner>/<repo>` (optional override for custom repo)
-- `ottoctl start|restart|stop` manage both runtime (`otto`) and control-plane (`otto-control-plane`) services when control-plane artifact is present in the installed release.
+- `ottoctl start|restart|stop` manage runtime (`otto`), control-plane (`otto-control-plane`), and docs (`otto-docs-service`) services when those artifacts are present in the installed release.
 
 ## Scripts
 
