@@ -6,7 +6,7 @@
     "dev": "docusaurus start --host 0.0.0.0 --port 3005 --no-open",
     "start": "docusaurus start --host 0.0.0.0 --port 3005 --no-open",
     "build": "docusaurus build",
-    "serve": "docusaurus serve build --host 0.0.0.0 --port 3005",
+    "serve": "docusaurus serve --dir build --host 0.0.0.0 --port 3005",
     "lint": "markdownlint-cli2 \"docs/**/*.md\" \"README.md\"",
     "check": "pnpm run lint && pnpm run build"
   },
@@ -15,7 +15,8 @@
     "@docusaurus/preset-classic": "^3.9.2",
     "prism-react-renderer": "^2.4.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.9.2",
