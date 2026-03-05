@@ -16,6 +16,7 @@ import {
   TaskMutationError,
   updateTaskMutation,
 } from "../api-services/tasks-mutations.js"
+import { DocsReadError, openDocs, searchDocs } from "../api-services/docs-read.js"
 import {
   interactiveBackgroundJobPayloadSchema,
   INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
@@ -298,6 +299,18 @@ const reportBackgroundMilestoneApiSchema = z.object({
   content: z.string().trim().min(1),
 })
 
+const docsSearchApiSchema = z.object({
+  query: z.string().trim().min(1),
+  version: z.string().trim().min(1).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+})
+
+const docsOpenApiSchema = z.object({
+  slug: z.string().trim().min(1),
+  version: z.string().trim().min(1).optional(),
+  section: z.string().trim().min(1).optional(),
+})
+
 const unauthorizedResponseSchema = z.object({
   error: z.literal("unauthorized"),
 })
@@ -363,6 +376,68 @@ const queueResultResponseSchema = z.object({
 const taskAuditListResponseSchema = z.object({
   taskAudit: z.array(z.unknown()),
   commandAudit: z.array(z.unknown()),
+})
+
+const docsServiceErrorCodeSchema = z.enum([
+  "auth_required",
+  "invalid_request",
+  "not_found",
+  "version_mismatch",
+  "upstream_unreachable",
+])
+
+const docsServiceErrorResponseSchema = z.object({
+  error: docsServiceErrorCodeSchema,
+  message: z.string().min(1),
+  details: z.record(z.string(), z.unknown()).optional(),
+})
+
+const unauthorizedOrDocsAuthResponseSchema = z.union([
+  unauthorizedResponseSchema,
+  z.object({
+    error: z.literal("auth_required"),
+    message: z.string().min(1),
+    details: z.record(z.string(), z.unknown()).optional(),
+  }),
+])
+
+const docsSectionReferenceSchema = z.object({
+  anchor: z.string().min(1),
+  title: z.string().min(1),
+})
+
+const docsSearchResponseSchema = z.object({
+  query: z.string().min(1),
+  version: z.string().min(1).nullable(),
+  results: z.array(
+    z.object({
+      version: z.string().min(1),
+      slug: z.string().min(1),
+      url: z.string().min(1),
+      title: z.string().min(1),
+      snippet: z.string(),
+      sections: z.array(docsSectionReferenceSchema),
+    })
+  ),
+})
+
+const docsOpenResponseSchema = z.object({
+  page: z.object({
+    version: z.string().min(1),
+    slug: z.string().min(1),
+    url: z.string().min(1),
+    title: z.string().min(1),
+    snippet: z.string(),
+  }),
+  section: z
+    .object({
+      anchor: z.string().min(1),
+      title: z.string().min(1),
+      url: z.string().min(1),
+    })
+    .nullable(),
+  sections: z.array(docsSectionReferenceSchema),
+  liveData: z.unknown().nullable(),
 })
 
 type BackgroundMilestoneContext = {
@@ -1012,6 +1087,40 @@ export const buildInternalApiServer = (
         400: { description: "Invalid request", schema: validationErrorResponseSchema },
         401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
         503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/docs/search",
+      tags: ["Tools"],
+      summary: "Search Otto docs pages",
+      security: internalSecurity,
+      requestBody: { schema: docsSearchApiSchema },
+      responses: {
+        200: { description: "Docs search result", schema: docsSearchResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedOrDocsAuthResponseSchema },
+        404: { description: "Not found", schema: docsServiceErrorResponseSchema },
+        409: { description: "Version mismatch", schema: docsServiceErrorResponseSchema },
+        502: { description: "Docs service unavailable", schema: docsServiceErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/docs/open",
+      tags: ["Tools"],
+      summary: "Open a specific Otto docs page",
+      security: internalSecurity,
+      requestBody: { schema: docsOpenApiSchema },
+      responses: {
+        200: { description: "Docs page result", schema: docsOpenResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedOrDocsAuthResponseSchema },
+        404: { description: "Not found", schema: docsServiceErrorResponseSchema },
+        409: { description: "Version mismatch", schema: docsServiceErrorResponseSchema },
+        502: { description: "Docs service unavailable", schema: docsServiceErrorResponseSchema },
         500: { description: "Internal error", schema: internalErrorResponseSchema },
       },
     },
@@ -2447,6 +2556,84 @@ export const buildInternalApiServer = (
         errorMessage: err.message,
       })
       dependencies.logger.error({ error: err.message }, "Internal API watchdog prompt set failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/docs/search", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = docsSearchApiSchema.parse(request.body)
+      const result = await searchDocs({
+        query: payload.query,
+        version: payload.version,
+        limit: payload.limit,
+      })
+      return reply.code(200).send(result)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof DocsReadError) {
+        return reply.code(error.statusCode).send({
+          error: error.code,
+          message: error.message,
+          ...(error.details ? { details: error.details } : {}),
+        })
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "Internal API docs search failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/docs/open", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    try {
+      const payload = docsOpenApiSchema.parse(request.body)
+      const result = await openDocs({
+        slug: payload.slug,
+        version: payload.version,
+        section: payload.section,
+      })
+      return reply.code(200).send(result)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof DocsReadError) {
+        return reply.code(error.statusCode).send({
+          error: error.code,
+          message: error.message,
+          ...(error.details ? { details: error.details } : {}),
+        })
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "Internal API docs open failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

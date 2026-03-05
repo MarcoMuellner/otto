@@ -64,6 +64,9 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - `ottoctl update` prompts for Telegram credentials when missing and stores them at `~/.local/share/otto/secrets/telegram.env` (skip is allowed)
 - Control-plane service bind env (optional): `OTTO_CONTROL_PLANE_HOST` (default `0.0.0.0`), `OTTO_CONTROL_PLANE_PORT` (default `4173`)
 - Docs service bind env (optional): `OTTO_DOCS_HOST` (default `0.0.0.0`), `OTTO_DOCS_PORT` (default `4174`), `OTTO_DOCS_BASE_PATH` (default `/`)
+- Docs service URL override for internal docs tools (optional): `OTTO_DOCS_SERVICE_URL` (for example `http://127.0.0.1:4174`)
+- Internal docs tools available to OpenCode runtime: `docs_search` and `docs_open`
+  - `docs_open` auto-fetches live self-awareness data when opening `/live` and handles bearer auth automatically.
 
 ## Install (Release Artifact)
 

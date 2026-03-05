@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createServer, type Server } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -17,12 +18,47 @@ import type {
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-internal-api-")
 const cleanupPaths: string[] = []
+const cleanupServers: Server[] = []
 
 afterEach(async () => {
+  await Promise.all(
+    cleanupServers.splice(0).map(
+      async (server) =>
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error)
+              return
+            }
+
+            resolve()
+          })
+        })
+    )
+  )
+
   await Promise.all(
     cleanupPaths.splice(0).map(async (directory) => rm(directory, { recursive: true, force: true }))
   )
 })
+
+const listenServer = async (server: Server): Promise<{ baseUrl: string }> => {
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject)
+    server.listen(0, "127.0.0.1", () => resolve())
+  })
+
+  cleanupServers.push(server)
+
+  const address = server.address()
+  if (!address || typeof address === "string") {
+    throw new Error("Unable to resolve test server port")
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+  }
+}
 
 const createLoggerStub = (): Logger => {
   return {
@@ -367,6 +403,8 @@ describe("buildInternalApiServer", () => {
     expect(openApi.paths["/internal/tools/tasks/create"]?.post?.requestBody).toBeTruthy()
     expect(openApi.paths["/internal/tools/tasks/create"]?.post?.responses?.["200"]).toBeTruthy()
     expect(openApi.paths["/internal/tools/tasks/create"]?.post?.responses?.default).toBeUndefined()
+    expect(openApi.paths["/internal/tools/docs/search"]?.post?.responses?.["200"]).toBeTruthy()
+    expect(openApi.paths["/internal/tools/docs/open"]?.post?.responses?.["200"]).toBeTruthy()
     expect(
       JSON.stringify(
         openApi.paths["/internal/tools/queue-telegram-message"]?.post?.responses?.["400"]
@@ -374,6 +412,163 @@ describe("buildInternalApiServer", () => {
     ).toContain("missing_chat")
 
     await app.close()
+  })
+
+  it("searches docs through docs-service from internal tool route", async () => {
+    // Arrange
+    const docsService = await listenServer(
+      createServer((request, response) => {
+        if (request.url?.startsWith("/api/docs/search")) {
+          response.statusCode = 200
+          response.setHeader("content-type", "application/json")
+          response.end(
+            JSON.stringify({
+              query: "intro",
+              version: null,
+              results: [
+                {
+                  version: "current",
+                  slug: "/docs/intro",
+                  url: "/docs/intro/",
+                  title: "Intro",
+                  snippet: "Start here",
+                  sections: [{ anchor: "quickstart", title: "Quickstart" }],
+                },
+              ],
+            })
+          )
+          return
+        }
+
+        response.statusCode = 404
+        response.end()
+      })
+    )
+
+    const previousDocsServiceUrl = process.env.OTTO_DOCS_SERVICE_URL
+    process.env.OTTO_DOCS_SERVICE_URL = docsService.baseUrl
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    try {
+      // Act
+      const response = await app.inject({
+        method: "POST",
+        url: "/internal/tools/docs/search",
+        headers: {
+          authorization: "Bearer secret",
+        },
+        payload: {
+          query: "intro",
+        },
+      })
+
+      // Assert
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toMatchObject({
+        results: [{ slug: "/docs/intro", version: "current" }],
+      })
+    } finally {
+      process.env.OTTO_DOCS_SERVICE_URL = previousDocsServiceUrl
+      await app.close()
+    }
+  })
+
+  it("returns docs-service error codes for docs open", async () => {
+    // Arrange
+    const docsService = await listenServer(
+      createServer((request, response) => {
+        if (request.url?.startsWith("/api/docs/open")) {
+          response.statusCode = 409
+          response.setHeader("content-type", "application/json")
+          response.end(
+            JSON.stringify({
+              error: "version_mismatch",
+              message: "Requested docs version is unavailable.",
+            })
+          )
+          return
+        }
+
+        response.statusCode = 404
+        response.end()
+      })
+    )
+
+    const previousDocsServiceUrl = process.env.OTTO_DOCS_SERVICE_URL
+    process.env.OTTO_DOCS_SERVICE_URL = docsService.baseUrl
+
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    try {
+      // Act
+      const response = await app.inject({
+        method: "POST",
+        url: "/internal/tools/docs/open",
+        headers: {
+          authorization: "Bearer secret",
+        },
+        payload: {
+          slug: "/docs/intro",
+          version: "v9.9.9",
+        },
+      })
+
+      // Assert
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toMatchObject({
+        error: "version_mismatch",
+      })
+    } finally {
+      process.env.OTTO_DOCS_SERVICE_URL = previousDocsServiceUrl
+      await app.close()
+    }
   })
 
   it("queues message when authorized", async () => {
