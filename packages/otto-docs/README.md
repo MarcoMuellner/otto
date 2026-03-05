@@ -20,8 +20,10 @@ Docusaurus-based operator documentation foundation for Otto.
 
 ## Notes
 
-- This package provides static docs foundation only.
-- Live runtime docs integration is out of scope for ticket 001.
+- Public GitHub Pages builds are static-only by default.
+- Set `OTTO_DOCS_ENABLE_LIVE=1` to include the token-authenticated deployed
+  live runtime view route (`/live`).
+- Live route calls are proxied through docs service path `/api/live/self-awareness`.
 
 ## Release Version Metadata
 

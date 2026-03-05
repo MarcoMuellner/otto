@@ -135,6 +135,8 @@ jobs:
         run: pnpm run version:sync -- "${{ steps.meta.outputs.version }}"
 
       - name: Build
+        env:
+          OTTO_DOCS_ENABLE_LIVE: "1"
         run: pnpm run build
 
       - name: Package release artifact

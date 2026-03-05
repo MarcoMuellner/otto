@@ -114,6 +114,19 @@ const runIntegrityChecks = async ({ outputDir, docsTag, docsVersion }) => {
     "OTTO_DOCS_LIVE_ENDPOINT",
   ];
 
+  try {
+    await stat(path.join(outputDir, "live"));
+    throw new Error("Forbidden public docs route detected: /live");
+  } catch (error) {
+    if (error instanceof Error && error.message === "Forbidden public docs route detected: /live") {
+      throw error;
+    }
+
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
   const candidateFiles = (await collectFiles(outputDir)).filter((filePath) => {
     const extension = path.extname(filePath);
     return (
