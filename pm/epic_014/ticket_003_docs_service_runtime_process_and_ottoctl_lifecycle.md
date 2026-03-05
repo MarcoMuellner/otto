@@ -2,8 +2,9 @@
 
 ## Status
 
-- `state`: `planned`
+- `state`: `done`
 - `category`: `feature`
+- `implementation`: `done`
 
 ## Objective
 
@@ -52,3 +53,9 @@ Introduce a dedicated docs service process in Otto deployments and manage it via
 ## Deployability
 
 - Deployable infrastructure increment that adds docs service without changing live docs semantics.
+
+## Implementation Notes
+
+- Added a dedicated runtime package at `packages/otto-docs-service` that serves release-bundled docs artifacts with configurable `OTTO_DOCS_HOST`, `OTTO_DOCS_PORT`, and `OTTO_DOCS_BASE_PATH`.
+- Integrated docs service lifecycle into `ottoctl` so `start|restart|stop` and service install wiring now include runtime, control-plane, and docs processes on both Linux (systemd --user) and macOS (launchd user agent).
+- Extended release packaging to include `docs-service` executable assets and static `docs-site` build output, plus artifact layout validation for required docs paths.
