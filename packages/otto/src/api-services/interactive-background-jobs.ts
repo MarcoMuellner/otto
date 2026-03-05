@@ -1,16 +1,33 @@
+import { randomUUID } from "node:crypto"
+
 import { z } from "zod"
 
 import { createTaskMutation } from "./tasks-mutations.js"
 
 export const INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE = "interactive_background_oneshot"
 
-const spawnInteractiveBackgroundJobInputSchema = z.object({
-  request: z.string().trim().min(1),
-  rationale: z.string().trim().min(1).max(500).optional(),
-  sessionId: z.string().trim().min(1).optional(),
-  sourceMessageId: z.string().trim().min(1).optional(),
-  chatId: z.number().int().positive().nullable().optional(),
-})
+const spawnInteractiveBackgroundJobInputSchema = z
+  .object({
+    request: z.string().trim().min(1),
+    rationale: z.string().trim().min(1).max(500).optional(),
+    prompt: z.string().trim().min(1).optional(),
+    content: z.unknown().optional(),
+    sessionId: z.string().trim().min(1).optional(),
+    sourceMessageId: z.string().trim().min(1).optional(),
+    chatId: z.number().int().positive().nullable().optional(),
+    jobId: z.string().trim().min(1).optional(),
+    actor: z.string().trim().min(1).optional(),
+    source: z.enum(["internal_api", "external_api"]).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.prompt !== undefined && input.content === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["content"],
+        message: "content is required when prompt is provided",
+      })
+    }
+  })
 
 export const interactiveBackgroundJobPayloadSchema = z.object({
   version: z.literal(1),
@@ -25,6 +42,12 @@ export const interactiveBackgroundJobPayloadSchema = z.object({
     requestedAt: z.number().int(),
     rationale: z.string().trim().min(1).max(500).nullable(),
   }),
+  input: z
+    .object({
+      prompt: z.string().trim().min(1),
+      content: z.unknown(),
+    })
+    .optional(),
 })
 
 export type SpawnInteractiveBackgroundJobInput = z.input<
@@ -49,6 +72,7 @@ type SpawnBackgroundJobDependencies = {
 
 export type SpawnInteractiveBackgroundJobResult = {
   status: "queued"
+  sessionId: string
   jobId: string
   jobType: string
   runAt: number
@@ -69,20 +93,29 @@ export const spawnInteractiveBackgroundJob = (
 ): SpawnInteractiveBackgroundJobResult => {
   const parsedInput = spawnInteractiveBackgroundJobInputSchema.parse(input)
   const now = (dependencies.now ?? Date.now)()
+  const prompt = parsedInput.prompt ?? parsedInput.request
+  const sessionId = parsedInput.sessionId ?? randomUUID()
 
   const payload = interactiveBackgroundJobPayloadSchema.parse({
     version: 1,
     source: {
       surface: "interactive",
-      sessionId: parsedInput.sessionId ?? null,
+      sessionId,
       sourceMessageId: parsedInput.sourceMessageId ?? null,
       chatId: parsedInput.chatId ?? null,
     },
     request: {
-      text: parsedInput.request,
+      text: prompt,
       requestedAt: now,
       rationale: parsedInput.rationale ?? null,
     },
+    input:
+      parsedInput.prompt == null
+        ? undefined
+        : {
+            prompt: parsedInput.prompt,
+            content: parsedInput.content,
+          },
   })
 
   const created = createTaskMutation(
@@ -92,6 +125,7 @@ export const spawnInteractiveBackgroundJob = (
       now: () => now,
     },
     {
+      id: parsedInput.jobId,
       type: INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
       scheduleType: "oneshot",
       runAt: now,
@@ -99,8 +133,8 @@ export const spawnInteractiveBackgroundJob = (
     },
     {
       lane: "interactive",
-      actor: "internal_tool",
-      source: "internal_api",
+      actor: parsedInput.actor ?? "internal_tool",
+      source: parsedInput.source ?? "internal_api",
     }
   )
 
@@ -108,6 +142,7 @@ export const spawnInteractiveBackgroundJob = (
 
   return {
     status: "queued",
+    sessionId,
     jobId,
     jobType: INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
     runAt: now,

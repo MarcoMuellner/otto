@@ -913,13 +913,15 @@ export const createJobsRepository = (database: DatabaseSync) => {
      LIMIT ?`
   )
 
-  const claimByIdStatement = database.prepare(
+  const claimCandidateByIdStatement = database.prepare(
     `UPDATE jobs
      SET status = 'running',
          lock_token = ?,
          lock_expires_at = ?,
          updated_at = ?
      WHERE id = ?
+       AND next_run_at IS NOT NULL
+       AND next_run_at <= ?
        AND status != 'paused'
        AND (
          lock_token IS NULL
@@ -1220,11 +1222,12 @@ export const createJobsRepository = (database: DatabaseSync) => {
         const claimedJobs: JobRecord[] = []
 
         for (const row of candidateRows) {
-          const claimResult = claimByIdStatement.run(
+          const claimResult = claimCandidateByIdStatement.run(
             lockToken,
             lockExpiresAt,
             updatedAt,
             row.id,
+            timestamp,
             timestamp
           ) as { changes?: number }
 
@@ -1247,6 +1250,30 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     releaseLock: (jobId: string, lockToken: string, updatedAt = Date.now()): void => {
       releaseLockStatement.run(updatedAt, jobId, lockToken)
+    },
+    claimById: (
+      jobId: string,
+      timestamp: number,
+      lockToken: string,
+      lockLeaseMs: number,
+      updatedAt = Date.now()
+    ): JobRecord | null => {
+      const lockExpiresAt = timestamp + lockLeaseMs
+      const claimResult = claimCandidateByIdStatement.run(
+        lockToken,
+        lockExpiresAt,
+        updatedAt,
+        jobId,
+        timestamp,
+        timestamp
+      ) as { changes?: number }
+
+      if ((claimResult.changes ?? 0) < 1) {
+        return null
+      }
+
+      const row = getByIdStatement.get(jobId) as JobRecord | undefined
+      return row ?? null
     },
     insertRun: (record: JobRunRecord): void => {
       insertRunStatement.run({

@@ -627,6 +627,10 @@ const buildExecutionPrompt = (
 const buildInteractiveBackgroundPrompt = (
   payload: z.infer<typeof interactiveBackgroundJobPayloadSchema>
 ) => {
+  const promptText = payload.input?.prompt ?? payload.request.text
+  const serializedContent =
+    payload.input === undefined ? null : JSON.stringify(payload.input.content, null, 2)
+
   return [
     "Execute this interactive background request now.",
     "Work autonomously and do not ask clarifying questions.",
@@ -636,7 +640,8 @@ const buildInteractiveBackgroundPrompt = (
     "status must be one of: success, failed, skipped.",
     "Do not include markdown.",
     "",
-    payload.request.text,
+    promptText,
+    ...(serializedContent === null ? [] : ["", "Payload JSON:", serializedContent]),
   ].join("\n")
 }
 

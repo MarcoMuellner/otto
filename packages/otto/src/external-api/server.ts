@@ -5,7 +5,10 @@ import type { Logger } from "pino"
 import { z, ZodError } from "zod"
 
 import { cancelInteractiveBackgroundJob } from "../api-services/interactive-background-jobs-control.js"
-import { INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE } from "../api-services/interactive-background-jobs.js"
+import {
+  INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+  spawnInteractiveBackgroundJob,
+} from "../api-services/interactive-background-jobs.js"
 import {
   applyNotificationProfileUpdate,
   diffNotificationProfileFields,
@@ -131,6 +134,8 @@ type ExternalApiServerDependencies = {
     cancelTask: (jobId: string, reason: string | null, updatedAt?: number) => void
     runTaskNow: (jobId: string, scheduledFor: number, updatedAt?: number) => void
   }
+  executeBackgroundJobNow?: (jobId: string) => Promise<void>
+  isBackgroundExecutionReady?: () => boolean
   jobRunSessionsRepository?: {
     listActiveByJobId: (jobId: string) => JobRunSessionRecord[]
     markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
@@ -206,6 +211,15 @@ const cancelBackgroundJobParamsSchema = z.object({
 
 const cancelBackgroundJobRequestSchema = z.object({
   reason: z.string().trim().min(1).optional(),
+})
+
+const createBackgroundOneshotRequestSchema = z.object({
+  prompt: z.string().trim().min(1),
+  content: z.unknown(),
+})
+
+const getBackgroundOneshotStatusParamsSchema = z.object({
+  sessionId: z.string().trim().min(1),
 })
 
 const interactivePromptSurfaceSchema = z.enum(["telegram", "web", "cli"])
@@ -318,6 +332,50 @@ const parsePromptProvenanceJson = (value: string | null | undefined): PromptProv
   }
 }
 
+const parseRunResultSummary = (resultJson: string | null): string | null => {
+  if (!resultJson) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(resultJson) as {
+      summary?: unknown
+    }
+    return typeof parsed.summary === "string" && parsed.summary.trim().length > 0
+      ? parsed.summary
+      : null
+  } catch {
+    return null
+  }
+}
+
+const resolveBackgroundOneshotStatus = (
+  job: JobRecord,
+  latestRun: JobRunRecord | null
+): z.infer<typeof backgroundOneshotStatusSchema> => {
+  if (latestRun) {
+    if (latestRun.finishedAt == null) {
+      return "running"
+    }
+
+    return latestRun.status
+  }
+
+  if (job.terminalState === "cancelled") {
+    return "cancelled"
+  }
+
+  if (job.terminalState === "expired") {
+    return "expired"
+  }
+
+  if (job.status === "running") {
+    return "running"
+  }
+
+  return "queued"
+}
+
 const jobRunEntrySchema = z.object({
   id: z.string().min(1),
   jobId: z.string().min(1),
@@ -380,6 +438,35 @@ const backgroundCancelResponseSchema = z.object({
   outcome: z.enum(["cancelled", "already_cancelled", "already_terminal"]),
   terminalState: z.enum(["completed", "expired", "cancelled"]),
   stopSessionResults: z.array(backgroundStopSessionResultSchema),
+})
+
+const backgroundOneshotCreateResponseSchema = z.object({
+  sessionId: z.string().trim().min(1),
+  jobId: z.string().trim().min(1),
+  status: z.literal("queued"),
+  runAt: z.number().int(),
+})
+
+const backgroundOneshotStatusSchema = z.enum([
+  "queued",
+  "running",
+  "success",
+  "failed",
+  "skipped",
+  "cancelled",
+  "expired",
+])
+
+const backgroundOneshotStatusResponseSchema = z.object({
+  sessionId: z.string().trim().min(1),
+  jobId: z.string().trim().min(1),
+  runId: z.string().trim().min(1).nullable(),
+  status: backgroundOneshotStatusSchema,
+  summary: z.string().nullable(),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  startedAt: z.number().int().nullable(),
+  finishedAt: z.number().int().nullable(),
 })
 
 const interactivePromptWarningSchema = z.object({
@@ -1095,6 +1182,115 @@ export const buildExternalApiServer = (
 
       const err = error as Error
       dependencies.logger.error({ error: err.message }, "External API job list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/external/background-jobs/oneshot", async (request, reply) => {
+    try {
+      if (
+        !dependencies.executeBackgroundJobNow ||
+        !(dependencies.isBackgroundExecutionReady?.() ?? true)
+      ) {
+        return reply.code(503).send({
+          error: "service_unavailable",
+          message: "Immediate background execution is unavailable",
+        })
+      }
+
+      const payload = createBackgroundOneshotRequestSchema.parse(request.body)
+      const sessionId = randomUUID()
+      const created = spawnInteractiveBackgroundJob(
+        {
+          jobsRepository: dependencies.jobsRepository,
+          taskAuditRepository: dependencies.taskAuditRepository,
+        },
+        {
+          jobId: sessionId,
+          sessionId,
+          request: payload.prompt,
+          prompt: payload.prompt,
+          content: payload.content,
+          actor: "control_plane",
+          source: "external_api",
+        }
+      )
+
+      void dependencies.executeBackgroundJobNow(created.jobId).catch((error) => {
+        const err = error as Error
+        dependencies.logger.error(
+          {
+            jobId: created.jobId,
+            sessionId: created.sessionId,
+            error: err.message,
+          },
+          "External API immediate background execution dispatch failed"
+        )
+      })
+
+      return reply.code(202).send(
+        backgroundOneshotCreateResponseSchema.parse({
+          sessionId: created.sessionId,
+          jobId: created.jobId,
+          status: created.status,
+          runAt: created.runAt,
+        })
+      )
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof TaskMutationError) {
+        const failure = resolveTaskMutationErrorResponse(error)
+        return reply.code(failure.statusCode).send(failure.body)
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API oneshot create failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/background-jobs/oneshot/:sessionId/status", async (request, reply) => {
+    try {
+      const params = getBackgroundOneshotStatusParamsSchema.parse(request.params)
+      const job = getTaskById(dependencies.jobsRepository, params.sessionId)
+
+      if (!job || job.type !== INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE) {
+        return reply.code(404).send({ error: "not_found", message: "Background run not found" })
+      }
+
+      const latestRun = dependencies.jobsRepository.listRunsByJobId(job.id, {
+        limit: 1,
+        offset: 0,
+      })[0]
+
+      const status = resolveBackgroundOneshotStatus(job, latestRun ?? null)
+      const errorCode = latestRun?.errorCode ?? null
+      const errorMessage = latestRun?.errorMessage ?? job.terminalReason ?? null
+      const summary = latestRun ? parseRunResultSummary(latestRun.resultJson) : null
+
+      return reply.code(200).send(
+        backgroundOneshotStatusResponseSchema.parse({
+          sessionId: params.sessionId,
+          jobId: job.id,
+          runId: latestRun?.id ?? null,
+          status,
+          summary,
+          errorCode,
+          errorMessage,
+          startedAt: latestRun?.startedAt ?? null,
+          finishedAt: latestRun?.finishedAt ?? null,
+        })
+      )
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      dependencies.logger.error({ error: err.message }, "External API oneshot status failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

@@ -1407,6 +1407,213 @@ describe("buildExternalApiServer", () => {
     await app.close()
   })
 
+  it("creates and immediately dispatches background oneshot runs", async () => {
+    // Arrange
+    const jobs = new Map<string, JobRecord>()
+    const dispatchedJobIds: string[] = []
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (jobId: string): JobRecord | null => jobs.get(jobId) ?? null,
+        createTask: (record: JobRecord): void => {
+          jobs.set(record.id, record)
+        },
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      executeBackgroundJobNow: async (jobId: string): Promise<void> => {
+        dispatchedJobIds.push(jobId)
+      },
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/background-jobs/oneshot",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        prompt: "Summarize deployment risks",
+        content: {
+          environment: "staging",
+          buildId: "build-42",
+        },
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(202)
+    const body = response.json() as {
+      sessionId: string
+      jobId: string
+      status: string
+      runAt: number
+    }
+    expect(body.status).toBe("queued")
+    expect(body.sessionId).toBe(body.jobId)
+    expect(typeof body.runAt).toBe("number")
+    expect(dispatchedJobIds).toEqual([body.jobId])
+
+    const persisted = jobs.get(body.jobId)
+    expect(persisted?.type).toBe("interactive_background_oneshot")
+    const parsedPayload = persisted?.payload ? JSON.parse(persisted.payload) : null
+    expect(parsedPayload).toMatchObject({
+      source: {
+        sessionId: body.sessionId,
+      },
+      request: {
+        text: "Summarize deployment risks",
+      },
+      input: {
+        prompt: "Summarize deployment risks",
+        content: {
+          environment: "staging",
+          buildId: "build-42",
+        },
+      },
+    })
+
+    await app.close()
+  })
+
+  it("returns service unavailable when immediate background execution is disabled", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/background-jobs/oneshot",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        prompt: "Run now",
+        content: { any: true },
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toMatchObject({
+      error: "service_unavailable",
+    })
+
+    await app.close()
+  })
+
+  it("returns service unavailable when immediate background execution is not ready", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      executeBackgroundJobNow: async () => {
+        return
+      },
+      isBackgroundExecutionReady: () => false,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/external/background-jobs/oneshot",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        prompt: "Run now",
+        content: { any: true },
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toMatchObject({
+      error: "service_unavailable",
+    })
+
+    await app.close()
+  })
+
+  it("returns background oneshot status by session id", async () => {
+    // Arrange
+    const jobs = new Map<string, JobRecord>()
+    const runsByJobId = new Map<string, JobRunRecord[]>()
+    jobs.set("session-oneshot-1", {
+      ...createJobRecord("session-oneshot-1"),
+      type: "interactive_background_oneshot",
+      scheduleType: "oneshot",
+      runAt: 5_000,
+      nextRunAt: null,
+      status: "idle",
+      terminalState: "completed",
+    })
+    runsByJobId.set("session-oneshot-1", [createJobRunRecord("session-oneshot-1")])
+
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub({
+        getById: (jobId: string): JobRecord | null => jobs.get(jobId) ?? null,
+        listRunsByJobId: (jobId: string): JobRunRecord[] => runsByJobId.get(jobId) ?? [],
+      }),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/background-jobs/oneshot/session-oneshot-1/status",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      sessionId: "session-oneshot-1",
+      jobId: "session-oneshot-1",
+      status: "success",
+      runId: "run-1",
+      summary: "ok",
+    })
+
+    await app.close()
+  })
+
   it("returns job details when authorized", async () => {
     // Arrange
     const job = createJobRecord("job-2")

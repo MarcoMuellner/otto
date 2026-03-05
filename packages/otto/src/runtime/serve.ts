@@ -1,4 +1,5 @@
 import path from "node:path"
+import { randomUUID } from "node:crypto"
 import { access } from "node:fs/promises"
 import { constants } from "node:fs"
 
@@ -180,6 +181,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   let modelCatalogService: ModelCatalogService | null = null
   let interactiveSessionController: { closeSession: (sessionId: string) => Promise<void> } | null =
     null
+  let executeBackgroundJobNow: ((jobId: string) => Promise<void>) | null = null
 
   try {
     internalApiServer = await startInternalApiServer({
@@ -283,6 +285,14 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
         }, 150)
       },
       jobsRepository,
+      executeBackgroundJobNow: async (jobId: string): Promise<void> => {
+        if (!executeBackgroundJobNow) {
+          throw new Error("Background execution engine is not ready")
+        }
+
+        await executeBackgroundJobNow(jobId)
+      },
+      isBackgroundExecutionReady: () => executeBackgroundJobNow !== null,
       jobRunSessionsRepository,
       sessionController: {
         closeSession: async (sessionId: string): Promise<void> => {
@@ -480,6 +490,37 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       defaultWatchdogChatId: watchdogChatId,
       nonInteractiveContextCaptureService,
     })
+    executeBackgroundJobNow = async (jobId: string): Promise<void> => {
+      const now = Date.now()
+      const lockToken = randomUUID()
+      const claimed = jobsRepository.claimById(
+        jobId,
+        now,
+        lockToken,
+        schedulerConfig.lockLeaseMs,
+        now
+      )
+
+      if (!claimed) {
+        logger.warn({ jobId }, "Background job claim skipped for immediate dispatch")
+        return
+      }
+
+      try {
+        await taskExecutionEngine.executeClaimedJob(claimed)
+      } catch (error) {
+        const err = error as Error
+        logger.error(
+          {
+            jobId,
+            error: err.message,
+          },
+          "Immediate background job execution failed"
+        )
+        jobsRepository.releaseLock(jobId, lockToken, Date.now())
+        throw error
+      }
+    }
 
     schedulerKernel = await startSchedulerKernel({
       logger,
