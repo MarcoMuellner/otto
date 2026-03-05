@@ -362,6 +362,72 @@ describe("docs-service live proxy", () => {
     expect(body.state.runtime.version).toBe("1.0.0");
   });
 
+  it("returns docs service health metadata for smoke checks", async () => {
+    const siteDir = await createSearchFixtureSite();
+    cleanupPaths.push(siteDir);
+
+    const upstream = await listen(
+      createServer((_request, response) => {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        response.end(JSON.stringify({ ok: true }));
+      }),
+    );
+    cleanupServers.push(upstream.close);
+
+    const docs = startDocsServer({
+      host: "127.0.0.1",
+      port: 0,
+      basePath: "/",
+      siteDirectory: siteDir,
+      externalApiBaseUrl: `http://127.0.0.1:${upstream.port}`,
+    });
+    cleanupServers.push(docs.close);
+
+    const docsPort = await waitForListeningPort(() => docs.port);
+    const response = await fetch(`http://127.0.0.1:${docsPort}/api/health`);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: "ok",
+      service: "docs-service",
+      liveProxyPath: "/api/live/self-awareness",
+    });
+    expect(body.pageCount).toBeGreaterThan(0);
+    expect(body.versions).toContain("current");
+  });
+
+  it("returns upstream_unreachable when live upstream cannot be reached", async () => {
+    const siteDir = await createTempSite();
+    cleanupPaths.push(siteDir);
+
+    const docs = startDocsServer({
+      host: "127.0.0.1",
+      port: 0,
+      basePath: "/",
+      siteDirectory: siteDir,
+      externalApiBaseUrl: "http://127.0.0.1:9",
+    });
+    cleanupServers.push(docs.close);
+
+    const docsPort = await waitForListeningPort(() => docs.port);
+    await waitForDocsReady(`http://127.0.0.1:${docsPort}`);
+
+    const response = await fetch(
+      `http://127.0.0.1:${docsPort}/api/live/self-awareness`,
+      {
+        headers: {
+          Authorization: "Bearer good-token",
+        },
+      },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({ error: "upstream_unreachable" });
+  });
+
   it("allows repeated close calls during shutdown", async () => {
     const siteDir = await createTempSite();
     cleanupPaths.push(siteDir);

@@ -1,0 +1,76 @@
+name: Docs Platform E2E
+
+on:
+  pull_request:
+    paths:
+      - "packages/otto-docs/**"
+      - "packages/otto-docs-service/**"
+      - "packages/otto/src/api-services/docs-read.ts"
+      - "packages/otto/tests/api-services/docs-read.test.ts"
+      - "packages/otto/tests/e2e/**"
+      - "scripts/docs/**"
+      - ".github/workflows/docs-platform-e2e.yml"
+      - "pm/epic_014/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/otto-docs/**"
+      - "packages/otto-docs-service/**"
+      - "packages/otto/src/api-services/docs-read.ts"
+      - "packages/otto/tests/api-services/docs-read.test.ts"
+      - "packages/otto/tests/e2e/**"
+      - "scripts/docs/**"
+      - ".github/workflows/docs-platform-e2e.yml"
+
+jobs:
+  docs-platform-e2e:
+    name: Docs platform hardening checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Docs service hardening tests
+        run: pnpm -C packages/otto-docs-service exec vitest run tests/server.test.ts
+
+      - name: Otto docs platform e2e tests
+        run: pnpm -C packages/otto exec vitest run tests/e2e/docs-platform.test.ts
+
+      - name: Build static docs release artifacts
+        env:
+          OTTO_DOCS_ENABLE_LIVE: "0"
+        run: |
+          node scripts/docs/build-release-docs.mjs \
+            --version "0.0.0-ci" \
+            --tag "v0.0.0-ci" \
+            --site-url "https://example.com" \
+            --site-base-url "/otto/" \
+            --output-dir "release/docs-build-e2e"
+
+      - name: Validate static boundary merge artifact
+        shell: bash
+        run: |
+          node scripts/docs/merge-release-docs.mjs \
+            --latest-build-dir "release/docs-build-e2e/latest" \
+            --version-build-dir "release/docs-build-e2e/v0.0.0-ci" \
+            --output-dir "release/pages-site-e2e" \
+            --tag "v0.0.0-ci" \
+            --version "0.0.0-ci" \
+            --sha "${GITHUB_SHA}" \
+            --published-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

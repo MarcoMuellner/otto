@@ -111,6 +111,7 @@ const runIntegrityChecks = async ({ outputDir, docsTag, docsVersion }) => {
   const forbiddenPatterns = [
     "/api/docs/live",
     "/api/self-awareness",
+    "otto.docs.live.token",
     "OTTO_DOCS_LIVE_ENDPOINT",
   ];
 
