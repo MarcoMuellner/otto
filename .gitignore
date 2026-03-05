@@ -1,9 +1,12 @@
 .idea/
+.idea
 node_modules/
 dist/
 packages/otto/dist/
 packages/otto-control-plane/build/
 packages/otto-control-plane/.react-router/
+packages/otto-docs/build/
+packages/otto-docs/.docusaurus/
 coverage/
 packages/otto/coverage/
 .env
