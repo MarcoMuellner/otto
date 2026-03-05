@@ -41,7 +41,7 @@ Otto needs one trusted source where operators and Otto itself can answer what is
 4. `ticket_004`: Live self-awareness API contract and OpenAPI updates. (done)
 5. `ticket_005`: Authenticated live docs views for deployed runtime. (done)
 6. `ticket_006`: Otto internal docs tools (`search`/`open`) with automatic auth. (done)
-7. `ticket_007`: Complete operator docs coverage for `ottoctl` and operations.
+7. `ticket_007`: Complete operator docs coverage for `ottoctl` and operations. (done)
 8. `ticket_008`: End-to-end hardening, security gates, and rollout runbook.
 
 ## Out of Scope
