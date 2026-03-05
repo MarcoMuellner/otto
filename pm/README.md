@@ -17,6 +17,7 @@ This directory stores deployable epics and tickets.
 - `epic_011`: Interactive context bridge for non-interactive outbound continuity.
 - `epic_012`: Deep Doctor healthcheck and end-to-end regression guard.
 - `epic_013`: Bugfix for scheduler deadlocked session recovery and non-interactive guardrails.
+- `epic_014`: Self-awareness transparency docs platform with public static docs and authenticated live runtime views.
 
 ## Structure
 
