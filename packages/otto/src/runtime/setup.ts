@@ -1,5 +1,6 @@
 import type { Logger } from "pino"
 
+import { ensureAgentMemoryJournalConfig } from "../config/agent-memory-config.js"
 import { ensureOttoConfigFile } from "../config/otto-config.js"
 import {
   deployWorkspaceAssets,
@@ -10,6 +11,9 @@ import {
 export type SetupResult = {
   configPath: string
   createdConfig: boolean
+  agentMemoryConfigPath: string
+  createdAgentMemoryConfig: boolean
+  updatedAgentMemoryConfig: boolean
   deployedFiles: string[]
   directories: string[]
 }
@@ -29,6 +33,7 @@ export const runSetup = async (
   assetDirectory = resolveAssetDirectory()
 ): Promise<SetupResult> => {
   const { config, configPath, created } = await ensureOttoConfigFile(homeDirectory)
+  const agentMemoryConfig = await ensureAgentMemoryJournalConfig(homeDirectory)
 
   const directories = await ensureWorkspaceDirectories(config.ottoHome)
   const deployedFiles = await deployWorkspaceAssets(assetDirectory, config.ottoHome)
@@ -39,6 +44,9 @@ export const runSetup = async (
       configPath,
       ottoHome: config.ottoHome,
       createdConfig: created,
+      agentMemoryConfigPath: agentMemoryConfig.configPath,
+      createdAgentMemoryConfig: agentMemoryConfig.created,
+      updatedAgentMemoryConfig: agentMemoryConfig.updated,
       deployedCount: deployedFiles.length,
     },
     "Otto setup completed"
@@ -47,6 +55,9 @@ export const runSetup = async (
   return {
     configPath,
     createdConfig: created,
+    agentMemoryConfigPath: agentMemoryConfig.configPath,
+    createdAgentMemoryConfig: agentMemoryConfig.created,
+    updatedAgentMemoryConfig: agentMemoryConfig.updated,
     deployedFiles,
     directories,
   }

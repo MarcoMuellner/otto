@@ -44,6 +44,10 @@ ottoctl extension list
 - Update flow runs setup and service restart as part of command execution.
 - If interactive prompts appear (for credentials/provisioning), complete or skip
   intentionally based on your deployment policy.
+- Setup ensures OpenCode memory journal config exists at
+  `~/.config/opencode/agent-memory.json` with `journal.enabled = true`.
+- Suggested journal tags are seeded as defaults and can be changed by Otto with
+  `get_journal_config` and `set_journal_tags`.
 
 ## Failure Handling
 

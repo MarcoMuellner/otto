@@ -27,6 +27,7 @@ Use memory blocks carefully:
 - `persona` (global): assistant operating style.
 - `human` (global): durable user preferences and constraints.
 - `project` (project): project-specific context and decisions.
+- `journal` (global, append-only): episodic discoveries, execution notes, and context that should stay searchable without bloating memory blocks.
 
 Rules:
 
@@ -34,3 +35,5 @@ Rules:
 - Distinguish facts from assumptions.
 - Update stale entries when contradicted.
 - Avoid memory clutter.
+- Use journal entries for timeline/history details; promote only stable patterns into memory blocks.
+- Create or refine journal tags when needed so retrieval stays useful over time.

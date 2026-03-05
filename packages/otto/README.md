@@ -32,6 +32,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Telegram worker credentials are stored in `~/.local/share/otto/secrets/telegram.env` and managed by `ottoctl configure-telegram`
 - Service runtime env vars are stored in `~/.local/share/otto/secrets/runtime.env` and loaded on boot (systemd `EnvironmentFile`, launchd plist environment)
 - Manage runtime env vars with `ottoctl env set <KEY> <VALUE>`, `ottoctl env unset <KEY>`, and `ottoctl env list`
+- Agent memory plugin config: `~/.config/opencode/agent-memory.json` (auto-created/merged by `otto setup` and `ottoctl update` with journal enabled)
+- Journal tags are suggested defaults, not hard limits; Otto can evolve them over time
 - Telegram worker runtime defaults (heartbeat, retries, OpenCode bridge URL) are fixed by runtime code and no longer configured through env vars
 - Telegram prompt timeout is configured in `~/.config/otto/config.jsonc` at `telegram.promptTimeoutMs`
 - Telegram voice/transcription settings live in `~/.config/otto/config.jsonc` under `telegram.voice` and `telegram.transcription`; local installs use provider `worker` so Faster-Whisper stays loaded in a background process during Otto runtime
@@ -67,6 +69,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Docs service URL override for internal docs tools (optional): `OTTO_DOCS_SERVICE_URL` (for example `http://127.0.0.1:4174`)
 - Internal docs tools available to OpenCode runtime: `docs_search` and `docs_open`
   - `docs_open` auto-fetches live self-awareness data when opening `/live` and handles bearer auth automatically.
+- Journal config tools available to OpenCode runtime: `get_journal_config` and `set_journal_tags`
+  - `set_journal_tags` defaults to merge mode and supports `replace` when a full reset is needed.
 
 ## Install (Release Artifact)
 
