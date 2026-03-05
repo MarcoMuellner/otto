@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-03-01T09:55:34.933Z",
+  "generatedAt": "2026-03-05T10:22:48.220Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -98,17 +98,17 @@
       }
     },
     "obsidian": {
-      "latest": "0.1.0",
+      "latest": "0.1.1",
       "versions": {
-        "0.1.0": {
-          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/obsidian-0.1.0.tgz",
-          "sha256": "3d458ba02ec377caa6debc15d8379dd9308b78305249a0b72e8821a37e71832b",
-          "sizeBytes": 5227,
+        "0.1.1": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/obsidian-0.1.1.tgz",
+          "sha256": "1664df69e383bbc649322cd1000721f367d4a7c5393fc76d6ccc17b0ad0ce836",
+          "sizeBytes": 11914,
           "compatibility": {
             "otto": ">=0.1.0",
             "node": ">=22"
           },
-          "description": "Obsidian-focused writing and editing skill set for OpenCode.",
+          "description": "Obsidian CLI vault operations skill set for OpenCode.",
           "payloadTypes": [
             "skills"
           ]

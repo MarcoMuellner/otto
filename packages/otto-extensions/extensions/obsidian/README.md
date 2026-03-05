@@ -1,10 +1,10 @@
 # Obsidian Skills Extension
 
-This extension adds Obsidian-focused skills to Otto/OpenCode.
+This extension adds Obsidian CLI vault operation skills to Otto/OpenCode.
 
 ## Included skills
 
-- `obsidian-markdown`
+- `obsidian-cli`
 
 ## Install
 
@@ -25,14 +25,16 @@ ottoctl start
 
 Check skill file exists at:
 
-- `~/.otto/.opencode/skills/obsidian-markdown/SKILL.md`
+- `~/.otto/.opencode/skills/obsidian-cli/SKILL.md`
+
+Reference docs are bundled at:
+
+- `~/.otto/.opencode/skills/obsidian-cli/references/command-reference.md`
 
 ## Upstream source and license
 
-This extension vendors the upstream skill content from:
+This extension vendors skill content from:
 
-- `https://github.com/kepano/obsidian-skills/blob/main/skills/obsidian-markdown/SKILL.md`
+- Internal Otto Obsidian CLI skill and bundled command reference
 
-The upstream project is licensed under MIT:
-
-- `https://github.com/kepano/obsidian-skills/blob/main/LICENSE`
+License details are defined by this repository.
