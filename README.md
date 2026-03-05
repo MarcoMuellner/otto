@@ -1,11 +1,12 @@
 # otto workspace
 
-This repository is a pnpm workspace with four primary packages:
+This repository is a pnpm workspace with five primary packages:
 
 - `packages/otto`: Otto core runtime, CLI, build, and release artifacts
 - `packages/otto-control-plane`: React Router web control-plane process (UI + BFF)
 - `packages/otto-extension-sdk`: shared extension contract validation library
 - `packages/otto-extensions`: extension catalog scaffolding (tools, skills, MCP, overlays)
+- `packages/otto-docs`: Docusaurus-based operator documentation platform
 
 ## Common Commands
 
