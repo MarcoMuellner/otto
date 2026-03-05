@@ -2,8 +2,9 @@
 
 ## Status
 
-- `state`: `planned`
 - `category`: `feature`
+- `implementation`: `done`
+- `state`: `done`
 
 ## Objective
 
@@ -49,3 +50,10 @@ Publish static docs per release tag to GitHub Pages with deterministic version b
 ## Deployability
 
 - Deployable public docs publishing increment independent of runtime service rollout.
+
+## Implementation Notes
+
+- Added dedicated tag-driven docs workflow at `.github/workflows/docs-release.yml`.
+- Added release docs build pipeline scripts under `scripts/docs/` for deterministic tag/version mapping and Pages artifact merge behavior.
+- Added docs manifest generation (`versions.json`) and validation gates, including forbidden live-runtime hook checks in published output.
+- Bound Docusaurus release metadata to environment-driven values in `packages/otto-docs/docusaurus.config.ts` and surfaced release tag on the docs homepage.

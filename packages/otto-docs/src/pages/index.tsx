@@ -1,4 +1,5 @@
 import Link from "@docusaurus/Link"
+import useDocusaurusContext from "@docusaurus/useDocusaurusContext"
 import Layout from "@theme/Layout"
 
 const sections = [
@@ -30,6 +31,9 @@ const sections = [
 ]
 
 export default function HomePage(): JSX.Element {
+  const { siteConfig } = useDocusaurusContext()
+  const docsTag = String(siteConfig.customFields?.docsTag ?? "vlocal-dev")
+
   return (
     <Layout
       title="Otto Docs"
@@ -44,6 +48,7 @@ export default function HomePage(): JSX.Element {
               This docs platform is the operator-first source of truth for how Otto works, what
               constraints apply, and how to run it safely.
             </p>
+            <p className="docs-home-version-chip">Release docs version: {docsTag}</p>
             <div className="docs-home-actions">
               <Link className="button button--primary button--lg" to="/docs/intro">
                 Start With Intro

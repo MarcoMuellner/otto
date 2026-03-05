@@ -12,6 +12,8 @@
     "docs:build": "pnpm -C packages/otto-docs run build",
     "docs:lint": "pnpm -C packages/otto-docs run lint",
     "docs:check": "pnpm -C packages/otto-docs run check",
+    "docs:release:build": "node scripts/docs/build-release-docs.mjs",
+    "docs:release:merge": "node scripts/docs/merge-release-docs.mjs",
     "setup": "pnpm -C packages/otto run setup",
     "serve": "pnpm -C packages/otto run serve",
     "telegram-worker": "pnpm -C packages/otto run telegram-worker",

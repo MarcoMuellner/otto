@@ -2,13 +2,18 @@ import type { Config } from "@docusaurus/types"
 import type * as Preset from "@docusaurus/preset-classic"
 import { themes as prismThemes } from "prism-react-renderer"
 
+const docsVersion = process.env.OTTO_DOCS_VERSION ?? "local-dev"
+const docsTag = process.env.OTTO_DOCS_TAG ?? `v${docsVersion}`
+const baseUrl = process.env.OTTO_DOCS_BASE_URL ?? "/"
+const siteUrl = process.env.OTTO_DOCS_SITE_URL ?? "https://example.com"
+
 const config: Config = {
   title: "Otto Docs",
   tagline: "Operator-first documentation for Otto runtime and platform",
   favicon: "img/otto-mark.svg",
 
-  url: "https://example.com",
-  baseUrl: "/",
+  url: siteUrl,
+  baseUrl,
 
   organizationName: "otto",
   projectName: "otto-docs",
@@ -24,6 +29,11 @@ const config: Config = {
   i18n: {
     defaultLocale: "en",
     locales: ["en"],
+  },
+
+  customFields: {
+    docsVersion,
+    docsTag,
   },
 
   presets: [

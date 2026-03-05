@@ -1,0 +1,110 @@
+name: Docs Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  publish-docs:
+    name: Build and publish docs to GitHub Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout existing GitHub Pages branch
+        id: gh-pages
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: release/gh-pages
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Compute docs release metadata
+        id: docs-meta
+        shell: bash
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          DOCS_VERSION="${TAG_NAME#v}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          OWNER_NAME="${GITHUB_REPOSITORY%%/*}"
+          SITE_URL="https://${OWNER_NAME}.github.io"
+          SITE_BASE_URL="/${REPO_NAME}/"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "tag=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${DOCS_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "site_url=${SITE_URL}" >> "$GITHUB_OUTPUT"
+          echo "site_base_url=${SITE_BASE_URL}" >> "$GITHUB_OUTPUT"
+          echo "published_at=${PUBLISHED_AT}" >> "$GITHUB_OUTPUT"
+
+          echo "Docs release mapping: tag=${TAG_NAME} version=${DOCS_VERSION} latest_path=/ version_path=/${TAG_NAME}/ site_base=${SITE_BASE_URL}"
+
+      - name: Build docs release artifacts
+        run: |
+          node scripts/docs/build-release-docs.mjs \
+            --version "${{ steps.docs-meta.outputs.version }}" \
+            --tag "${{ steps.docs-meta.outputs.tag }}" \
+            --site-url "${{ steps.docs-meta.outputs.site_url }}" \
+            --site-base-url "${{ steps.docs-meta.outputs.site_base_url }}" \
+            --output-dir release/docs-build
+
+      - name: Prepare GitHub Pages artifact
+        shell: bash
+        run: |
+          EXISTING_DIR_ARG=""
+          if [ -d "release/gh-pages" ]; then
+            EXISTING_DIR_ARG="--existing-dir release/gh-pages"
+          fi
+
+          node scripts/docs/merge-release-docs.mjs \
+            --latest-build-dir release/docs-build/latest \
+            --version-build-dir "release/docs-build/${{ steps.docs-meta.outputs.tag }}" \
+            --output-dir release/pages-site \
+            --tag "${{ steps.docs-meta.outputs.tag }}" \
+            --version "${{ steps.docs-meta.outputs.version }}" \
+            --sha "${GITHUB_SHA}" \
+            --published-at "${{ steps.docs-meta.outputs.published_at }}" \
+            ${EXISTING_DIR_ARG}
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: release/pages-site
+
+      - name: Deploy GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
