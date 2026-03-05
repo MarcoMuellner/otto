@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 
 import pino from "pino"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { buildExternalApiServer, resolveExternalApiConfig } from "../../src/external-api/server.js"
 import { PromptFileAccessError } from "../../src/prompt-management/index.js"
@@ -125,11 +125,13 @@ type JobsRepositoryStub = {
 }
 
 type TaskAuditRepositoryStub = {
+  listRecent?: (limit?: number) => TaskAuditRecord[]
   listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
   insert: (record: TaskAuditRecord) => void
 }
 
 type CommandAuditRepositoryStub = {
+  listRecent?: (limit?: number) => CommandAuditRecord[]
   insert: (record: CommandAuditRecord) => void
 }
 
@@ -197,6 +199,7 @@ const createTaskAuditRepositoryStub = (
   overrides: Partial<TaskAuditRepositoryStub> = {}
 ): TaskAuditRepositoryStub => {
   return {
+    listRecent: () => [],
     listByTaskId: () => [],
     insert: () => {
       return
@@ -209,6 +212,7 @@ const createCommandAuditRepositoryStub = (
   overrides: Partial<CommandAuditRepositoryStub> = {}
 ): CommandAuditRepositoryStub => {
   return {
+    listRecent: () => [],
     insert: () => {
       return
     },
@@ -336,6 +340,178 @@ describe("buildExternalApiServer", () => {
     )
     expect(jsonWithQueryResponse.statusCode).toBe(200)
     expect(docsResponse.statusCode).toBe(200)
+
+    await app.close()
+  })
+
+  it("documents parameters, payloads, and responses in external OpenAPI", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const openApiResponse = await app.inject({
+      method: "GET",
+      url: "/external/openapi.json",
+    })
+    const openApi = openApiResponse.json() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>
+    }
+
+    // Assert
+    expect(openApiResponse.statusCode).toBe(200)
+    expect(openApi.paths["/external/jobs/{id}/runs"]?.get?.parameters).toBeTruthy()
+    expect(openApi.paths["/external/models/defaults"]?.put?.requestBody).toBeTruthy()
+    expect(openApi.paths["/external/models/defaults"]?.put?.responses?.["200"]).toBeTruthy()
+    expect(openApi.paths["/external/models/defaults"]?.put?.responses?.default).toBeUndefined()
+    expect(
+      JSON.stringify(openApi.paths["/external/models/catalog"]?.get?.responses?.["503"])
+    ).toContain("service_unavailable")
+    expect(
+      JSON.stringify(openApi.paths["/external/models/defaults"]?.get?.responses?.["503"])
+    ).toContain("service_unavailable")
+
+    await app.close()
+  })
+
+  it("returns live self-awareness snapshot when authorized", async () => {
+    // Arrange
+    const taskAuditRepository = createTaskAuditRepositoryStub({
+      listRecent: () => [createTaskAuditRecord("job-1")],
+    })
+    const commandAuditRepository = createCommandAuditRepositoryStub({
+      listRecent: () => [
+        {
+          id: "cmd-1",
+          command: "external_system_restart",
+          lane: "interactive",
+          status: "failed",
+          errorMessage: "restart is blocked",
+          metadataJson: "{}",
+          createdAt: 2_500,
+        },
+      ],
+    })
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      systemStatusProvider: () => ({
+        status: "degraded",
+        checkedAt: 1_700_000_000_000,
+        runtime: {
+          version: "0.1.0-test",
+          pid: 4321,
+          startedAt: 1_699_999_999_000,
+          uptimeSec: 10,
+        },
+        services: [
+          {
+            id: "runtime",
+            label: "Otto Runtime",
+            status: "ok",
+            message: "Runtime process is active",
+          },
+          {
+            id: "telegram_worker",
+            label: "Telegram Worker",
+            status: "degraded",
+            message: "Telegram worker unavailable",
+          },
+        ],
+      }),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository,
+      commandAuditRepository,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/self-awareness/live",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      state: {
+        status: "degraded",
+      },
+      processes: expect.any(Array),
+      limits: {
+        scheduler: {
+          tickMs: expect.any(Number),
+        },
+      },
+      recentDecisions: expect.any(Array),
+      openRisks: expect.any(Array),
+    })
+
+    await app.close()
+  })
+
+  it("marks self-awareness sources as degraded when audit sources fail", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub({
+        listRecent: () => {
+          throw new Error("task audit unavailable")
+        },
+      }),
+      commandAuditRepository: createCommandAuditRepositoryStub({
+        listRecent: vi.fn(() => {
+          throw new Error("command audit unavailable")
+        }),
+      }),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "GET",
+      url: "/external/self-awareness/live",
+      headers: {
+        authorization: "Bearer secret",
+      },
+    })
+    const payload = response.json() as {
+      sources: Array<{ source: string; status: string }>
+    }
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(payload.sources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "task_audit", status: "degraded" }),
+        expect.objectContaining({ source: "command_audit", status: "degraded" }),
+      ])
+    )
 
     await app.close()
   })

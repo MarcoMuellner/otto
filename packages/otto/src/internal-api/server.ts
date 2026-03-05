@@ -27,6 +27,7 @@ import {
   notificationProfileUpdateSchema,
   resolveNotificationProfile,
 } from "../api-services/settings-notification-profile.js"
+import { buildOpenApiDocument, type OpenApiOperationSpec } from "../api/openapi.js"
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
 import type { OutboundMessageEnqueueRepository } from "../telegram-worker/outbound-enqueue.js"
@@ -295,6 +296,73 @@ const reportBackgroundMilestoneApiSchema = z.object({
   runId: z.string().trim().min(1).optional(),
   chatId: z.number().int().positive().optional(),
   content: z.string().trim().min(1),
+})
+
+const unauthorizedResponseSchema = z.object({
+  error: z.literal("unauthorized"),
+})
+
+const internalErrorResponseSchema = z.object({
+  error: z.literal("internal_error"),
+})
+
+const serviceUnavailableResponseSchema = z.object({
+  error: z.literal("service_unavailable"),
+})
+
+const validationErrorResponseSchema = z.object({
+  error: z.literal("invalid_request"),
+  details: z.array(z.unknown()).optional(),
+})
+
+const missingChatErrorResponseSchema = z.object({
+  error: z.literal("missing_chat"),
+  message: z.string().min(1),
+})
+
+const invalidFilePathErrorResponseSchema = z.object({
+  error: z.literal("invalid_file_path"),
+  message: z.string().min(1),
+})
+
+const fileTooLargeErrorResponseSchema = z.object({
+  error: z.literal("file_too_large"),
+  message: z.string().min(1),
+})
+
+const queueTelegramMessageBadRequestResponseSchema = z.union([
+  validationErrorResponseSchema,
+  missingChatErrorResponseSchema,
+])
+
+const queueTelegramFileBadRequestResponseSchema = z.union([
+  validationErrorResponseSchema,
+  missingChatErrorResponseSchema,
+  invalidFilePathErrorResponseSchema,
+  fileTooLargeErrorResponseSchema,
+])
+
+const laneForbiddenResponseSchema = z.object({
+  error: z.literal("lane_forbidden"),
+  message: z.string().min(1),
+})
+
+const notFoundResponseSchema = z.object({
+  error: z.literal("not_found"),
+  message: z.string().optional(),
+})
+
+const queueResultResponseSchema = z.object({
+  status: z.enum(["enqueued", "duplicate"]),
+  queuedCount: z.number().int(),
+  duplicateCount: z.number().int(),
+  dedupeKey: z.string().nullable(),
+  messageIds: z.array(z.string()),
+})
+
+const taskAuditListResponseSchema = z.object({
+  taskAudit: z.array(z.unknown()),
+  commandAudit: z.array(z.unknown()),
 })
 
 type BackgroundMilestoneContext = {
@@ -707,85 +775,286 @@ export const buildInternalApiServer = (
   dependencies: InternalApiServerDependencies
 ): FastifyInstance => {
   const app = Fastify({ logger: false })
-  const documentedRoutes: Array<{
-    method: string
-    url: string
-    tag: string
-  }> = []
-
-  const resolveRouteTag = (url: string): string => {
-    if (url.includes("background-jobs")) {
-      return "BackgroundJobs"
-    }
-
-    if (url.includes("queue-telegram")) {
-      return "Telegram"
-    }
-
-    if (url.includes("tasks")) {
-      return "Tasks"
-    }
-
-    return "Tools"
-  }
-
-  app.addHook("onRoute", (routeOptions) => {
-    if (
-      routeOptions.url === INTERNAL_OPENAPI_JSON_PATH ||
-      routeOptions.url.startsWith(INTERNAL_OPENAPI_UI_PATH)
-    ) {
-      return
-    }
-
-    const methods = Array.isArray(routeOptions.method) ? routeOptions.method : [routeOptions.method]
-    for (const method of methods) {
-      documentedRoutes.push({
-        method: String(method).toLowerCase(),
-        url: routeOptions.url,
-        tag: resolveRouteTag(routeOptions.url),
-      })
-    }
-  })
-
-  const buildOpenApiDocument = () => {
-    const paths: Record<string, Record<string, unknown>> = {}
-    for (const route of documentedRoutes) {
-      const openApiPath = route.url.replaceAll(/:([A-Za-z0-9_]+)/g, "{$1}")
-      if (!paths[openApiPath]) {
-        paths[openApiPath] = {}
-      }
-
-      paths[openApiPath][route.method] = {
-        tags: [route.tag],
-        summary: `${route.method.toUpperCase()} ${route.url}`,
-        responses: {
-          default: {
-            description: "Response",
-          },
+  const internalSecurity = [{ bearerAuth: [] }]
+  const genericObjectResponseSchema = z.record(z.string(), z.unknown())
+  const internalOpenApiOperations: OpenApiOperationSpec[] = [
+    {
+      method: "post",
+      path: "/internal/tools/queue-telegram-message",
+      tags: ["Telegram"],
+      summary: "Queue outbound Telegram text message",
+      security: internalSecurity,
+      requestBody: { schema: queueTelegramMessageApiSchema },
+      responses: {
+        200: { description: "Queue result", schema: queueResultResponseSchema },
+        400: {
+          description: "Invalid request",
+          schema: queueTelegramMessageBadRequestResponseSchema,
         },
-      }
-    }
-
-    return {
-      openapi: "3.1.0",
-      info: {
-        title: "Otto Internal Tool API",
-        version: "1.0.0",
-        description:
-          "Internal API for Otto tool adapters and automation flows. This API is intended for local/runtime tooling integration and is not a public compatibility contract.",
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
       },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/queue-telegram-file",
+      tags: ["Telegram"],
+      summary: "Queue outbound Telegram file",
+      security: internalSecurity,
+      requestBody: { schema: queueTelegramFileApiSchema },
+      responses: {
+        200: { description: "Queue result", schema: queueResultResponseSchema },
+        400: { description: "Invalid request", schema: queueTelegramFileBadRequestResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/tasks/create",
+      tags: ["Tasks"],
+      summary: "Create task",
+      security: internalSecurity,
+      requestBody: { schema: createTaskApiSchema },
+      responses: {
+        200: { description: "Task created", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Lane forbidden", schema: laneForbiddenResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/background-jobs/spawn",
+      tags: ["BackgroundJobs"],
+      summary: "Spawn interactive background job",
+      security: internalSecurity,
+      requestBody: { schema: spawnBackgroundJobApiSchema },
+      responses: {
+        200: { description: "Background job spawned", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/background-jobs/milestone",
+      tags: ["BackgroundJobs"],
+      summary: "Report background job milestone",
+      security: internalSecurity,
+      requestBody: { schema: reportBackgroundMilestoneApiSchema },
+      responses: {
+        200: { description: "Milestone accepted", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/background-jobs/list",
+      tags: ["BackgroundJobs"],
+      summary: "List background jobs",
+      security: internalSecurity,
+      requestBody: { schema: listBackgroundJobsApiSchema },
+      responses: {
+        200: { description: "Background jobs list", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Lane forbidden", schema: laneForbiddenResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/background-jobs/show",
+      tags: ["BackgroundJobs"],
+      summary: "Show background job details",
+      security: internalSecurity,
+      requestBody: { schema: showBackgroundJobApiSchema },
+      responses: {
+        200: { description: "Background job details", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Lane forbidden", schema: laneForbiddenResponseSchema },
+        404: { description: "Not found", schema: notFoundResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/background-jobs/cancel",
+      tags: ["BackgroundJobs"],
+      summary: "Cancel background job",
+      security: internalSecurity,
+      requestBody: { schema: cancelBackgroundJobApiSchema },
+      responses: {
+        200: { description: "Background job cancelled", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Lane forbidden", schema: laneForbiddenResponseSchema },
+        404: { description: "Not found", schema: notFoundResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/tasks/update",
+      tags: ["Tasks"],
+      summary: "Update task",
+      security: internalSecurity,
+      requestBody: { schema: updateTaskApiSchema },
+      responses: {
+        200: { description: "Task updated", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Lane forbidden", schema: laneForbiddenResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/tasks/delete",
+      tags: ["Tasks"],
+      summary: "Delete task",
+      security: internalSecurity,
+      requestBody: { schema: deleteTaskApiSchema },
+      responses: {
+        200: { description: "Task deleted", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Lane forbidden", schema: laneForbiddenResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/tasks/list",
+      tags: ["Tasks"],
+      summary: "List tasks",
+      security: internalSecurity,
+      requestBody: { schema: listTasksApiSchema },
+      responses: {
+        200: { description: "Task list", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/tasks/failures/check",
+      tags: ["Tasks"],
+      summary: "Check recent task failures",
+      security: internalSecurity,
+      requestBody: { schema: checkTaskFailuresApiSchema },
+      responses: {
+        200: { description: "Failure check result", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/notification-profile/get",
+      tags: ["Tools"],
+      summary: "Get notification profile",
+      security: internalSecurity,
+      requestBody: { schema: getNotificationProfileApiSchema },
+      responses: {
+        200: { description: "Notification profile", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/notification-profile/set",
+      tags: ["Tools"],
+      summary: "Set notification profile",
+      security: internalSecurity,
+      requestBody: { schema: setNotificationProfileApiSchema },
+      responses: {
+        200: { description: "Updated notification profile", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/prompts/watchdog/get",
+      tags: ["Tools"],
+      summary: "Get watchdog prompt",
+      security: internalSecurity,
+      requestBody: { schema: getWatchdogPromptApiSchema },
+      responses: {
+        200: { description: "Watchdog prompt", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/prompts/watchdog/set",
+      tags: ["Tools"],
+      summary: "Set watchdog prompt",
+      security: internalSecurity,
+      requestBody: { schema: setWatchdogPromptApiSchema },
+      responses: {
+        200: { description: "Watchdog prompt updated", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/tasks/audit/list",
+      tags: ["Tasks"],
+      summary: "List recent task and command audit entries",
+      security: internalSecurity,
+      requestBody: { schema: listTaskAuditApiSchema },
+      responses: {
+        200: { description: "Recent audit entries", schema: taskAuditListResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+  ]
+
+  const buildInternalOpenApiDocument = () => {
+    return buildOpenApiDocument({
+      title: "Otto Internal Tool API",
+      version: "1.0.0",
+      description:
+        "Internal API for Otto tool adapters and automation flows. This API is intended for local/runtime tooling integration and is not a public compatibility contract.",
       tags: [
         { name: "Tools", description: "Internal tool execution endpoints" },
         { name: "BackgroundJobs", description: "Interactive background job operations" },
         { name: "Tasks", description: "Task scheduling and audit operations" },
         { name: "Telegram", description: "Outbound Telegram queue operations" },
       ],
-      paths,
-    }
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+        },
+      },
+      operations: internalOpenApiOperations,
+    })
   }
 
   app.get(INTERNAL_OPENAPI_JSON_PATH, async (_request, reply) => {
-    return reply.code(200).send(buildOpenApiDocument())
+    return reply.code(200).send(buildInternalOpenApiDocument())
   })
 
   app.get(INTERNAL_OPENAPI_UI_PATH, async (_request, reply) => {

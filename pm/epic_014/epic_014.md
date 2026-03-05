@@ -38,7 +38,7 @@ Otto needs one trusted source where operators and Otto itself can answer what is
 1. `ticket_001`: Docusaurus foundation, IA, and visual docs system. (done)
 2. `ticket_002`: Versioned docs build and GitHub Pages release publishing. (done)
 3. `ticket_003`: Separate Otto docs service and `ottoctl` lifecycle integration. (done)
-4. `ticket_004`: Live self-awareness API contract and OpenAPI updates.
+4. `ticket_004`: Live self-awareness API contract and OpenAPI updates. (done)
 5. `ticket_005`: Authenticated live docs views for deployed runtime.
 6. `ticket_006`: Otto internal docs tools (`search`/`open`) with automatic auth.
 7. `ticket_007`: Complete operator docs coverage for `ottoctl` and operations.

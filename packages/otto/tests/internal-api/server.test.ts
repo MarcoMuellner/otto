@@ -361,6 +361,18 @@ describe("buildInternalApiServer", () => {
     )
     expect(docsResponse.statusCode).toBe(200)
 
+    const openApi = jsonResponse.json() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>
+    }
+    expect(openApi.paths["/internal/tools/tasks/create"]?.post?.requestBody).toBeTruthy()
+    expect(openApi.paths["/internal/tools/tasks/create"]?.post?.responses?.["200"]).toBeTruthy()
+    expect(openApi.paths["/internal/tools/tasks/create"]?.post?.responses?.default).toBeUndefined()
+    expect(
+      JSON.stringify(
+        openApi.paths["/internal/tools/queue-telegram-message"]?.post?.responses?.["400"]
+      )
+    ).toContain("missing_chat")
+
     await app.close()
   })
 
