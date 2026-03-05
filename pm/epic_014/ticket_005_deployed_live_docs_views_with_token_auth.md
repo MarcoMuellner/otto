@@ -2,8 +2,9 @@
 
 ## Status
 
-- `state`: `planned`
 - `category`: `feature`
+- `implementation`: `done`
+- `state`: `done`
 
 ## Objective
 
@@ -51,3 +52,10 @@ Add authenticated live self-awareness views to deployed docs while keeping publi
 ## Deployability
 
 - Deployable live-docs increment with explicit auth boundary and public/static isolation.
+
+## Implementation Notes
+
+- Added deployed-only live runtime docs route (`/live`) in `packages/otto-docs` behind `OTTO_DOCS_ENABLE_LIVE=1`, with token-authenticated fetch UX, session-only token storage, and clear static-vs-live surface markers.
+- Added docs service proxy endpoint `GET /api/live/self-awareness` in `packages/otto-docs-service` that forwards bearer-authenticated requests to `/external/self-awareness/live` and returns safe unauthorized/upstream failure responses.
+- Updated release workflow to build deployable artifacts with live docs enabled, while GitHub Pages workflow explicitly keeps live docs disabled and static-only.
+- Extended docs service tests to cover missing-token and valid-token proxy behavior, and updated docs/scripts notes to document live proxy boundaries and static public route guardrails.

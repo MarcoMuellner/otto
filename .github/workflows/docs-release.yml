@@ -74,6 +74,8 @@ jobs:
           echo "Docs release mapping: tag=${TAG_NAME} version=${DOCS_VERSION} latest_path=/ version_path=/${TAG_NAME}/ site_base=${SITE_BASE_URL}"
 
       - name: Build docs release artifacts
+        env:
+          OTTO_DOCS_ENABLE_LIVE: "0"
         run: |
           node scripts/docs/build-release-docs.mjs \
             --version "${{ steps.docs-meta.outputs.version }}" \

@@ -156,6 +156,29 @@ pre {
   letter-spacing: 0.02em;
 }
 
+.docs-home-surface-chip {
+  display: inline-flex;
+  margin: 0.8rem 0 0;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid rgba(109, 88, 67, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #3e352c;
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.docs-home-surface-chip.is-live {
+  border-color: rgba(22, 120, 58, 0.35);
+  color: #145937;
+}
+
+.docs-home-surface-chip.is-static {
+  border-color: rgba(109, 88, 67, 0.24);
+  color: #5f2d1f;
+}
+
 .docs-home-actions {
   display: flex;
   flex-wrap: wrap;
@@ -197,6 +220,131 @@ pre {
   color: var(--ifm-color-content-secondary);
 }
 
+.live-runtime-page {
+  max-width: 1100px;
+}
+
+.live-runtime-hero {
+  margin-bottom: 1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid rgba(109, 88, 67, 0.24);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.live-runtime-kicker {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7f2f22;
+}
+
+.live-runtime-chip {
+  display: inline-flex;
+  margin: 0.5rem 0.4rem 0 0;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgba(109, 88, 67, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.live-runtime-chip.is-live {
+  border-color: rgba(22, 120, 58, 0.35);
+  color: #145937;
+}
+
+.live-auth-card,
+.live-section,
+.live-links {
+  margin-top: 1rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid rgba(109, 88, 67, 0.22);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.live-auth-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.live-auth-form input {
+  height: 2.6rem;
+  padding: 0 0.8rem;
+  border: 1px solid rgba(109, 88, 67, 0.35);
+  border-radius: 0.6rem;
+}
+
+.live-auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.live-request-message {
+  margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+.live-request-message.is-error {
+  color: #8d2424;
+  font-weight: 600;
+}
+
+.live-card-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.live-card {
+  padding: 1rem;
+  border: 1px solid rgba(109, 88, 67, 0.22);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.live-card ul,
+.live-list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.live-list li + li {
+  margin-top: 0.6rem;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  margin: 0.2rem 0;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.status-pill.is-ok {
+  background: rgba(30, 133, 73, 0.15);
+  color: #155c37;
+}
+
+.status-pill.is-degraded {
+  background: rgba(208, 145, 62, 0.2);
+  color: #8a4e0f;
+}
+
+.status-pill.is-disabled {
+  background: rgba(74, 110, 153, 0.2);
+  color: #274a70;
+}
+
 @media (max-width: 996px) {
   :root {
     --ifm-font-size-base: 16px;
@@ -207,6 +355,10 @@ pre {
   }
 
   .docs-home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .live-card-grid {
     grid-template-columns: 1fr;
   }
 

@@ -33,6 +33,7 @@ const sections = [
 export default function HomePage(): JSX.Element {
   const { siteConfig } = useDocusaurusContext()
   const docsTag = String(siteConfig.customFields?.docsTag ?? "vlocal-dev")
+  const liveDocsEnabled = Boolean(siteConfig.customFields?.liveDocsEnabled)
 
   return (
     <Layout
@@ -49,10 +50,20 @@ export default function HomePage(): JSX.Element {
               constraints apply, and how to run it safely.
             </p>
             <p className="docs-home-version-chip">Release docs version: {docsTag}</p>
+            <p className={`docs-home-surface-chip ${liveDocsEnabled ? "is-live" : "is-static"}`}>
+              {liveDocsEnabled
+                ? "Deployed surface: live runtime views available"
+                : "Public surface: static docs only"}
+            </p>
             <div className="docs-home-actions">
               <Link className="button button--primary button--lg" to="/docs/intro">
                 Start With Intro
               </Link>
+              {liveDocsEnabled ? (
+                <Link className="button button--secondary button--lg" to="/live">
+                  Open Live Runtime View
+                </Link>
+              ) : null}
               <Link className="button button--secondary button--lg" to="/docs/contributing">
                 Writing Conventions
               </Link>

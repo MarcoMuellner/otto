@@ -113,11 +113,75 @@ const sendError = (
   response.end(JSON.stringify({ error: message }));
 };
 
+const readBearerToken = (request: IncomingMessage): string | null => {
+  const authorization = request.headers.authorization;
+  if (!authorization) {
+    return null;
+  }
+
+  const [scheme, token] = authorization.split(" ");
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
+    return null;
+  }
+
+  const normalizedToken = token.trim();
+  return normalizedToken.length > 0 ? normalizedToken : null;
+};
+
+const forwardLiveSelfAwareness = async (
+  request: IncomingMessage,
+  response: ServerResponse,
+  config: DocsServiceConfig,
+): Promise<void> => {
+  const token = readBearerToken(request);
+  if (!token) {
+    response.statusCode = 401;
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.end(
+      JSON.stringify({
+        error: "unauthorized",
+        message: "Missing bearer token. Provide OTTO_EXTERNAL_API_TOKEN.",
+      }),
+    );
+    return;
+  }
+
+  const endpoint = `${config.externalApiBaseUrl}/external/self-awareness/live`;
+
+  try {
+    const upstreamResponse = await fetch(endpoint, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const contentType = upstreamResponse.headers.get("content-type");
+    response.statusCode = upstreamResponse.status;
+    response.setHeader(
+      "Content-Type",
+      contentType ?? "application/json; charset=utf-8",
+    );
+
+    const body = await upstreamResponse.text();
+    response.end(body);
+  } catch {
+    response.statusCode = 502;
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.end(
+      JSON.stringify({
+        error: "upstream_unreachable",
+        message: "Failed to reach Otto external API live endpoint.",
+      }),
+    );
+  }
+};
+
 const handleRequest = (
   request: IncomingMessage,
   response: ServerResponse,
   config: DocsServiceConfig,
-): void => {
+): Promise<void> | void => {
   const method = request.method ?? "GET";
   if (method !== "GET" && method !== "HEAD") {
     sendError(response, 405, "method_not_allowed");
@@ -136,6 +200,10 @@ const handleRequest = (
   if (relativeRequestPath == null) {
     sendError(response, 404, "not_found");
     return;
+  }
+
+  if (relativeRequestPath === "/api/live/self-awareness") {
+    return forwardLiveSelfAwareness(request, response, config);
   }
 
   for (const candidate of resolveCandidatePaths(relativeRequestPath)) {
@@ -176,9 +244,9 @@ export const startDocsServer = (config: DocsServiceConfig) => {
     throw new Error(`Docs site directory is missing: ${config.siteDirectory}`);
   }
 
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
     try {
-      handleRequest(request, response, config);
+      await handleRequest(request, response, config);
     } catch (error) {
       const err = error as Error;
       log("error", "Unhandled docs request failure", {
@@ -195,20 +263,54 @@ export const startDocsServer = (config: DocsServiceConfig) => {
     log("error", "Docs service failed", { error: err.message });
   });
 
+  let listeningPort = config.port;
+  let isClosing = false;
+  let closePromise: Promise<void> | null = null;
+
   server.listen(config.port, config.host, () => {
+    const address = server.address();
+    const resolvedPort =
+      address && typeof address !== "string" ? address.port : config.port;
+    listeningPort = resolvedPort;
+
     log("info", "Docs service started", {
       host: config.host,
-      port: config.port,
+      port: resolvedPort,
       basePath: config.basePath,
       siteDirectory: config.siteDirectory,
     });
   });
 
   return {
-    close: (): void => {
-      server.close(() => {
-        log("info", "Docs service stopped");
+    get port(): number {
+      return listeningPort;
+    },
+    close: async (): Promise<void> => {
+      if (isClosing && closePromise) {
+        await closePromise;
+        return;
+      }
+
+      if (!server.listening) {
+        return;
+      }
+
+      isClosing = true;
+      closePromise = new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            isClosing = false;
+            closePromise = null;
+            reject(error);
+            return;
+          }
+
+          log("info", "Docs service stopped");
+          resolve();
+        });
       });
+
+      await closePromise;
     },
   };
 };

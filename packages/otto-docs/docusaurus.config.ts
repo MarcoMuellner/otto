@@ -6,6 +6,8 @@ const docsVersion = process.env.OTTO_DOCS_VERSION ?? "local-dev"
 const docsTag = process.env.OTTO_DOCS_TAG ?? `v${docsVersion}`
 const baseUrl = process.env.OTTO_DOCS_BASE_URL ?? "/"
 const siteUrl = process.env.OTTO_DOCS_SITE_URL ?? "https://example.com"
+const liveDocsEnabled = process.env.OTTO_DOCS_ENABLE_LIVE === "1"
+const liveProxyPath = process.env.OTTO_DOCS_LIVE_PROXY_PATH ?? "/api/live/self-awareness"
 
 const config: Config = {
   title: "Otto Docs",
@@ -34,7 +36,28 @@ const config: Config = {
   customFields: {
     docsVersion,
     docsTag,
+    liveDocsEnabled,
+    liveProxyPath,
   },
+
+  plugins: [
+    async function ottoLiveDocsRoutePlugin() {
+      return {
+        name: "otto-live-docs-route-plugin",
+        contentLoaded({ actions }) {
+          if (!liveDocsEnabled) {
+            return
+          }
+
+          actions.addRoute({
+            path: "/live",
+            component: "@site/src/components/live-docs/live-runtime-page.tsx",
+            exact: true,
+          })
+        },
+      }
+    },
+  ],
 
   presets: [
     [
@@ -91,6 +114,15 @@ const config: Config = {
           label: "API Reference",
           position: "left",
         },
+        ...(liveDocsEnabled
+          ? [
+              {
+                to: "/live",
+                label: "Live Runtime",
+                position: "left" as const,
+              },
+            ]
+          : []),
         {
           to: "/docs/contributing",
           label: "Contributing",

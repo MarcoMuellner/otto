@@ -6,11 +6,14 @@ export type DocsServiceConfig = {
   port: number;
   basePath: string;
   siteDirectory: string;
+  externalApiBaseUrl: string;
 };
 
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_PORT = 4174;
 const DEFAULT_BASE_PATH = "/";
+const DEFAULT_EXTERNAL_API_HOST = "127.0.0.1";
+const DEFAULT_EXTERNAL_API_PORT = 4190;
 
 const normalizeBasePath = (value: string): string => {
   const trimmed = value.trim();
@@ -44,6 +47,31 @@ const resolvePort = (rawPort: string | undefined): number => {
   return value;
 };
 
+const resolveExternalApiPort = (rawPort: string | undefined): number => {
+  if (!rawPort) {
+    return DEFAULT_EXTERNAL_API_PORT;
+  }
+
+  const value = Number.parseInt(rawPort.trim(), 10);
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    return DEFAULT_EXTERNAL_API_PORT;
+  }
+
+  return value;
+};
+
+const resolveExternalApiBaseUrl = (env: NodeJS.ProcessEnv): string => {
+  const explicitBaseUrl = env.OTTO_EXTERNAL_API_URL?.trim();
+  if (explicitBaseUrl) {
+    return explicitBaseUrl.replace(/\/+$/g, "");
+  }
+
+  const host = env.OTTO_EXTERNAL_API_HOST?.trim() || DEFAULT_EXTERNAL_API_HOST;
+  const externalPort = resolveExternalApiPort(env.OTTO_EXTERNAL_API_PORT);
+
+  return `http://${host}:${externalPort}`;
+};
+
 const defaultSiteDirectory = (): string => {
   const currentFile = fileURLToPath(import.meta.url);
   const currentDir = path.dirname(currentFile);
@@ -60,11 +88,13 @@ export const resolveDocsServiceConfig = (
   );
   const siteDirectory =
     env.OTTO_DOCS_SITE_DIR?.trim() || defaultSiteDirectory();
+  const externalApiBaseUrl = resolveExternalApiBaseUrl(env);
 
   return {
     host,
     port,
     basePath,
     siteDirectory,
+    externalApiBaseUrl,
   };
 };
