@@ -31,6 +31,7 @@ import {
   mapTaskDetailsForExternal,
   mapTaskListForExternal,
 } from "../api-services/tasks-read.js"
+import { buildOpenApiDocument, type OpenApiOperationSpec } from "../api/openapi.js"
 import { extractBearerToken } from "../api/http-auth.js"
 import { resolveApiTokenPath, resolveOrCreateApiToken } from "../api/token.js"
 import type { OttoModelFlowDefaults } from "../config/otto-config.js"
@@ -61,6 +62,7 @@ import type {
   TaskListRecord,
   UserProfileRecord,
 } from "../persistence/repositories.js"
+import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { getAppVersion } from "../version.js"
 
 const DEFAULT_HOST = "0.0.0.0"
@@ -148,10 +150,12 @@ type ExternalApiServerDependencies = {
   }
   taskAuditRepository: {
     listByTaskId: (taskId: string, limit?: number) => TaskAuditRecord[]
+    listRecent?: (limit?: number) => TaskAuditRecord[]
     insert: (record: TaskAuditRecord) => void
   }
   commandAuditRepository?: {
     insert: (record: CommandAuditRecord) => void
+    listRecent?: (limit?: number) => CommandAuditRecord[]
   }
   userProfileRepository?: {
     get: () => UserProfileRecord | null
@@ -564,6 +568,103 @@ const updateNotificationProfileResponseSchema = z.object({
   changedFields: z.array(z.string().min(1)),
 })
 
+const unauthorizedResponseSchema = z.object({
+  error: z.literal("unauthorized"),
+})
+
+const internalErrorResponseSchema = z.object({
+  error: z.literal("internal_error"),
+})
+
+const serviceUnavailableResponseSchema = z.object({
+  error: z.literal("service_unavailable"),
+})
+
+const validationErrorResponseSchema = z.object({
+  error: z.literal("invalid_request"),
+  details: z.array(z.unknown()).optional(),
+  message: z.string().optional(),
+})
+
+const notFoundErrorResponseSchema = z.object({
+  error: z.literal("not_found"),
+  message: z.string().optional(),
+})
+
+const mutationErrorResponseSchema = z.object({
+  error: z.enum(["forbidden_mutation", "state_conflict", "invalid_request", "not_found"]),
+  message: z.string().min(1),
+})
+
+const selfAwarenessDecisionSchema = z.object({
+  id: z.string().trim().min(1),
+  source: z.enum(["task_audit", "command_audit"]),
+  summary: z.string().trim().min(1),
+  createdAt: z.number().int(),
+  metadataJson: z.string().nullable(),
+})
+
+const selfAwarenessRiskSchema = z.object({
+  id: z.string().trim().min(1),
+  code: z.string().trim().min(1),
+  severity: z.enum(["low", "medium", "high"]),
+  message: z.string().trim().min(1),
+  detectedAt: z.number().int(),
+  source: z.enum(["system", "command_audit"]),
+  metadataJson: z.string().nullable(),
+})
+
+const selfAwarenessLimitsSchema = z.object({
+  scheduler: z.object({
+    enabled: z.boolean(),
+    tickMs: z.number().int().min(1_000),
+    batchSize: z.number().int().min(1),
+    lockLeaseMs: z.number().int().min(1_000),
+  }),
+  pagination: z.object({
+    auditMax: z.number().int().min(1),
+    runsMax: z.number().int().min(1),
+    defaultListLimit: z.number().int().min(1),
+  }),
+  profile: z.object({
+    interactiveContextWindowSize: z.object({
+      min: z.number().int(),
+      max: z.number().int(),
+      current: z.number().int(),
+    }),
+    contextRetentionCap: z.object({
+      min: z.number().int(),
+      max: z.number().int(),
+      current: z.number().int(),
+    }),
+  }),
+})
+
+const selfAwarenessSourceSchema = z.object({
+  source: z.enum(["system_status", "task_audit", "command_audit"]),
+  status: z.enum(["ok", "degraded"]),
+  message: z.string().trim().min(1),
+})
+
+const selfAwarenessSnapshotResponseSchema = z.object({
+  state: z.object({
+    status: z.enum(["ok", "degraded"]),
+    checkedAt: z.number().int(),
+    runtime: z.object({
+      version: z.string().trim().min(1),
+      pid: z.number().int().min(1),
+      startedAt: z.number().int(),
+      uptimeSec: z.number().min(0),
+    }),
+  }),
+  processes: z.array(systemServiceSchema),
+  limits: selfAwarenessLimitsSchema,
+  recentDecisions: z.array(selfAwarenessDecisionSchema),
+  openRisks: z.array(selfAwarenessRiskSchema),
+  generatedAt: z.number().int(),
+  sources: z.array(selfAwarenessSourceSchema),
+})
+
 const resolveApiHost = (environment: NodeJS.ProcessEnv): string => {
   const host = environment.OTTO_EXTERNAL_API_HOST?.trim() || DEFAULT_HOST
 
@@ -736,6 +837,157 @@ export const buildExternalSystemStatusSnapshot = (input: {
   }
 }
 
+const buildSelfAwarenessSnapshot = (
+  dependencies: ExternalApiServerDependencies,
+  systemStatusProvider: () => z.infer<typeof systemStatusResponseSchema>,
+  userProfileRepository: {
+    get: () => UserProfileRecord | null
+  }
+): z.infer<typeof selfAwarenessSnapshotResponseSchema> => {
+  const sources: z.infer<typeof selfAwarenessSourceSchema>[] = []
+
+  const state = systemStatusProvider()
+  sources.push({
+    source: "system_status",
+    status: "ok",
+    message: "System status provider returned runtime snapshot",
+  })
+
+  let recentTaskAudit: TaskAuditRecord[] = []
+  try {
+    if (dependencies.taskAuditRepository.listRecent) {
+      recentTaskAudit = dependencies.taskAuditRepository.listRecent(25)
+      sources.push({
+        source: "task_audit",
+        status: "ok",
+        message: "Task audit source is available",
+      })
+    } else {
+      sources.push({
+        source: "task_audit",
+        status: "degraded",
+        message: "Task audit source does not expose listRecent",
+      })
+    }
+  } catch (error) {
+    const err = error as Error
+    sources.push({
+      source: "task_audit",
+      status: "degraded",
+      message: `Task audit source failed: ${err.message}`,
+    })
+  }
+
+  let recentCommandAudit: CommandAuditRecord[] = []
+  try {
+    if (dependencies.commandAuditRepository?.listRecent) {
+      recentCommandAudit = dependencies.commandAuditRepository.listRecent(25)
+      sources.push({
+        source: "command_audit",
+        status: "ok",
+        message: "Command audit source is available",
+      })
+    } else {
+      sources.push({
+        source: "command_audit",
+        status: "degraded",
+        message: "Command audit source does not expose listRecent",
+      })
+    }
+  } catch (error) {
+    const err = error as Error
+    sources.push({
+      source: "command_audit",
+      status: "degraded",
+      message: `Command audit source failed: ${err.message}`,
+    })
+  }
+
+  const decisions = [
+    ...recentTaskAudit.map((entry) => ({
+      id: entry.id,
+      source: "task_audit" as const,
+      summary: `Task ${entry.action} (${entry.taskId}) on ${entry.lane} lane`,
+      createdAt: entry.createdAt,
+      metadataJson: entry.metadataJson,
+    })),
+    ...recentCommandAudit.map((entry) => ({
+      id: entry.id,
+      source: "command_audit" as const,
+      summary: `Command ${entry.command} finished with ${entry.status}`,
+      createdAt: entry.createdAt,
+      metadataJson: entry.metadataJson,
+    })),
+  ]
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .slice(0, 20)
+
+  const degradedServiceRisks = state.services
+    .filter((service) => service.status === "degraded")
+    .map((service) => ({
+      id: `service:${service.id}`,
+      code: "service_degraded",
+      severity: "high" as const,
+      message: `${service.label} is degraded: ${service.message}`,
+      detectedAt: state.checkedAt,
+      source: "system" as const,
+      metadataJson: JSON.stringify({ serviceId: service.id, status: service.status }),
+    }))
+
+  const commandAuditRisks = recentCommandAudit
+    .filter((entry) => entry.status === "failed" || entry.status === "denied")
+    .map((entry) => ({
+      id: `command:${entry.id}`,
+      code: entry.status === "denied" ? "command_denied" : "command_failed",
+      severity: entry.status === "denied" ? ("medium" as const) : ("high" as const),
+      message: entry.errorMessage ?? `Command ${entry.command} ended with ${entry.status}`,
+      detectedAt: entry.createdAt,
+      source: "command_audit" as const,
+      metadataJson: entry.metadataJson,
+    }))
+
+  const schedulerConfig = resolveSchedulerConfig()
+  const profile = resolveNotificationProfile(userProfileRepository)
+
+  return selfAwarenessSnapshotResponseSchema.parse({
+    state: {
+      status: state.status,
+      checkedAt: state.checkedAt,
+      runtime: state.runtime,
+    },
+    processes: state.services,
+    limits: {
+      scheduler: {
+        enabled: schedulerConfig.enabled,
+        tickMs: schedulerConfig.tickMs,
+        batchSize: schedulerConfig.batchSize,
+        lockLeaseMs: schedulerConfig.lockLeaseMs,
+      },
+      pagination: {
+        auditMax: 200,
+        runsMax: 200,
+        defaultListLimit: 20,
+      },
+      profile: {
+        interactiveContextWindowSize: {
+          min: 5,
+          max: 200,
+          current: profile.interactiveContextWindowSize,
+        },
+        contextRetentionCap: {
+          min: 5,
+          max: 200,
+          current: profile.contextRetentionCap,
+        },
+      },
+    },
+    recentDecisions: decisions,
+    openRisks: [...degradedServiceRisks, ...commandAuditRisks],
+    generatedAt: Date.now(),
+    sources,
+  })
+}
+
 /**
  * Builds the LAN-facing external API server used by the control-plane process and future
  * non-OpenCode clients while preserving Otto runtime ownership of source-of-truth data.
@@ -747,11 +999,6 @@ export const buildExternalApiServer = (
   dependencies: ExternalApiServerDependencies
 ): FastifyInstance => {
   const app = Fastify({ logger: false })
-  const documentedRoutes: Array<{
-    method: string
-    url: string
-    tag: string
-  }> = []
   const commandAuditRepository = dependencies.commandAuditRepository
   const systemStatusProvider =
     dependencies.systemStatusProvider ??
@@ -781,79 +1028,383 @@ export const buildExternalApiServer = (
       },
     } as const)
   const modelManagement = dependencies.modelManagement
-
-  const resolveRouteTag = (url: string): string => {
-    if (url.startsWith("/external/system") || url === "/external/health") {
-      return "System"
-    }
-
-    if (url.startsWith("/external/settings")) {
-      return "Settings"
-    }
-
-    if (url.startsWith("/external/prompts")) {
-      return "Prompts"
-    }
-
-    if (url.startsWith("/external/models")) {
-      return "Models"
-    }
-
-    if (url.startsWith("/external/background-jobs")) {
-      return "BackgroundJobs"
-    }
-
-    return "Jobs"
-  }
-
-  app.addHook("onRoute", (routeOptions) => {
-    if (
-      routeOptions.url === EXTERNAL_OPENAPI_JSON_PATH ||
-      routeOptions.url.startsWith(EXTERNAL_OPENAPI_UI_PATH)
-    ) {
-      return
-    }
-
-    const methods = Array.isArray(routeOptions.method) ? routeOptions.method : [routeOptions.method]
-    for (const method of methods) {
-      documentedRoutes.push({
-        method: String(method).toLowerCase(),
-        url: routeOptions.url,
-        tag: resolveRouteTag(routeOptions.url),
-      })
-    }
-  })
-
-  const buildOpenApiDocument = () => {
-    const paths: Record<string, Record<string, unknown>> = {}
-    for (const route of documentedRoutes) {
-      const openApiPath = route.url.replaceAll(/:([A-Za-z0-9_]+)/g, "{$1}")
-      if (!paths[openApiPath]) {
-        paths[openApiPath] = {}
-      }
-
-      paths[openApiPath][route.method] = {
-        tags: [route.tag],
-        summary: `${route.method.toUpperCase()} ${route.url}`,
-        responses: {
-          default: {
-            description: "Response",
-          },
-        },
-        security: [{ bearerAuth: [] }],
-      }
-    }
-
-    return {
-      openapi: "3.1.0",
-      info: {
-        title: "Otto External API",
-        version: getAppVersion(),
-        description:
-          "LAN-facing API for Otto runtime control and observability. This API manages runtime status, jobs, prompts, model defaults, and interactive background one-shot runs. It does not execute arbitrary shell commands or provide direct database access.",
+  const externalSecurity = [{ bearerAuth: [] }]
+  const openApiOperations: OpenApiOperationSpec[] = [
+    {
+      method: "get",
+      path: "/external/health",
+      tags: ["System"],
+      summary: "External API health check",
+      security: externalSecurity,
+      responses: {
+        200: { description: "Health status", schema: healthResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
       },
+    },
+    {
+      method: "get",
+      path: "/external/system/status",
+      tags: ["System"],
+      summary: "Current runtime and service status",
+      security: externalSecurity,
+      responses: {
+        200: { description: "System status", schema: systemStatusResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/external/system/restart",
+      tags: ["System"],
+      summary: "Request runtime restart",
+      security: externalSecurity,
+      responses: {
+        202: { description: "Restart accepted", schema: systemRestartResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/self-awareness/live",
+      tags: ["System"],
+      summary: "Live self-awareness snapshot",
+      description:
+        "Returns current runtime state, active process statuses, operational limits, recent decisions, and open risks.",
+      security: externalSecurity,
+      responses: {
+        200: {
+          description: "Self-awareness snapshot",
+          schema: selfAwarenessSnapshotResponseSchema,
+        },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/settings/notification-profile",
+      tags: ["Settings"],
+      summary: "Read notification profile",
+      security: externalSecurity,
+      responses: {
+        200: { description: "Notification profile", schema: getNotificationProfileResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "put",
+      path: "/external/settings/notification-profile",
+      tags: ["Settings"],
+      summary: "Update notification profile",
+      security: externalSecurity,
+      requestBody: { schema: notificationProfileUpdateSchema },
+      responses: {
+        200: {
+          description: "Updated notification profile",
+          schema: updateNotificationProfileResponseSchema,
+        },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/prompts/interactive",
+      tags: ["Prompts"],
+      summary: "Resolve effective interactive system prompt",
+      security: externalSecurity,
+      query: interactivePromptQuerySchema,
+      responses: {
+        200: { description: "Resolved prompt", schema: interactivePromptResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/prompts/files",
+      tags: ["Prompts"],
+      summary: "List managed prompt files",
+      security: externalSecurity,
+      responses: {
+        200: { description: "Prompt file list", schema: promptFilesResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/prompts/file",
+      tags: ["Prompts"],
+      summary: "Read managed prompt file",
+      security: externalSecurity,
+      query: promptFileQuerySchema,
+      responses: {
+        200: { description: "Prompt file content", schema: promptFileResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Forbidden mutation", schema: mutationErrorResponseSchema },
+        404: { description: "Prompt file not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "put",
+      path: "/external/prompts/file",
+      tags: ["Prompts"],
+      summary: "Write managed prompt file",
+      security: externalSecurity,
+      requestBody: { schema: updatePromptFileRequestSchema },
+      responses: {
+        200: { description: "Prompt file updated", schema: promptFileUpdateResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Forbidden mutation", schema: mutationErrorResponseSchema },
+        404: { description: "Prompt file not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/models/catalog",
+      tags: ["Models"],
+      summary: "Get model catalog snapshot",
+      security: externalSecurity,
+      responses: {
+        200: { description: "Catalog snapshot", schema: externalModelCatalogResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/external/models/refresh",
+      tags: ["Models"],
+      summary: "Refresh model catalog snapshot",
+      security: externalSecurity,
+      responses: {
+        200: { description: "Refreshed snapshot", schema: externalModelRefreshResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/models/defaults",
+      tags: ["Models"],
+      summary: "Get model flow defaults",
+      security: externalSecurity,
+      responses: {
+        200: { description: "Model defaults", schema: externalModelDefaultsResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "put",
+      path: "/external/models/defaults",
+      tags: ["Models"],
+      summary: "Update model flow defaults",
+      security: externalSecurity,
+      requestBody: { schema: externalModelDefaultsUpdateRequestSchema },
+      responses: {
+        200: { description: "Updated defaults", schema: externalModelDefaultsResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/jobs",
+      tags: ["Jobs"],
+      summary: "List scheduled or interactive jobs",
+      security: externalSecurity,
+      query: listJobsQuerySchema,
+      responses: {
+        200: { description: "Jobs list", schema: listJobsResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/external/jobs",
+      tags: ["Jobs"],
+      summary: "Create job",
+      security: externalSecurity,
+      requestBody: { schema: taskCreateInputSchema },
+      responses: {
+        201: { description: "Job created", schema: taskMutationResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Forbidden", schema: mutationErrorResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        409: { description: "State conflict", schema: mutationErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "delete",
+      path: "/external/jobs/:id",
+      tags: ["Jobs"],
+      summary: "Delete job",
+      security: externalSecurity,
+      pathParams: mutateJobParamsSchema,
+      responses: {
+        200: { description: "Job deleted", schema: taskMutationResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Forbidden", schema: mutationErrorResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        409: { description: "State conflict", schema: mutationErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/external/jobs/:id/run-now",
+      tags: ["Jobs"],
+      summary: "Run job immediately",
+      security: externalSecurity,
+      pathParams: mutateJobParamsSchema,
+      responses: {
+        200: { description: "Run-now scheduled", schema: taskMutationResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Forbidden", schema: mutationErrorResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        409: { description: "State conflict", schema: mutationErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/jobs/:id",
+      tags: ["Jobs"],
+      summary: "Get job details",
+      security: externalSecurity,
+      pathParams: getJobParamsSchema,
+      responses: {
+        200: { description: "Job details", schema: jobDetailsResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/jobs/:id/audit",
+      tags: ["Jobs"],
+      summary: "Get recent job audit entries",
+      security: externalSecurity,
+      pathParams: getJobParamsSchema,
+      query: listAuditQuerySchema,
+      responses: {
+        200: { description: "Job audit entries", schema: jobAuditResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/jobs/:id/runs",
+      tags: ["Jobs"],
+      summary: "List job runs",
+      security: externalSecurity,
+      pathParams: getJobParamsSchema,
+      query: listRunsQuerySchema,
+      responses: {
+        200: { description: "Job run list", schema: jobRunsResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/jobs/:id/runs/:runId",
+      tags: ["Jobs"],
+      summary: "Get single job run details",
+      security: externalSecurity,
+      pathParams: getRunParamsSchema,
+      responses: {
+        200: { description: "Job run details", schema: jobRunDetailResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/external/background-jobs/oneshot",
+      tags: ["BackgroundJobs"],
+      summary: "Create interactive one-shot background job",
+      security: externalSecurity,
+      requestBody: { schema: createBackgroundOneshotRequestSchema },
+      responses: {
+        202: {
+          description: "Background run queued",
+          schema: backgroundOneshotCreateResponseSchema,
+        },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "get",
+      path: "/external/background-jobs/oneshot/:sessionId/status",
+      tags: ["BackgroundJobs"],
+      summary: "Get one-shot background session status",
+      security: externalSecurity,
+      pathParams: getBackgroundOneshotStatusParamsSchema,
+      responses: {
+        200: { description: "Background status", schema: backgroundOneshotStatusResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/external/background-jobs/:id/cancel",
+      tags: ["BackgroundJobs"],
+      summary: "Cancel background one-shot job",
+      security: externalSecurity,
+      pathParams: cancelBackgroundJobParamsSchema,
+      requestBody: { schema: cancelBackgroundJobRequestSchema, required: false },
+      responses: {
+        200: { description: "Cancel outcome", schema: backgroundCancelResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        404: { description: "Not found", schema: notFoundErrorResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+  ]
+
+  const buildExternalOpenApiDocument = () => {
+    return buildOpenApiDocument({
+      title: "Otto External API",
+      version: getAppVersion(),
+      description:
+        "LAN-facing API for Otto runtime control and observability. This API manages runtime status, jobs, prompts, model defaults, and interactive background one-shot runs. It does not execute arbitrary shell commands or provide direct database access.",
       tags: [
-        { name: "System", description: "Runtime status and restart operations" },
+        { name: "System", description: "Runtime status, restart, and self-awareness snapshots" },
         { name: "Settings", description: "User notification policy settings" },
         { name: "Prompts", description: "Interactive prompt resolution and file management" },
         { name: "Models", description: "Model catalog and flow default management" },
@@ -864,16 +1415,14 @@ export const buildExternalApiServer = (
             "Interactive background one-shot runs. POST requests attempt immediate execution and status is polled via session id.",
         },
       ],
-      components: {
-        securitySchemes: {
-          bearerAuth: {
-            type: "http",
-            scheme: "bearer",
-          },
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
         },
       },
-      paths,
-    }
+      operations: openApiOperations,
+    })
   }
 
   app.addHook("onRequest", async (request, reply) => {
@@ -901,7 +1450,7 @@ export const buildExternalApiServer = (
   })
 
   app.get(EXTERNAL_OPENAPI_JSON_PATH, async (_request, reply) => {
-    return reply.code(200).send(buildOpenApiDocument())
+    return reply.code(200).send(buildExternalOpenApiDocument())
   })
 
   app.get(EXTERNAL_OPENAPI_UI_PATH, async (_request, reply) => {
@@ -920,6 +1469,24 @@ export const buildExternalApiServer = (
     } catch (error) {
       const err = error as Error
       dependencies.logger.error({ error: err.message }, "External API system status failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.get("/external/self-awareness/live", async (_request, reply) => {
+    try {
+      const snapshot = buildSelfAwarenessSnapshot(
+        dependencies,
+        () => systemStatusResponseSchema.parse(systemStatusProvider()),
+        userProfileRepository
+      )
+      return reply.code(200).send(snapshot)
+    } catch (error) {
+      const err = error as Error
+      dependencies.logger.error(
+        { error: err.message },
+        "External API self-awareness snapshot failed"
+      )
       return reply.code(500).send({ error: "internal_error" })
     }
   })
