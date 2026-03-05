@@ -143,6 +143,19 @@ pre {
   color: var(--ifm-color-content-secondary);
 }
 
+.docs-home-version-chip {
+  display: inline-flex;
+  margin-top: 1rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid rgba(109, 88, 67, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #5f2d1f;
+  font-size: 0.84rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .docs-home-actions {
   display: flex;
   flex-wrap: wrap;

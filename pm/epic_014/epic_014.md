@@ -36,7 +36,7 @@ Otto needs one trusted source where operators and Otto itself can answer what is
 ## Delivery Plan (Deployable Tickets)
 
 1. `ticket_001`: Docusaurus foundation, IA, and visual docs system. (done)
-2. `ticket_002`: Versioned docs build and GitHub Pages release publishing.
+2. `ticket_002`: Versioned docs build and GitHub Pages release publishing. (done)
 3. `ticket_003`: Separate Otto docs service and `ottoctl` lifecycle integration.
 4. `ticket_004`: Live self-awareness API contract and OpenAPI updates.
 5. `ticket_005`: Authenticated live docs views for deployed runtime.
