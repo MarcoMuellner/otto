@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,6 +12,42 @@ const createTempSite = async (): Promise<string> => {
   await writeFile(
     path.join(siteDir, "index.html"),
     "<html><body>docs</body></html>",
+    "utf8",
+  );
+  return siteDir;
+};
+
+const createSearchFixtureSite = async (): Promise<string> => {
+  const siteDir = await mkdtemp(
+    path.join(tmpdir(), "otto-docs-service-search-test-"),
+  );
+  await mkdir(path.join(siteDir, "docs", "intro"), { recursive: true });
+  await mkdir(path.join(siteDir, "v1.2.3", "docs", "intro"), {
+    recursive: true,
+  });
+  await mkdir(path.join(siteDir, "live"), { recursive: true });
+
+  await writeFile(
+    path.join(siteDir, "docs", "intro", "index.html"),
+    `<!doctype html><html><head><title>Otto Intro</title><meta name="description" content="Operator quickstart for Otto docs"></head><body><h1>Otto Intro</h1><h2 id="quickstart">Quickstart</h2><p>Learn setup and run commands.</p></body></html>`,
+    "utf8",
+  );
+
+  await writeFile(
+    path.join(siteDir, "v1.2.3", "docs", "intro", "index.html"),
+    `<!doctype html><html><head><title>Otto Intro v1.2.3</title></head><body><h1>Otto Intro v1.2.3</h1><h2 id="legacy-setup">Legacy setup</h2><p>Older release guide.</p></body></html>`,
+    "utf8",
+  );
+
+  await writeFile(
+    path.join(siteDir, "live", "index.html"),
+    `<!doctype html><html><head><title>Live Runtime</title><meta name="description" content="Live status and self-awareness"></head><body><h1>Live Runtime</h1><h2 id="auth">Authentication</h2></body></html>`,
+    "utf8",
+  );
+
+  await writeFile(
+    path.join(siteDir, "index.html"),
+    "<html><body>root</body></html>",
     "utf8",
   );
   return siteDir;
@@ -130,7 +166,116 @@ describe("docs-service live proxy", () => {
     const body = await response.json();
 
     expect(response.status).toBe(401);
-    expect(body).toMatchObject({ error: "unauthorized" });
+    expect(body).toMatchObject({ error: "auth_required" });
+  });
+
+  it("searches docs and returns structured references", async () => {
+    const siteDir = await createSearchFixtureSite();
+    cleanupPaths.push(siteDir);
+
+    const upstream = await listen(
+      createServer((_request, response) => {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        response.end(JSON.stringify({ ok: true }));
+      }),
+    );
+    cleanupServers.push(upstream.close);
+
+    const docs = startDocsServer({
+      host: "127.0.0.1",
+      port: 0,
+      basePath: "/",
+      siteDirectory: siteDir,
+      externalApiBaseUrl: `http://127.0.0.1:${upstream.port}`,
+    });
+    cleanupServers.push(docs.close);
+
+    const docsPort = await waitForListeningPort(() => docs.port);
+    const response = await fetch(
+      `http://127.0.0.1:${docsPort}/api/docs/search?q=quickstart&limit=3`,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.results[0]).toMatchObject({
+      version: "current",
+      slug: "/docs/intro",
+      title: "Otto Intro",
+      sections: [{ anchor: "quickstart", title: "Quickstart" }],
+    });
+  });
+
+  it("opens a docs page and resolves section anchors", async () => {
+    const siteDir = await createSearchFixtureSite();
+    cleanupPaths.push(siteDir);
+
+    const upstream = await listen(
+      createServer((_request, response) => {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        response.end(JSON.stringify({ ok: true }));
+      }),
+    );
+    cleanupServers.push(upstream.close);
+
+    const docs = startDocsServer({
+      host: "127.0.0.1",
+      port: 0,
+      basePath: "/",
+      siteDirectory: siteDir,
+      externalApiBaseUrl: `http://127.0.0.1:${upstream.port}`,
+    });
+    cleanupServers.push(docs.close);
+
+    const docsPort = await waitForListeningPort(() => docs.port);
+    const response = await fetch(
+      `http://127.0.0.1:${docsPort}/api/docs/open?slug=/docs/intro&section=quickstart`,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.page).toMatchObject({
+      version: "current",
+      slug: "/docs/intro",
+      title: "Otto Intro",
+    });
+    expect(body.section).toMatchObject({
+      anchor: "quickstart",
+      url: "/docs/intro/#quickstart",
+    });
+  });
+
+  it("returns version_mismatch when requested docs version is unavailable", async () => {
+    const siteDir = await createSearchFixtureSite();
+    cleanupPaths.push(siteDir);
+
+    const upstream = await listen(
+      createServer((_request, response) => {
+        response.statusCode = 200;
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        response.end(JSON.stringify({ ok: true }));
+      }),
+    );
+    cleanupServers.push(upstream.close);
+
+    const docs = startDocsServer({
+      host: "127.0.0.1",
+      port: 0,
+      basePath: "/",
+      siteDirectory: siteDir,
+      externalApiBaseUrl: `http://127.0.0.1:${upstream.port}`,
+    });
+    cleanupServers.push(docs.close);
+
+    const docsPort = await waitForListeningPort(() => docs.port);
+    const response = await fetch(
+      `http://127.0.0.1:${docsPort}/api/docs/open?slug=/docs/intro&version=v9.9.9`,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toMatchObject({ error: "version_mismatch" });
   });
 
   it("forwards authorized requests to external API live endpoint", async () => {

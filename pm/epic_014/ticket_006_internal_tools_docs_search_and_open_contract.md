@@ -2,8 +2,9 @@
 
 ## Status
 
-- `state`: `planned`
 - `category`: `feature`
+- `implementation`: `done`
+- `state`: `done`
 
 ## Objective
 
@@ -50,3 +51,11 @@ Expose docs search/open capabilities to Otto via internal tools, including autom
 ## Deployability
 
 - Deployable tooling increment enabling Otto self-query against the operator docs platform.
+
+## Implementation Notes
+
+- Added docs service APIs `GET /api/docs/search` and `GET /api/docs/open` in `packages/otto-docs-service` with explicit error codes (`invalid_request`, `not_found`, `version_mismatch`) and structured references (`version`, `slug`, `url`, section anchors).
+- Added internal Otto docs read services in `packages/otto/src/api-services/docs-read.ts` including automatic token handling for live docs (`/live` -> `/api/live/self-awareness`) via existing external API token sources.
+- Added internal tool endpoints `POST /internal/tools/docs/search` and `POST /internal/tools/docs/open` in `packages/otto/src/internal-api/server.ts`, including OpenAPI operation contracts and error passthrough mapping.
+- Added new OpenCode tools `docs_search` and `docs_open` under `packages/otto/src/assets/.opencode/tools`.
+- Added regression coverage for docs service search/open behavior and internal API docs tool routing plus error mapping.

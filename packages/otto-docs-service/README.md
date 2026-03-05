@@ -16,3 +16,14 @@ Dedicated runtime process that serves Otto docs artifacts from release bundles.
 - `GET /api/live/self-awareness` forwards to `${OTTO_EXTERNAL_API_URL}/external/self-awareness/live`
   (or host/port fallback).
 - Requests require an `Authorization: Bearer <token>` header and never persist the token server-side.
+
+## Docs Search/Open API
+
+- `GET /api/docs/search?q=<query>&version=<optional>&limit=<optional>`
+  - Returns ranked docs references with `version`, `slug`, canonical `url`, and section anchors.
+  - Error contract: `invalid_request`, `version_mismatch`.
+- `GET /api/docs/open?slug=<slug>&version=<optional>&section=<optional>`
+  - Resolves a specific docs page with version context and section anchors.
+  - Includes explicit `not_found` and `version_mismatch` errors for caller-side mapping.
+- Shared error model uses explicit codes: `auth_required`, `invalid_request`, `not_found`,
+  `version_mismatch`, and `upstream_unreachable`.
