@@ -300,6 +300,46 @@ describe("buildExternalApiServer", () => {
     await app.close()
   })
 
+  it("serves OpenAPI docs without token auth", async () => {
+    // Arrange
+    const app = buildExternalApiServer({
+      logger: pino({ enabled: false }),
+      config: {
+        host: "0.0.0.0",
+        port: 4190,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://0.0.0.0:4190",
+      },
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+    })
+
+    // Act
+    const jsonResponse = await app.inject({
+      method: "GET",
+      url: "/external/openapi.json",
+    })
+    const jsonWithQueryResponse = await app.inject({
+      method: "GET",
+      url: "/external/openapi.json?v=1",
+    })
+    const docsResponse = await app.inject({
+      method: "GET",
+      url: "/external/docs",
+    })
+
+    // Assert
+    expect(jsonResponse.statusCode).toBe(200)
+    expect((jsonResponse.json() as { info?: { title?: string } }).info?.title).toBe(
+      "Otto External API"
+    )
+    expect(jsonWithQueryResponse.statusCode).toBe(200)
+    expect(docsResponse.statusCode).toBe(200)
+
+    await app.close()
+  })
+
   it("returns health status when authorized", async () => {
     // Arrange
     const app = buildExternalApiServer({

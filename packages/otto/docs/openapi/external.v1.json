@@ -1,0 +1,706 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Otto External API",
+    "version": "0.1.0-dev",
+    "description": "LAN-facing API for Otto runtime control and observability. This API manages runtime status, jobs, prompts, model defaults, and interactive background one-shot runs. It does not execute arbitrary shell commands or provide direct database access."
+  },
+  "tags": [
+    {
+      "name": "System",
+      "description": "Runtime status and restart operations"
+    },
+    {
+      "name": "Settings",
+      "description": "User notification policy settings"
+    },
+    {
+      "name": "Prompts",
+      "description": "Interactive prompt resolution and file management"
+    },
+    {
+      "name": "Models",
+      "description": "Model catalog and flow default management"
+    },
+    {
+      "name": "Jobs",
+      "description": "Scheduled and operator-managed job lifecycle"
+    },
+    {
+      "name": "BackgroundJobs",
+      "description": "Interactive background one-shot runs. POST requests attempt immediate execution and status is polled via session id."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "paths": {
+    "/external/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "GET /external/health",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "System"
+        ],
+        "summary": "HEAD /external/health",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/system/status": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "GET /external/system/status",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "System"
+        ],
+        "summary": "HEAD /external/system/status",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/system/restart": {
+      "post": {
+        "tags": [
+          "System"
+        ],
+        "summary": "POST /external/system/restart",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/settings/notification-profile": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "GET /external/settings/notification-profile",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "HEAD /external/settings/notification-profile",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "PUT /external/settings/notification-profile",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/prompts/interactive": {
+      "get": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "GET /external/prompts/interactive",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "HEAD /external/prompts/interactive",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/prompts/files": {
+      "get": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "GET /external/prompts/files",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "HEAD /external/prompts/files",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/prompts/file": {
+      "get": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "GET /external/prompts/file",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "HEAD /external/prompts/file",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "PUT /external/prompts/file",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/models/catalog": {
+      "get": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "GET /external/models/catalog",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "HEAD /external/models/catalog",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/models/refresh": {
+      "post": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "POST /external/models/refresh",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/models/defaults": {
+      "get": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "GET /external/models/defaults",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "HEAD /external/models/defaults",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Models"
+        ],
+        "summary": "PUT /external/models/defaults",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/jobs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "GET /external/jobs",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "HEAD /external/jobs",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "POST /external/jobs",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/background-jobs/oneshot": {
+      "post": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "POST /external/background-jobs/oneshot",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/background-jobs/oneshot/{sessionId}/status": {
+      "get": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "GET /external/background-jobs/oneshot/:sessionId/status",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "HEAD /external/background-jobs/oneshot/:sessionId/status",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/background-jobs/{id}/cancel": {
+      "post": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "POST /external/background-jobs/:id/cancel",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/jobs/{id}": {
+      "patch": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "PATCH /external/jobs/:id",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "DELETE /external/jobs/:id",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "GET /external/jobs/:id",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "HEAD /external/jobs/:id",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/jobs/{id}/run-now": {
+      "post": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "POST /external/jobs/:id/run-now",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/jobs/{id}/audit": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "GET /external/jobs/:id/audit",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "HEAD /external/jobs/:id/audit",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/jobs/{id}/runs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "GET /external/jobs/:id/runs",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "HEAD /external/jobs/:id/runs",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/external/jobs/{id}/runs/{runId}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "GET /external/jobs/:id/runs/:runId",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "head": {
+        "tags": [
+          "Jobs"
+        ],
+        "summary": "HEAD /external/jobs/:id/runs/:runId",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  }
+}

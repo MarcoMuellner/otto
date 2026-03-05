@@ -317,6 +317,53 @@ describe("buildInternalApiServer", () => {
     await app.close()
   })
 
+  it("serves OpenAPI docs without token auth", async () => {
+    // Arrange
+    const repository: OutboundMessageEnqueueRepository = {
+      enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+        () => "enqueued"
+      ),
+    }
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: repository,
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const jsonResponse = await app.inject({
+      method: "GET",
+      url: "/internal/openapi.json",
+    })
+    const docsResponse = await app.inject({
+      method: "GET",
+      url: "/internal/docs",
+    })
+
+    // Assert
+    expect(jsonResponse.statusCode).toBe(200)
+    expect((jsonResponse.json() as { info?: { title?: string } }).info?.title).toBe(
+      "Otto Internal Tool API"
+    )
+    expect(docsResponse.statusCode).toBe(200)
+
+    await app.close()
+  })
+
   it("queues message when authorized", async () => {
     // Arrange
     const repository: OutboundMessageEnqueueRepository = {

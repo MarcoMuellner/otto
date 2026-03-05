@@ -1,0 +1,249 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Otto Internal Tool API",
+    "version": "1.0.0",
+    "description": "Internal API for Otto tool adapters and automation flows. This API is intended for local/runtime tooling integration and is not a public compatibility contract."
+  },
+  "tags": [
+    {
+      "name": "Tools",
+      "description": "Internal tool execution endpoints"
+    },
+    {
+      "name": "BackgroundJobs",
+      "description": "Interactive background job operations"
+    },
+    {
+      "name": "Tasks",
+      "description": "Task scheduling and audit operations"
+    },
+    {
+      "name": "Telegram",
+      "description": "Outbound Telegram queue operations"
+    }
+  ],
+  "paths": {
+    "/internal/tools/queue-telegram-message": {
+      "post": {
+        "tags": [
+          "Telegram"
+        ],
+        "summary": "POST /internal/tools/queue-telegram-message",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/queue-telegram-file": {
+      "post": {
+        "tags": [
+          "Telegram"
+        ],
+        "summary": "POST /internal/tools/queue-telegram-file",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/tasks/create": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "POST /internal/tools/tasks/create",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/background-jobs/spawn": {
+      "post": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "POST /internal/tools/background-jobs/spawn",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/background-jobs/milestone": {
+      "post": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "POST /internal/tools/background-jobs/milestone",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/background-jobs/list": {
+      "post": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "POST /internal/tools/background-jobs/list",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/background-jobs/show": {
+      "post": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "POST /internal/tools/background-jobs/show",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/background-jobs/cancel": {
+      "post": {
+        "tags": [
+          "BackgroundJobs"
+        ],
+        "summary": "POST /internal/tools/background-jobs/cancel",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/tasks/update": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "POST /internal/tools/tasks/update",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/tasks/delete": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "POST /internal/tools/tasks/delete",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/tasks/list": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "POST /internal/tools/tasks/list",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/tasks/failures/check": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "POST /internal/tools/tasks/failures/check",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/notification-profile/get": {
+      "post": {
+        "tags": [
+          "Tools"
+        ],
+        "summary": "POST /internal/tools/notification-profile/get",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/notification-profile/set": {
+      "post": {
+        "tags": [
+          "Tools"
+        ],
+        "summary": "POST /internal/tools/notification-profile/set",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/prompts/watchdog/get": {
+      "post": {
+        "tags": [
+          "Tools"
+        ],
+        "summary": "POST /internal/tools/prompts/watchdog/get",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/prompts/watchdog/set": {
+      "post": {
+        "tags": [
+          "Tools"
+        ],
+        "summary": "POST /internal/tools/prompts/watchdog/set",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    },
+    "/internal/tools/tasks/audit/list": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "summary": "POST /internal/tools/tasks/audit/list",
+        "responses": {
+          "default": {
+            "description": "Response"
+          }
+        }
+      }
+    }
+  }
+}

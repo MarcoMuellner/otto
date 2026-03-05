@@ -65,6 +65,8 @@ import { getAppVersion } from "../version.js"
 
 const DEFAULT_HOST = "0.0.0.0"
 const DEFAULT_PORT = 4190
+const EXTERNAL_OPENAPI_JSON_PATH = "/external/openapi.json"
+const EXTERNAL_OPENAPI_UI_PATH = "/external/docs"
 
 export type ExternalApiConfig = {
   host: string
@@ -583,7 +585,15 @@ const resolveApiPort = (environment: NodeJS.ProcessEnv): number => {
   return port
 }
 
-const resolveTaskMutationErrorResponse = (error: TaskMutationError) => {
+const resolveTaskMutationErrorResponse = (
+  error: TaskMutationError
+): {
+  statusCode: 400 | 403 | 404 | 409
+  body: {
+    error: string
+    message: string
+  }
+} => {
   if (error.code === "invalid_request") {
     return {
       statusCode: 400,
@@ -737,6 +747,11 @@ export const buildExternalApiServer = (
   dependencies: ExternalApiServerDependencies
 ): FastifyInstance => {
   const app = Fastify({ logger: false })
+  const documentedRoutes: Array<{
+    method: string
+    url: string
+    tag: string
+  }> = []
   const commandAuditRepository = dependencies.commandAuditRepository
   const systemStatusProvider =
     dependencies.systemStatusProvider ??
@@ -767,7 +782,111 @@ export const buildExternalApiServer = (
     } as const)
   const modelManagement = dependencies.modelManagement
 
+  const resolveRouteTag = (url: string): string => {
+    if (url.startsWith("/external/system") || url === "/external/health") {
+      return "System"
+    }
+
+    if (url.startsWith("/external/settings")) {
+      return "Settings"
+    }
+
+    if (url.startsWith("/external/prompts")) {
+      return "Prompts"
+    }
+
+    if (url.startsWith("/external/models")) {
+      return "Models"
+    }
+
+    if (url.startsWith("/external/background-jobs")) {
+      return "BackgroundJobs"
+    }
+
+    return "Jobs"
+  }
+
+  app.addHook("onRoute", (routeOptions) => {
+    if (
+      routeOptions.url === EXTERNAL_OPENAPI_JSON_PATH ||
+      routeOptions.url.startsWith(EXTERNAL_OPENAPI_UI_PATH)
+    ) {
+      return
+    }
+
+    const methods = Array.isArray(routeOptions.method) ? routeOptions.method : [routeOptions.method]
+    for (const method of methods) {
+      documentedRoutes.push({
+        method: String(method).toLowerCase(),
+        url: routeOptions.url,
+        tag: resolveRouteTag(routeOptions.url),
+      })
+    }
+  })
+
+  const buildOpenApiDocument = () => {
+    const paths: Record<string, Record<string, unknown>> = {}
+    for (const route of documentedRoutes) {
+      const openApiPath = route.url.replaceAll(/:([A-Za-z0-9_]+)/g, "{$1}")
+      if (!paths[openApiPath]) {
+        paths[openApiPath] = {}
+      }
+
+      paths[openApiPath][route.method] = {
+        tags: [route.tag],
+        summary: `${route.method.toUpperCase()} ${route.url}`,
+        responses: {
+          default: {
+            description: "Response",
+          },
+        },
+        security: [{ bearerAuth: [] }],
+      }
+    }
+
+    return {
+      openapi: "3.1.0",
+      info: {
+        title: "Otto External API",
+        version: getAppVersion(),
+        description:
+          "LAN-facing API for Otto runtime control and observability. This API manages runtime status, jobs, prompts, model defaults, and interactive background one-shot runs. It does not execute arbitrary shell commands or provide direct database access.",
+      },
+      tags: [
+        { name: "System", description: "Runtime status and restart operations" },
+        { name: "Settings", description: "User notification policy settings" },
+        { name: "Prompts", description: "Interactive prompt resolution and file management" },
+        { name: "Models", description: "Model catalog and flow default management" },
+        { name: "Jobs", description: "Scheduled and operator-managed job lifecycle" },
+        {
+          name: "BackgroundJobs",
+          description:
+            "Interactive background one-shot runs. POST requests attempt immediate execution and status is polled via session id.",
+        },
+      ],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: "http",
+            scheme: "bearer",
+          },
+        },
+      },
+      paths,
+    }
+  }
+
   app.addHook("onRequest", async (request, reply) => {
+    const url = request.url
+    const pathname = url.split("?", 1)[0] ?? url
+    if (
+      pathname === EXTERNAL_OPENAPI_JSON_PATH ||
+      pathname.startsWith(EXTERNAL_OPENAPI_UI_PATH) ||
+      pathname.startsWith(`${EXTERNAL_OPENAPI_UI_PATH}/`)
+    ) {
+      return
+    }
+
     const token = extractBearerToken(request.headers.authorization)
     if (!token || token !== dependencies.config.token) {
       dependencies.logger.warn(
@@ -779,6 +898,15 @@ export const buildExternalApiServer = (
       )
       return reply.code(401).send({ error: "unauthorized" })
     }
+  })
+
+  app.get(EXTERNAL_OPENAPI_JSON_PATH, async (_request, reply) => {
+    return reply.code(200).send(buildOpenApiDocument())
+  })
+
+  app.get(EXTERNAL_OPENAPI_UI_PATH, async (_request, reply) => {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Otto External API Docs</title><link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"></head><body><div id="swagger-ui"></div><script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script><script>window.ui=SwaggerUIBundle({url:'${EXTERNAL_OPENAPI_JSON_PATH}',dom_id:'#swagger-ui',deepLinking:true,docExpansion:'list'})</script></body></html>`
+    return reply.type("text/html").code(200).send(html)
   })
 
   app.get("/external/health", async (_request, reply) => {

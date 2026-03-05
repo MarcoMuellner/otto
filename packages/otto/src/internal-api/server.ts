@@ -50,6 +50,8 @@ import type { NonInteractiveContextCaptureService } from "../runtime/non-interac
 
 const DEFAULT_HOST = "127.0.0.1"
 const DEFAULT_PORT = 4180
+const INTERNAL_OPENAPI_JSON_PATH = "/internal/openapi.json"
+const INTERNAL_OPENAPI_UI_PATH = "/internal/docs"
 const TELEGRAM_OUTBOUND_MAX_FILE_BYTES = 20 * 1024 * 1024
 const DEFAULT_BACKGROUND_MILESTONE_MIN_INTERVAL_SECONDS = 120
 const WATCHDOG_SURFACE_PROMPT_RELATIVE_PATH = "layers/surface-watchdog.md"
@@ -705,6 +707,91 @@ export const buildInternalApiServer = (
   dependencies: InternalApiServerDependencies
 ): FastifyInstance => {
   const app = Fastify({ logger: false })
+  const documentedRoutes: Array<{
+    method: string
+    url: string
+    tag: string
+  }> = []
+
+  const resolveRouteTag = (url: string): string => {
+    if (url.includes("background-jobs")) {
+      return "BackgroundJobs"
+    }
+
+    if (url.includes("queue-telegram")) {
+      return "Telegram"
+    }
+
+    if (url.includes("tasks")) {
+      return "Tasks"
+    }
+
+    return "Tools"
+  }
+
+  app.addHook("onRoute", (routeOptions) => {
+    if (
+      routeOptions.url === INTERNAL_OPENAPI_JSON_PATH ||
+      routeOptions.url.startsWith(INTERNAL_OPENAPI_UI_PATH)
+    ) {
+      return
+    }
+
+    const methods = Array.isArray(routeOptions.method) ? routeOptions.method : [routeOptions.method]
+    for (const method of methods) {
+      documentedRoutes.push({
+        method: String(method).toLowerCase(),
+        url: routeOptions.url,
+        tag: resolveRouteTag(routeOptions.url),
+      })
+    }
+  })
+
+  const buildOpenApiDocument = () => {
+    const paths: Record<string, Record<string, unknown>> = {}
+    for (const route of documentedRoutes) {
+      const openApiPath = route.url.replaceAll(/:([A-Za-z0-9_]+)/g, "{$1}")
+      if (!paths[openApiPath]) {
+        paths[openApiPath] = {}
+      }
+
+      paths[openApiPath][route.method] = {
+        tags: [route.tag],
+        summary: `${route.method.toUpperCase()} ${route.url}`,
+        responses: {
+          default: {
+            description: "Response",
+          },
+        },
+      }
+    }
+
+    return {
+      openapi: "3.1.0",
+      info: {
+        title: "Otto Internal Tool API",
+        version: "1.0.0",
+        description:
+          "Internal API for Otto tool adapters and automation flows. This API is intended for local/runtime tooling integration and is not a public compatibility contract.",
+      },
+      tags: [
+        { name: "Tools", description: "Internal tool execution endpoints" },
+        { name: "BackgroundJobs", description: "Interactive background job operations" },
+        { name: "Tasks", description: "Task scheduling and audit operations" },
+        { name: "Telegram", description: "Outbound Telegram queue operations" },
+      ],
+      paths,
+    }
+  }
+
+  app.get(INTERNAL_OPENAPI_JSON_PATH, async (_request, reply) => {
+    return reply.code(200).send(buildOpenApiDocument())
+  })
+
+  app.get(INTERNAL_OPENAPI_UI_PATH, async (_request, reply) => {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Otto Internal API Docs</title><link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css"></head><body><div id="swagger-ui"></div><script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script><script>window.ui=SwaggerUIBundle({url:'${INTERNAL_OPENAPI_JSON_PATH}',dom_id:'#swagger-ui',deepLinking:true,docExpansion:'list'})</script></body></html>`
+    return reply.type("text/html").code(200).send(html)
+  })
 
   app.post("/internal/tools/queue-telegram-message", async (request, reply) => {
     const authorization = request.headers.authorization

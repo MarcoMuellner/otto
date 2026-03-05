@@ -21,6 +21,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "docs:openapi:generate": "tsx scripts/generate-openapi.ts",
+    "docs:openapi:check": "pnpm run docs:openapi:generate && git diff --exit-code -- docs/openapi",
     "lint": "oxlint src tests",
     "lint:fix": "oxlint src tests --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\" package.json tsconfig.json tsdown.config.ts vitest.config.ts .prettierrc.json .oxlintrc.json README.md",
