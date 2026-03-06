@@ -18,7 +18,7 @@ import {
 } from "./state.js"
 
 const INTERNAL_OPENCODE_RUNTIME_DEPENDENCIES: Record<string, string> = {
-  "@opencode-ai/plugin": "1.2.6",
+  "@opencode-ai/plugin": "1.2.20",
   "better-sqlite3": "^11.8.1",
 }
 

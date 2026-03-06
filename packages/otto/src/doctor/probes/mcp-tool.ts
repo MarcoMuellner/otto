@@ -574,8 +574,10 @@ const defaultRunToolSessionProbe =
         method: "POST",
         headers,
         body: {
-          providerID: model.providerId,
-          modelID: model.modelId,
+          model: {
+            providerID: model.providerId,
+            modelID: model.modelId,
+          },
           parts: [
             {
               type: "text",

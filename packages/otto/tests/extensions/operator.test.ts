@@ -255,6 +255,6 @@ describe("extension operator service", () => {
     ).resolves.toContain('"better-sqlite3": "^11.8.1"')
     await expect(
       readFile(path.join(ottoHome, ".opencode", "package.json"), "utf8")
-    ).resolves.toContain('"@opencode-ai/plugin": "1.2.6"')
+    ).resolves.toContain('"@opencode-ai/plugin": "1.2.20"')
   })
 })

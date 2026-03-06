@@ -157,11 +157,13 @@ export const createOpencodeSessionGateway = (
       "Sending Telegram prompt to OpenCode session chat API"
     )
 
-    const response = await sessionApi.chat({
+    const response = await sessionApi.prompt({
       path: { id: sessionId },
       body: {
-        providerID: modelSelection.providerId,
-        modelID: modelSelection.modelId,
+        model: {
+          providerID: modelSelection.providerId,
+          modelID: modelSelection.modelId,
+        },
         agent: options?.agent,
         system: options?.systemPrompt,
         tools: options?.tools,
