@@ -1,11 +1,14 @@
 import type { Logger } from "pino"
 
 import { buildPromptProvenance, type PromptProvenance } from "./provenance.js"
-import { loadPromptLayerInputFromReference } from "./layer-loader.js"
+import {
+  loadAdditivePromptLayerFromReference,
+  type PromptLayerContribution,
+} from "./layer-loader.js"
 import { resolvePromptComposition } from "./resolver.js"
 import { loadPromptRoutingMapping, resolvePromptRoute } from "./routing.js"
 import type { PromptLayerInput, PromptLayerType } from "./types.js"
-import type { PromptLayerReference, PromptRouteMedia } from "./routing-types.js"
+import type { PromptRouteMedia } from "./routing-types.js"
 
 const INTERACTIVE_LAYER_TYPES = [
   "core-persona",
@@ -30,8 +33,6 @@ export type InteractivePromptResolution = {
   flow: "interactive"
   surface: InteractivePromptSurface
   media: PromptRouteMedia
-  routeKey: string
-  mappingSource: "effective" | "system"
   systemPrompt: string
   provenance: PromptProvenance
   warnings: InteractivePromptWarning[]
@@ -75,21 +76,19 @@ export const resolveInteractiveSystemPrompt = async (input: {
   })
 
   const layerInputs: Partial<Record<PromptLayerType, PromptLayerInput>> = {}
-  const layerReferences: Partial<Record<PromptLayerType, PromptLayerReference>> = {}
-  const layerAbsolutePaths: Partial<Record<PromptLayerType, string>> = {}
+  const layerContributions: Partial<Record<PromptLayerType, PromptLayerContribution[]>> = {}
   for (const layer of INTERACTIVE_LAYER_TYPES) {
     const reference = resolvedRoute.route.layers[layer]
     if (!reference) {
       continue
     }
 
-    layerReferences[layer] = reference
-    const loaded = await loadPromptLayerInputFromReference({
+    const loaded = await loadAdditivePromptLayerFromReference({
       ottoHome: input.ottoHome,
       reference,
     })
     layerInputs[layer] = loaded.input
-    layerAbsolutePaths[layer] = loaded.absolutePath
+    layerContributions[layer] = loaded.contributions
   }
 
   const composition = resolvePromptComposition({
@@ -101,36 +100,25 @@ export const resolveInteractiveSystemPrompt = async (input: {
       continue
     }
 
-    const reference = layerReferences[warning.layer]
-    if (!reference) {
+    const contributions = layerContributions[warning.layer]
+    if (!contributions || contributions.length === 0) {
       continue
     }
 
-    const absolutePath = layerAbsolutePaths[warning.layer] ?? null
-
-    if (reference.source === "user") {
-      input.logger?.error(
-        {
-          layer: warning.layer,
-          source: reference.source,
-          path: reference.path,
-          absolutePath,
-          warningCode: warning.code,
-        },
-        "User prompt layer issue detected; continuing with empty layer"
-      )
-    } else {
-      input.logger?.warn(
-        {
-          layer: warning.layer,
-          source: reference.source,
-          path: reference.path,
-          absolutePath,
-          warningCode: warning.code,
-        },
-        "System prompt layer issue detected; continuing with empty layer"
-      )
-    }
+    input.logger?.warn(
+      {
+        layer: warning.layer,
+        warningCode: warning.code,
+        contributions: contributions.map((contribution) => ({
+          source: contribution.source,
+          path: contribution.path,
+          absolutePath: contribution.absolutePath,
+          status: contribution.input.status,
+          ...(contribution.input.status === "invalid" ? { reason: contribution.input.reason } : {}),
+        })),
+      },
+      "Prompt layer issue detected; continuing with available additive content"
+    )
   }
 
   const warnings: InteractivePromptWarning[] = [
@@ -143,6 +131,7 @@ export const resolveInteractiveSystemPrompt = async (input: {
   const provenance = buildPromptProvenance({
     resolvedRoute,
     layers: composition.layers,
+    layerContributions,
     warnings,
   })
 
@@ -150,8 +139,6 @@ export const resolveInteractiveSystemPrompt = async (input: {
     flow: "interactive",
     surface: input.surface,
     media,
-    routeKey: resolvedRoute.routeKey,
-    mappingSource: resolvedRoute.mappingSource,
     systemPrompt: composition.markdown,
     provenance,
     warnings,

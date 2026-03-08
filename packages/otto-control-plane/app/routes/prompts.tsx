@@ -530,12 +530,8 @@ export default function PromptsRoute() {
                   {data.interactiveProvenance ? (
                     <>
                       <p className="m-0 text-sm text-[#1a1a1a]">
-                        Route{" "}
-                        <span className="font-mono">{data.interactiveProvenance.routeKey}</span> |
-                        source{" "}
-                        <span className="font-mono">
-                          {data.interactiveProvenance.mappingSource}
-                        </span>
+                        Flow <span className="font-mono">{data.interactiveProvenance.flow}</span> |
+                        media <span className="font-mono">{data.interactiveProvenance.media}</span>
                       </p>
                       <ul className="mt-2 grid grid-cols-1 gap-2 p-0">
                         {renderProvenanceLayers(data.interactiveProvenance)}
@@ -569,7 +565,7 @@ export default function PromptsRoute() {
                           {formatDateTime(entry.startedAt)}
                         </p>
                         <p className="m-0 mt-1 font-mono text-[11px] text-[#666666]">
-                          route {entry.provenance.routeKey} ({entry.provenance.mappingSource})
+                          {entry.provenance.flow} ({entry.provenance.media ?? "n/a"})
                         </p>
                       </div>
                     ))

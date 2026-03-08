@@ -9,7 +9,7 @@
 
 ## Why
 
-Prompt ownership is currently unclear and split across runtime paths. Marco needs a clean hierarchy that makes it obvious which prompt is active for each flow/job, keeps user customization safe across updates, and preserves watchdog prompt visibility without allowing user overrides.
+Prompt ownership is currently unclear and split across runtime paths. Marco needs a clean hierarchy that makes it obvious which prompt is active for each flow/job and keeps user customization safe across updates.
 
 ## Decisions Locked In
 
@@ -20,10 +20,10 @@ Prompt ownership is currently unclear and split across runtime paths. Marco need
 - Media mapping is: Telegram interactive -> `chatapps`, control-plane web -> `web`, CLI -> `cli`, scheduled/background jobs -> job media (default `cli`).
 - `~/.otto/system-prompts/` is shipped and always overwritten on install/update.
 - `~/.otto/prompts/` is user-owned and never overwritten.
-- Prompt routing is modeled as config data (system mapping + user mapping override).
+- Prompt routing is modeled as config data for flow/media path selection, while layer content is always additive (`system + user`) per layer path.
 - Prompt files are Markdown (`.md`) only.
-- Watchdog uses a system-only prompt file and remains non-user-configurable.
-- Invalid/missing user prompt files log errors and are treated as empty layers.
+- Watchdog uses the same additive layer behavior as other flows.
+- Missing/invalid prompt layer files are logged and treated as empty contributions.
 - Prompt provenance is persisted in SQLite and exposed through runtime read surfaces.
 
 ## Success Criteria
@@ -31,7 +31,7 @@ Prompt ownership is currently unclear and split across runtime paths. Marco need
 - Runtime can deterministically resolve prompt chains for interactive, scheduled, background, and watchdog flows.
 - Users can edit prompt layers from files without losing changes during setup/update.
 - Every run/session can be inspected to see which prompt layers/files were applied.
-- Watchdog prompt behavior is explicit and visible while staying system-owned.
+- Watchdog prompt behavior is explicit and visible through provenance.
 
 ## Delivery Plan (Deployable Tickets)
 

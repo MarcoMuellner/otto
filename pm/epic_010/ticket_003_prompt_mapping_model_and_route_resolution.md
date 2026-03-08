@@ -13,9 +13,9 @@ Model prompt routing as data so runtime can resolve which layers/files apply per
 - Add mapping schema and loader for:
   - `~/.otto/system-prompts/mapping.jsonc`
   - `~/.otto/prompts/mapping.jsonc`
-- Implement deterministic merge/override rules (user mapping overlays system mapping).
+- Implement deterministic mapping resolution for route selection.
 - Resolve routes for interactive, scheduled, background, and watchdog contexts.
-- Enforce watchdog mapping to system-only prompt layer source.
+- Keep watchdog route selection constrained to system mapping.
 - Add unit tests for mapping merge and route resolution outcomes.
 
 ## Non-Goals
@@ -31,9 +31,9 @@ Model prompt routing as data so runtime can resolve which layers/files apply per
 
 ## Acceptance Criteria
 
-- Runtime can resolve a route key from flow/media/job context using mapping files.
+- Runtime can resolve route definitions from flow/media/job context using mapping files.
 - Invalid user mapping entries are logged and skipped without crashing runtime.
-- Watchdog route cannot resolve a user-owned prompt layer.
+- Watchdog route selection cannot be redirected by user mapping entries.
 - Tests cover override precedence and fallback behavior.
 
 ## Verification

@@ -195,9 +195,8 @@ describe("resolveJobSystemPrompt", () => {
 
     // Assert
     expect(resolved.media).toBe("cli")
-    expect(resolved.routeKey).toBe("scheduled-cli")
     expect(resolved.systemPrompt).toBe(
-      "# Core\nSystem core\n\n## Surface\nScheduled surface\n\n## Media\nCLI media\n\n## Task Profile\nUser reminder profile"
+      "# Core\nSystem core\n\n## Surface\nScheduled surface\n\n## Media\nCLI media\n\n## Task Profile\nSystem reminder profile\n\n## Task Profile\nUser reminder profile"
     )
     expect(resolved.warnings).toEqual([])
   })
@@ -234,7 +233,6 @@ describe("resolveJobSystemPrompt", () => {
 
     // Assert
     expect(resolved.media).toBe("chatapps")
-    expect(resolved.routeKey).toBe("background-chatapps")
     expect(resolved.systemPrompt).toContain("## Media\nChatapps media")
     expect(resolved.warnings).toEqual([])
   })
@@ -340,8 +338,6 @@ describe("resolveJobSystemPrompt", () => {
     })
 
     // Assert
-    expect(resolved.mappingSource).toBe("system")
-    expect(resolved.routeKey).toBe("watchdog-default")
     expect(resolved.systemPrompt).toBe(
       "# Watchdog\nSystem watchdog\n\n## Surface\nWatchdog surface"
     )
@@ -350,7 +346,7 @@ describe("resolveJobSystemPrompt", () => {
     ).toBe(true)
   })
 
-  it("allows watchdog surface layer content to be overridden from user prompt file", async () => {
+  it("appends user watchdog surface content after system layer content", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -380,18 +376,20 @@ describe("resolveJobSystemPrompt", () => {
     })
 
     // Assert
-    expect(resolved.mappingSource).toBe("system")
-    expect(resolved.routeKey).toBe("watchdog-default")
     expect(resolved.systemPrompt).toBe(
-      "# Watchdog\nSystem watchdog\n\n## Surface\nUser watchdog surface"
+      "# Watchdog\nSystem watchdog\n\n## Surface\nSystem watchdog surface\n\n## Surface\nUser watchdog surface"
     )
 
     const surfaceLayer = resolved.provenance.layers.find((layer) => layer.layer === "surface")
-    expect(surfaceLayer?.source).toBe("user")
-    expect(surfaceLayer?.path).toBe("layers/surface-watchdog.md")
+    expect(surfaceLayer?.contributors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "system", path: "layers/surface-watchdog.md" }),
+        expect.objectContaining({ source: "user", path: "layers/surface-watchdog.md" }),
+      ])
+    )
   })
 
-  it("does not allow watchdog core-persona to be overridden from user prompt files", async () => {
+  it("appends user watchdog core-persona and surface content for additive layering", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -423,19 +421,27 @@ describe("resolveJobSystemPrompt", () => {
 
     // Assert
     expect(resolved.systemPrompt).toBe(
-      "# Watchdog\nSystem watchdog core\n\n## Surface\nUser watchdog surface"
+      "# Watchdog\nSystem watchdog core\n\n# Watchdog\nUser watchdog core\n\n## Surface\nSystem watchdog surface\n\n## Surface\nUser watchdog surface"
     )
 
     const coreLayer = resolved.provenance.layers.find((layer) => layer.layer === "core-persona")
     const surfaceLayer = resolved.provenance.layers.find((layer) => layer.layer === "surface")
 
-    expect(coreLayer?.source).toBe("system")
-    expect(coreLayer?.path).toBe("layers/watchdog.md")
-    expect(surfaceLayer?.source).toBe("user")
-    expect(surfaceLayer?.path).toBe("layers/surface-watchdog.md")
+    expect(coreLayer?.contributors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "system", path: "layers/watchdog.md" }),
+        expect.objectContaining({ source: "user", path: "layers/watchdog.md" }),
+      ])
+    )
+    expect(surfaceLayer?.contributors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "system", path: "layers/surface-watchdog.md" }),
+        expect.objectContaining({ source: "user", path: "layers/surface-watchdog.md" }),
+      ])
+    )
   })
 
-  it("logs missing and invalid user layers while continuing with empty layer behavior", async () => {
+  it("logs missing additive layers while continuing with empty layer behavior", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -495,11 +501,12 @@ describe("resolveJobSystemPrompt", () => {
           message: "Prompt layer 'surface' is missing and will be skipped.",
         }),
         expect.objectContaining({
-          code: "invalid_layer",
-          message: "Prompt layer 'media' is invalid: Layer markdown is empty",
+          code: "missing_layer",
+          message: "Prompt layer 'media' is missing and will be skipped.",
         }),
       ])
     )
-    expect(logger.error).toHaveBeenCalledTimes(2)
+    expect(logger.warn).toHaveBeenCalledTimes(2)
+    expect(logger.error).not.toHaveBeenCalled()
   })
 })

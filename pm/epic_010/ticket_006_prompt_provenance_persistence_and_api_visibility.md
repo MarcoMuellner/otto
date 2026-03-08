@@ -11,7 +11,7 @@ Persist and expose prompt provenance so operators can verify which prompt layers
 ## Scope
 
 - Extend persistence model (SQLite) to store prompt provenance per run/session context.
-- Include ordered layer references/source in persisted metadata.
+- Include ordered layer metadata and contributor details in persisted provenance.
 - Expose provenance through existing runtime API read surfaces used by CLI/web.
 - Add migration and repository tests for backward compatibility.
 

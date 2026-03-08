@@ -6,14 +6,14 @@
 
 ## Objective
 
-Apply hierarchical prompt resolution to scheduler execution, interactive background one-shots, and watchdog runs with watchdog remaining system-only.
+Apply hierarchical prompt resolution to scheduler execution, interactive background one-shots, and watchdog runs.
 
 ## Scope
 
 - Wire prompt resolver into scheduler execution engine for scheduled and one-shot jobs.
 - Apply optional `task-profile` layer for jobs only (never for interactive chat turns).
 - Resolve job media (`chatapps`/`web`/`cli`) with default `cli` when absent.
-- Integrate watchdog prompt resolution through system-owned mapping/layers only.
+- Integrate watchdog prompt resolution using the same additive layer behavior as other flows.
 - Extend scheduler tests for scheduled/background/watchdog resolution behavior.
 
 ## Non-Goals
@@ -31,7 +31,7 @@ Apply hierarchical prompt resolution to scheduler execution, interactive backgro
 ## Acceptance Criteria
 
 - Scheduled and background jobs use `core + surface + media + task-profile(optional)`.
-- Watchdog uses explicit system prompt route and does not consume user prompt layers.
+- Watchdog uses explicit route selection and additive `system + user` layer composition.
 - Missing/invalid user layer handling remains log-and-empty without runtime failure.
 - Existing task execution state transitions remain unchanged.
 

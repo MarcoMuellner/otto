@@ -52,6 +52,7 @@ export type {
 } from "./interactive-resolution.js"
 export type {
   PromptProvenance,
+  PromptProvenanceLayerContributor,
   PromptProvenanceLayer,
   PromptProvenanceWarning,
 } from "./provenance.js"

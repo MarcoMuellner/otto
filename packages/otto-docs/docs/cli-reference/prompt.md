@@ -15,6 +15,8 @@ description: Open interactive prompt picker and edit user-owned prompt files saf
 - Allows editing only user-owned prompt files.
 - Blocks direct edits to system-owned prompt files and prints the user-owned
   equivalent path to edit.
+- At runtime, matching user layer files are appended after system layer files
+  (`system + user`).
 
 ## Prompt Paths
 

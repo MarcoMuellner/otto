@@ -220,8 +220,6 @@ describe("persistence repositories", () => {
       version: 1,
       flow: "background",
       media: "chatapps",
-      routeKey: "background-chatapps",
-      mappingSource: "effective",
       layers: [],
       warnings: [],
     })

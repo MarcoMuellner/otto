@@ -1446,17 +1446,6 @@
                         "cli"
                       ]
                     },
-                    "routeKey": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "mappingSource": {
-                      "type": "string",
-                      "enum": [
-                        "effective",
-                        "system"
-                      ]
-                    },
                     "systemPrompt": {
                       "type": "string"
                     },
@@ -1489,17 +1478,6 @@
                             {
                               "type": "null"
                             }
-                          ]
-                        },
-                        "routeKey": {
-                          "type": "string",
-                          "minLength": 1
-                        },
-                        "mappingSource": {
-                          "type": "string",
-                          "enum": [
-                            "effective",
-                            "system"
                           ]
                         },
                         "layers": {
@@ -1561,6 +1539,60 @@
                                     "type": "null"
                                   }
                                 ]
+                              },
+                              "contributors": {
+                                "default": [],
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string",
+                                      "enum": [
+                                        "system",
+                                        "user"
+                                      ]
+                                    },
+                                    "path": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "absolutePath": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "resolved",
+                                        "missing",
+                                        "invalid"
+                                      ]
+                                    },
+                                    "applied": {
+                                      "type": "boolean"
+                                    },
+                                    "reason": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "path",
+                                    "absolutePath",
+                                    "status",
+                                    "applied",
+                                    "reason"
+                                  ],
+                                  "additionalProperties": false
+                                }
                               }
                             },
                             "required": [
@@ -1569,7 +1601,8 @@
                               "path",
                               "status",
                               "applied",
-                              "reason"
+                              "reason",
+                              "contributors"
                             ],
                             "additionalProperties": false
                           }
@@ -1600,8 +1633,6 @@
                         "version",
                         "flow",
                         "media",
-                        "routeKey",
-                        "mappingSource",
                         "layers",
                         "warnings"
                       ],
@@ -1633,8 +1664,6 @@
                     "flow",
                     "surface",
                     "media",
-                    "routeKey",
-                    "mappingSource",
                     "systemPrompt",
                     "provenance",
                     "warnings"
@@ -4467,17 +4496,6 @@
                                       }
                                     ]
                                   },
-                                  "routeKey": {
-                                    "type": "string",
-                                    "minLength": 1
-                                  },
-                                  "mappingSource": {
-                                    "type": "string",
-                                    "enum": [
-                                      "effective",
-                                      "system"
-                                    ]
-                                  },
                                   "layers": {
                                     "type": "array",
                                     "items": {
@@ -4537,6 +4555,60 @@
                                               "type": "null"
                                             }
                                           ]
+                                        },
+                                        "contributors": {
+                                          "default": [],
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "source": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "system",
+                                                  "user"
+                                                ]
+                                              },
+                                              "path": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "absolutePath": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "status": {
+                                                "type": "string",
+                                                "enum": [
+                                                  "resolved",
+                                                  "missing",
+                                                  "invalid"
+                                                ]
+                                              },
+                                              "applied": {
+                                                "type": "boolean"
+                                              },
+                                              "reason": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "string"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "source",
+                                              "path",
+                                              "absolutePath",
+                                              "status",
+                                              "applied",
+                                              "reason"
+                                            ],
+                                            "additionalProperties": false
+                                          }
                                         }
                                       },
                                       "required": [
@@ -4545,7 +4617,8 @@
                                         "path",
                                         "status",
                                         "applied",
-                                        "reason"
+                                        "reason",
+                                        "contributors"
                                       ],
                                       "additionalProperties": false
                                     }
@@ -4576,8 +4649,6 @@
                                   "version",
                                   "flow",
                                   "media",
-                                  "routeKey",
-                                  "mappingSource",
                                   "layers",
                                   "warnings"
                                 ],
@@ -4870,17 +4941,6 @@
                                     }
                                   ]
                                 },
-                                "routeKey": {
-                                  "type": "string",
-                                  "minLength": 1
-                                },
-                                "mappingSource": {
-                                  "type": "string",
-                                  "enum": [
-                                    "effective",
-                                    "system"
-                                  ]
-                                },
                                 "layers": {
                                   "type": "array",
                                   "items": {
@@ -4940,6 +5000,60 @@
                                             "type": "null"
                                           }
                                         ]
+                                      },
+                                      "contributors": {
+                                        "default": [],
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "source": {
+                                              "type": "string",
+                                              "enum": [
+                                                "system",
+                                                "user"
+                                              ]
+                                            },
+                                            "path": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "absolutePath": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "status": {
+                                              "type": "string",
+                                              "enum": [
+                                                "resolved",
+                                                "missing",
+                                                "invalid"
+                                              ]
+                                            },
+                                            "applied": {
+                                              "type": "boolean"
+                                            },
+                                            "reason": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string"
+                                                },
+                                                {
+                                                  "type": "null"
+                                                }
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "source",
+                                            "path",
+                                            "absolutePath",
+                                            "status",
+                                            "applied",
+                                            "reason"
+                                          ],
+                                          "additionalProperties": false
+                                        }
                                       }
                                     },
                                     "required": [
@@ -4948,7 +5062,8 @@
                                       "path",
                                       "status",
                                       "applied",
-                                      "reason"
+                                      "reason",
+                                      "contributors"
                                     ],
                                     "additionalProperties": false
                                   }
@@ -4979,8 +5094,6 @@
                                 "version",
                                 "flow",
                                 "media",
-                                "routeKey",
-                                "mappingSource",
                                 "layers",
                                 "warnings"
                               ],

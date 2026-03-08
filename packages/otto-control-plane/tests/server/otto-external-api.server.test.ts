@@ -221,15 +221,11 @@ describe("createOttoExternalApiClient", () => {
             flow: "interactive",
             surface: "web",
             media: "web",
-            routeKey: "interactive-web",
-            mappingSource: "effective",
             systemPrompt: "# Prompt\nUse web layering.",
             provenance: {
               version: 1,
               flow: "interactive",
               media: "web",
-              routeKey: "interactive-web",
-              mappingSource: "effective",
               layers: [
                 {
                   layer: "core-persona",
@@ -277,7 +273,6 @@ describe("createOttoExternalApiClient", () => {
     const payload = await client.resolveInteractivePrompt("web")
 
     // Assert
-    expect(payload.routeKey).toBe("interactive-web")
     expect(payload.systemPrompt).toContain("Use web layering")
     expect(seenUrls).toEqual(["http://127.0.0.1:4190/external/prompts/interactive?surface=web"])
   })

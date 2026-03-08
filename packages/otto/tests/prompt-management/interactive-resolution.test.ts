@@ -188,21 +188,18 @@ describe("resolveInteractiveSystemPrompt", () => {
 
     // Assert
     expect(telegram.media).toBe("chatapps")
-    expect(telegram.routeKey).toBe("interactive-chatapps")
     expect(telegram.systemPrompt).toBe(
       "# Core\nCore layer\n\n## Surface\nInteractive surface layer\n\n## Media\nChat apps layer"
     )
 
     expect(web.media).toBe("web")
-    expect(web.routeKey).toBe("interactive-web")
     expect(web.systemPrompt).toContain("## Media\nWeb layer")
 
     expect(cli.media).toBe("cli")
-    expect(cli.routeKey).toBe("interactive-cli")
     expect(cli.systemPrompt).toContain("## Media\nCLI layer")
   })
 
-  it("logs missing and invalid user prompt layers and continues without crashing", async () => {
+  it("logs missing additive layers and continues without crashing", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)
     cleanupPaths.push(tempRoot)
@@ -257,11 +254,12 @@ describe("resolveInteractiveSystemPrompt", () => {
           message: "Prompt layer 'surface' is missing and will be skipped.",
         }),
         expect.objectContaining({
-          code: "invalid_layer",
-          message: "Prompt layer 'media' is invalid: Layer markdown is empty",
+          code: "missing_layer",
+          message: "Prompt layer 'media' is missing and will be skipped.",
         }),
       ])
     )
-    expect(logger.error).toHaveBeenCalledTimes(2)
+    expect(logger.warn).toHaveBeenCalledTimes(2)
+    expect(logger.error).not.toHaveBeenCalled()
   })
 })

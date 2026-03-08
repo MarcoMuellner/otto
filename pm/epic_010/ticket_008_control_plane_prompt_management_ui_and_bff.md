@@ -6,7 +6,7 @@
 
 ## Objective
 
-Ship control-plane prompt management so operators can inspect prompt files/routing/provenance and edit user-owned prompts from the web surface.
+Ship control-plane prompt management so operators can inspect prompt files/provenance and edit user-owned prompts from the web surface.
 
 ## Scope
 

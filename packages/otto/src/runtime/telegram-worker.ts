@@ -79,8 +79,6 @@ export const runTelegramWorker = async (logger: Logger): Promise<void> => {
             flow: resolved.flow,
             surface: resolved.surface,
             media: resolved.media,
-            routeKey: resolved.routeKey,
-            mappingSource: resolved.mappingSource,
             systemPrompt: resolved.systemPrompt,
             provenance: resolved.provenance,
             warnings: resolved.warnings,

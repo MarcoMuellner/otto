@@ -92,6 +92,18 @@ export const promptProvenanceLayerSchema = z.object({
   status: z.enum(["resolved", "missing", "invalid"]),
   applied: z.boolean(),
   reason: z.string().nullable(),
+  contributors: z
+    .array(
+      z.object({
+        source: z.enum(["system", "user"]),
+        path: z.string().trim().min(1),
+        absolutePath: z.string().trim().min(1),
+        status: z.enum(["resolved", "missing", "invalid"]),
+        applied: z.boolean(),
+        reason: z.string().nullable(),
+      })
+    )
+    .default([]),
 })
 
 export const promptProvenanceWarningSchema = z.object({
@@ -103,8 +115,6 @@ export const promptProvenanceSchema = z.object({
   version: z.literal(1),
   flow: z.enum(["interactive", "scheduled", "background", "watchdog"]),
   media: z.enum(["chatapps", "web", "cli"]).nullable(),
-  routeKey: z.string().trim().min(1),
-  mappingSource: z.enum(["effective", "system"]),
   layers: z.array(promptProvenanceLayerSchema),
   warnings: z.array(promptProvenanceWarningSchema),
 })

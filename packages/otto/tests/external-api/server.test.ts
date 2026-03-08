@@ -872,15 +872,11 @@ describe("buildExternalApiServer", () => {
             flow: "interactive",
             surface,
             media: "web",
-            routeKey: "interactive-web",
-            mappingSource: "effective",
             systemPrompt: "# Core\nTest prompt",
             provenance: {
               version: 1,
               flow: "interactive",
               media: "web",
-              routeKey: "interactive-web",
-              mappingSource: "effective",
               layers: [
                 {
                   layer: "core-persona",
@@ -938,12 +934,9 @@ describe("buildExternalApiServer", () => {
       flow: "interactive",
       surface: "web",
       media: "web",
-      routeKey: "interactive-web",
-      mappingSource: "effective",
       systemPrompt: "# Core\nTest prompt",
       provenance: expect.objectContaining({
         flow: "interactive",
-        routeKey: "interactive-web",
       }),
       warnings: [],
     })

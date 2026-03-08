@@ -329,8 +329,6 @@ const resolveJobExecutionSystemPrompt = async (input: {
           jobId: input.jobId,
           flow: input.flow,
           media: resolved.media,
-          routeKey: resolved.routeKey,
-          mappingSource: resolved.mappingSource,
           profileId: resolved.profileId,
           systemPrompt: resolved.systemPrompt,
           provenance: resolved.provenance,
