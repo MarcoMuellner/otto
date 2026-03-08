@@ -324,6 +324,21 @@ const resolveJobExecutionSystemPrompt = async (input: {
     })
 
     if (resolved.systemPrompt.trim().length > 0) {
+      input.dependencies.logger.info(
+        {
+          jobId: input.jobId,
+          flow: input.flow,
+          media: resolved.media,
+          routeKey: resolved.routeKey,
+          mappingSource: resolved.mappingSource,
+          profileId: resolved.profileId,
+          systemPrompt: resolved.systemPrompt,
+          provenance: resolved.provenance,
+          warnings: resolved.warnings,
+        },
+        "Resolved job execution system prompt"
+      )
+
       return {
         systemPrompt: resolved.systemPrompt,
         provenance: resolved.provenance,
@@ -346,6 +361,16 @@ const resolveJobExecutionSystemPrompt = async (input: {
     typeof input.fallbackSystemPrompt === "string" &&
     input.fallbackSystemPrompt.trim().length > 0
   ) {
+    input.dependencies.logger.info(
+      {
+        jobId: input.jobId,
+        flow: input.flow,
+        profileId: input.profileId,
+        systemPrompt: input.fallbackSystemPrompt,
+      },
+      "Using fallback task-config system prompt for job execution"
+    )
+
     return {
       systemPrompt: input.fallbackSystemPrompt,
       provenance: null,
@@ -755,7 +780,8 @@ const executeWatchdogTask = async (
   dependencies: TaskExecutionEngineDependencies,
   job: ClaimedJobRecord,
   nowTimestamp: number,
-  watchdogSystemPrompt: string
+  watchdogSystemPrompt: string,
+  watchdogPromptProvenance: PromptProvenance | null
 ): Promise<TaskExecutionResult> => {
   const payloadParsed = parseTaskPayload(job.payload)
   if (payloadParsed.error) {
@@ -820,6 +846,7 @@ const executeWatchdogTask = async (
           }),
           {
             systemPrompt: watchdogSystemPrompt,
+            systemPromptProvenance: watchdogPromptProvenance,
             agent: "assistant",
             modelContext: {
               flow: "watchdogFailures",
@@ -938,7 +965,8 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             dependencies,
             job,
             startedAt,
-            promptResolution.systemPrompt ?? ""
+            promptResolution.systemPrompt ?? "",
+            runPromptProvenance
           )
         } else if (job.type === HEARTBEAT_TASK_TYPE) {
           const heartbeatResult = executeHeartbeatTask(
@@ -1035,6 +1063,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                   buildInteractiveBackgroundPrompt(validatedPayload.data),
                   {
                     systemPrompt,
+                    systemPromptProvenance: runPromptProvenance,
                     tools,
                     agent: "assistant",
                     modelContext: {
@@ -1153,6 +1182,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               buildExecutionPrompt(job, payloadParsed.parsed, startedAt),
               {
                 systemPrompt,
+                systemPromptProvenance: runPromptProvenance,
                 tools,
                 agent: "assistant",
                 modelContext: {

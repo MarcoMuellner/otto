@@ -1,5 +1,8 @@
+import path from "node:path"
+
 import pino, { type Logger } from "pino"
 
+import { createDailyRotatingLogStream } from "./daily-log-stream.js"
 import { buildLoggerOptions, resolveRuntimeEnv } from "./options.js"
 
 type CreateLoggerInput = {
@@ -27,7 +30,47 @@ export const createLogger = (input: CreateLoggerInput = {}): Logger => {
     prettyLogs,
   })
 
-  return pino(options)
+  if (env === "test" || prettyLogs) {
+    return pino(options)
+  }
+
+  const fileLoggingEnabled = process.env.OTTO_LOG_FILE_ENABLED?.trim() !== "0"
+  if (!fileLoggingEnabled) {
+    return pino(options)
+  }
+
+  const retentionDaysRaw = process.env.OTTO_LOG_RETENTION_DAYS?.trim()
+  const retentionDays = retentionDaysRaw ? Number.parseInt(retentionDaysRaw, 10) : 30
+  const effectiveRetentionDays =
+    Number.isFinite(retentionDays) && retentionDays > 0 ? retentionDays : 30
+
+  const configuredLogDir = process.env.OTTO_LOG_DIRECTORY?.trim()
+  const ottoHome = process.env.OTTO_HOME?.trim()
+  const home = process.env.HOME?.trim()
+  const fallbackDirectory =
+    ottoHome && ottoHome.length > 0
+      ? path.join(ottoHome, "logs")
+      : home && home.length > 0
+        ? path.join(home, ".otto", "logs")
+        : null
+  const logDirectory =
+    configuredLogDir && configuredLogDir.length > 0
+      ? path.resolve(configuredLogDir)
+      : fallbackDirectory
+
+  if (!logDirectory) {
+    return pino(options)
+  }
+
+  const rotatingFileStream = createDailyRotatingLogStream({
+    directory: logDirectory,
+    retentionDays: effectiveRetentionDays,
+  })
+
+  return pino(
+    options,
+    pino.multistream([{ stream: process.stdout }, { stream: rotatingFileStream }])
+  )
 }
 
 export const logger = createLogger()

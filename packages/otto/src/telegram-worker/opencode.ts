@@ -2,6 +2,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk"
 import type { Logger } from "pino"
 
 import type { ResolvedRuntimeModel, RuntimeModelFlow } from "../model-management/index.js"
+import type { PromptProvenance } from "../prompt-management/index.js"
 
 type SessionChatTextPart = {
   type?: string
@@ -31,6 +32,7 @@ export type OpencodeSessionGateway = {
     parts: OpencodePromptPart[],
     options?: {
       systemPrompt?: string
+      systemPromptProvenance?: PromptProvenance | null
       tools?: Record<string, boolean>
       agent?: string
       modelContext?: SessionModelContext
@@ -41,6 +43,7 @@ export type OpencodeSessionGateway = {
     text: string,
     options?: {
       systemPrompt?: string
+      systemPromptProvenance?: PromptProvenance | null
       tools?: Record<string, boolean>
       agent?: string
       modelContext?: SessionModelContext
@@ -128,6 +131,7 @@ export const createOpencodeSessionGateway = (
     parts: OpencodePromptPart[],
     options?: {
       systemPrompt?: string
+      systemPromptProvenance?: PromptProvenance | null
       tools?: Record<string, boolean>
       agent?: string
       modelContext?: SessionModelContext
@@ -153,6 +157,9 @@ export const createOpencodeSessionGateway = (
         modelId: modelSelection.modelId,
         modelSource: modelSelection.source,
         partsCount: parts.length,
+        hasSystemPrompt: Boolean(options?.systemPrompt),
+        systemPrompt: options?.systemPrompt,
+        systemPromptProvenance: options?.systemPromptProvenance ?? null,
       },
       "Sending Telegram prompt to OpenCode session chat API"
     )

@@ -548,6 +548,21 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
             logger,
           })
 
+          logger.info(
+            {
+              channel: "telegram",
+              flow: resolved.flow,
+              surface: resolved.surface,
+              media: resolved.media,
+              routeKey: resolved.routeKey,
+              mappingSource: resolved.mappingSource,
+              systemPrompt: resolved.systemPrompt,
+              provenance: resolved.provenance,
+              warnings: resolved.warnings,
+            },
+            "Resolved interactive system prompt for Telegram"
+          )
+
           return resolved.systemPrompt.trim().length > 0 ? resolved.systemPrompt : undefined
         },
       })
