@@ -30,7 +30,7 @@
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run extensions:validate && pnpm run test"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.2.20",
+    "@opencode-ai/sdk": "^1.2.21",
     "commander": "^14.0.1",
     "fastify": "^5.7.4",
     "otto-extension-sdk": "workspace:*",

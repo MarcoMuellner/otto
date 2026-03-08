@@ -30,8 +30,8 @@ importers:
   packages/otto:
     dependencies:
       '@opencode-ai/sdk':
-        specifier: ^1.2.20
-        version: 1.2.20
+        specifier: ^1.2.21
+        version: 1.2.21
       commander:
         specifier: ^14.0.1
         version: 14.0.3
@@ -1808,6 +1808,9 @@ packages:
 
   '@opencode-ai/sdk@1.2.20':
     resolution: {integrity: sha512-U5ROpG21D8jg9rkc1IgKAk1g5dn6X/rkOBfveupd0peSDO9n6VM9aikYccVLaMObxVqdjtG08IeQOFTPVS8ySQ==}
+
+  '@opencode-ai/sdk@1.2.21':
+    resolution: {integrity: sha512-7XF7QlXDP5iAbGcAsxsrmKlIjRtSzKgbwuDHPPuZbILkhGOfCo05XwPidAZrVWucZ/re44oc/psw2zDECaZOpQ==}
 
   '@oxc-project/types@0.112.0':
     resolution: {integrity: sha512-m6RebKHIRsax2iCwVpYW2ErQwa4ywHJrE4sCK3/8JK8ZZAWOKXaRJFl/uP51gaVyyXlaS4+chU1nSCdzYf6QqQ==}
@@ -9371,6 +9374,8 @@ snapshots:
       zod: 4.1.8
 
   '@opencode-ai/sdk@1.2.20': {}
+
+  '@opencode-ai/sdk@1.2.21': {}
 
   '@oxc-project/types@0.112.0': {}
 
