@@ -6,6 +6,8 @@
 
 > Superseded by Epic 002 (`pm/epic_002/`).
 > Use `pm/epic_002/ticket_001_minute_scheduler_kernel.md` onward.
+>
+> Historical update (2026-03): scheduler heartbeat paths described below were removed from runtime.
 
 ## Objective
 

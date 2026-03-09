@@ -15,11 +15,6 @@ export const notificationProfileSchema = z.object({
   quietHoursEnd: z.string().nullable(),
   quietMode: z.enum(["critical_only", "off"]).nullable(),
   muteUntil: z.number().int().nullable(),
-  heartbeatMorning: z.string().nullable(),
-  heartbeatMidday: z.string().nullable(),
-  heartbeatEvening: z.string().nullable(),
-  heartbeatCadenceMinutes: z.number().int().nullable(),
-  heartbeatOnlyIfSignal: z.boolean(),
   interactiveContextWindowSize: z.number().int().min(5).max(200),
   contextRetentionCap: z.number().int().min(5).max(200),
   onboardingCompletedAt: z.number().int().nullable(),
@@ -40,17 +35,6 @@ export const updateNotificationProfileRequestSchema = z.object({
     .optional(),
   quietHoursStart: z.string().trim().nullable().optional(),
   quietHoursEnd: z.string().trim().nullable().optional(),
-  heartbeatMorning: z.string().trim().nullable().optional(),
-  heartbeatMidday: z.string().trim().nullable().optional(),
-  heartbeatEvening: z.string().trim().nullable().optional(),
-  heartbeatCadenceMinutes: z
-    .number()
-    .int()
-    .min(30)
-    .max(24 * 60)
-    .nullable()
-    .optional(),
-  heartbeatOnlyIfSignal: z.boolean().optional(),
   interactiveContextWindowSize: z.number().int().min(5).max(200).optional(),
   contextRetentionCap: z.number().int().min(5).max(200).optional(),
   quietMode: z.enum(["critical_only", "off"]).optional(),

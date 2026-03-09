@@ -5,6 +5,8 @@
 - `state`: `done`
 
 > Superseded by Epic 004 (`pm/epic_004/`).
+>
+> Historical update (2026-03): heartbeat-specific profile behavior referenced here is deprecated and removed.
 
 ## Objective
 

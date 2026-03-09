@@ -9,6 +9,11 @@
 
 Migrate internal APIs, scheduler flows, watchdog/heartbeat notifications, and OpenCode tools to channel-generic contracts with Telegram compatibility aliases.
 
+## Historical Note (2026-03)
+
+- Scheduler heartbeat has been removed from runtime; heartbeat references in this planned ticket are legacy context.
+- Any future implementation should scope to active scheduler paths only.
+
 ## Scope
 
 - Add generic internal endpoints for queue message/file operations.

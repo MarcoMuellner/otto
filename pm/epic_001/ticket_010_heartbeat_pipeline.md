@@ -5,6 +5,8 @@
 - `state`: `done`
 
 > Superseded by Epic 004 (`pm/epic_004/ticket_001_heartbeat_pipeline.md`).
+>
+> Historical update (2026-03): scheduler heartbeat described below is no longer active runtime behavior.
 
 ## Objective
 

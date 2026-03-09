@@ -19,7 +19,7 @@ export type ExternalTaskDetailsRecord = JobRecord & {
 }
 
 const SYSTEM_TASK_ID_PREFIX = "system-"
-const SYSTEM_TASK_TYPES = new Set(["heartbeat", "watchdog_failures"])
+const SYSTEM_TASK_TYPES = new Set(["watchdog_failures"])
 
 /**
  * Centralizes task list reads for API adapters so internal and external route handlers

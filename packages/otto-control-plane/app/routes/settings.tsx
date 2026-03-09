@@ -4,7 +4,6 @@ import { toast } from "sonner"
 
 import { Button } from "../components/ui/button.js"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card.js"
-import { Switch } from "../components/ui/switch.js"
 import type { ModelCatalogResponse, ModelDefaultsResponse } from "../features/models/contracts.js"
 import {
   modelCatalogResponseSchema,
@@ -33,14 +32,9 @@ type SettingsFormState = {
   timezone: string
   quietHoursStart: string
   quietHoursEnd: string
-  heartbeatMorning: string
-  heartbeatMidday: string
-  heartbeatEvening: string
-  heartbeatCadenceMinutes: string
   interactiveContextWindowSize: string
   contextRetentionCap: string
   quietMode: "critical_only" | "off"
-  heartbeatOnlyIfSignal: boolean
 }
 
 type Feedback = {
@@ -56,7 +50,6 @@ type ModelFeedback = {
 type ModelDefaultsFormState = {
   interactiveAssistant: string
   scheduledTasks: string
-  heartbeat: string
   watchdogFailures: string
 }
 
@@ -81,14 +74,9 @@ const defaultSettingsFormState: SettingsFormState = {
   timezone: "Europe/Vienna",
   quietHoursStart: "20:00",
   quietHoursEnd: "08:00",
-  heartbeatMorning: "08:30",
-  heartbeatMidday: "12:30",
-  heartbeatEvening: "19:00",
-  heartbeatCadenceMinutes: "180",
   interactiveContextWindowSize: "20",
   contextRetentionCap: "100",
   quietMode: "critical_only",
-  heartbeatOnlyIfSignal: true,
 }
 
 const toFormState = (profile: NotificationProfile): SettingsFormState => {
@@ -96,15 +84,9 @@ const toFormState = (profile: NotificationProfile): SettingsFormState => {
     timezone: profile.timezone ?? "",
     quietHoursStart: profile.quietHoursStart ?? "",
     quietHoursEnd: profile.quietHoursEnd ?? "",
-    heartbeatMorning: profile.heartbeatMorning ?? "",
-    heartbeatMidday: profile.heartbeatMidday ?? "",
-    heartbeatEvening: profile.heartbeatEvening ?? "",
-    heartbeatCadenceMinutes:
-      profile.heartbeatCadenceMinutes == null ? "" : String(profile.heartbeatCadenceMinutes),
     interactiveContextWindowSize: String(profile.interactiveContextWindowSize),
     contextRetentionCap: String(profile.contextRetentionCap),
     quietMode: profile.quietMode === "off" ? "off" : "critical_only",
-    heartbeatOnlyIfSignal: profile.heartbeatOnlyIfSignal,
   }
 }
 
@@ -112,7 +94,6 @@ const toModelDefaultsFormState = (defaults: ModelDefaultsResponse): ModelDefault
   return {
     interactiveAssistant: defaults.flowDefaults.interactiveAssistant ?? INHERIT_OPTION_VALUE,
     scheduledTasks: defaults.flowDefaults.scheduledTasks ?? INHERIT_OPTION_VALUE,
-    heartbeat: defaults.flowDefaults.heartbeat ?? INHERIT_OPTION_VALUE,
     watchdogFailures: defaults.flowDefaults.watchdogFailures ?? INHERIT_OPTION_VALUE,
   }
 }
@@ -126,7 +107,6 @@ const toModelDefaultsPayload = (formState: ModelDefaultsFormState): ModelDefault
           : formState.interactiveAssistant,
       scheduledTasks:
         formState.scheduledTasks === INHERIT_OPTION_VALUE ? null : formState.scheduledTasks,
-      heartbeat: formState.heartbeat === INHERIT_OPTION_VALUE ? null : formState.heartbeat,
       watchdogFailures:
         formState.watchdogFailures === INHERIT_OPTION_VALUE ? null : formState.watchdogFailures,
     },
@@ -319,9 +299,6 @@ export default function SettingsRoute() {
     const timeFields: Array<{ label: string; value: string }> = [
       { label: "Quiet start", value: formState.quietHoursStart },
       { label: "Quiet end", value: formState.quietHoursEnd },
-      { label: "Heartbeat morning", value: formState.heartbeatMorning },
-      { label: "Heartbeat midday", value: formState.heartbeatMidday },
-      { label: "Heartbeat evening", value: formState.heartbeatEvening },
     ]
 
     for (const field of timeFields) {
@@ -330,21 +307,6 @@ export default function SettingsRoute() {
         setFeedback({ kind: "error", message: `${field.label} must use HH:MM format.` })
         return
       }
-    }
-
-    const cadenceRaw = formState.heartbeatCadenceMinutes.trim()
-    let cadence: number | null = null
-    if (cadenceRaw.length > 0) {
-      const parsedCadence = Number(cadenceRaw)
-      if (!Number.isInteger(parsedCadence) || parsedCadence < 30 || parsedCadence > 24 * 60) {
-        setFeedback({
-          kind: "error",
-          message: "Heartbeat cadence must be a whole number between 30 and 1440.",
-        })
-        return
-      }
-
-      cadence = parsedCadence
     }
 
     const interactiveContextWindowSizeRaw = formState.interactiveContextWindowSize.trim()
@@ -379,14 +341,9 @@ export default function SettingsRoute() {
       timezone: formState.timezone.trim(),
       quietHoursStart: formState.quietHoursStart.trim() || null,
       quietHoursEnd: formState.quietHoursEnd.trim() || null,
-      heartbeatMorning: formState.heartbeatMorning.trim() || null,
-      heartbeatMidday: formState.heartbeatMidday.trim() || null,
-      heartbeatEvening: formState.heartbeatEvening.trim() || null,
-      heartbeatCadenceMinutes: cadence,
       interactiveContextWindowSize: parsedInteractiveContextWindowSize,
       contextRetentionCap: parsedContextRetentionCap,
       quietMode: formState.quietMode,
-      heartbeatOnlyIfSignal: formState.heartbeatOnlyIfSignal,
     }
 
     setIsSaving(true)
@@ -524,7 +481,6 @@ export default function SettingsRoute() {
   const defaultsState = defaultsFormState ?? {
     interactiveAssistant: INHERIT_OPTION_VALUE,
     scheduledTasks: INHERIT_OPTION_VALUE,
-    heartbeat: INHERIT_OPTION_VALUE,
     watchdogFailures: INHERIT_OPTION_VALUE,
   }
   const lastUpdatedLabel = catalog?.updatedAt == null ? "Never" : formatDateTime(catalog.updatedAt)
@@ -605,77 +561,7 @@ export default function SettingsRoute() {
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="grid gap-1">
-                <label htmlFor="settings-heartbeat-morning" className={settingsLabelClassName}>
-                  Morning
-                </label>
-                <input
-                  id="settings-heartbeat-morning"
-                  value={formState.heartbeatMorning}
-                  onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      heartbeatMorning: event.target.value,
-                    }))
-                  }
-                  className={settingsFieldClassName}
-                  placeholder="08:30"
-                />
-              </div>
-              <div className="grid gap-1">
-                <label htmlFor="settings-heartbeat-midday" className={settingsLabelClassName}>
-                  Midday
-                </label>
-                <input
-                  id="settings-heartbeat-midday"
-                  value={formState.heartbeatMidday}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, heartbeatMidday: event.target.value }))
-                  }
-                  className={settingsFieldClassName}
-                  placeholder="12:30"
-                />
-              </div>
-              <div className="grid gap-1">
-                <label htmlFor="settings-heartbeat-evening" className={settingsLabelClassName}>
-                  Evening
-                </label>
-                <input
-                  id="settings-heartbeat-evening"
-                  value={formState.heartbeatEvening}
-                  onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      heartbeatEvening: event.target.value,
-                    }))
-                  }
-                  className={settingsFieldClassName}
-                  placeholder="19:00"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="grid gap-1">
-                <label htmlFor="settings-cadence" className={settingsLabelClassName}>
-                  Heartbeat Cadence (minutes)
-                </label>
-                <input
-                  id="settings-cadence"
-                  type="number"
-                  min={30}
-                  max={24 * 60}
-                  value={formState.heartbeatCadenceMinutes}
-                  onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      heartbeatCadenceMinutes: event.target.value,
-                    }))
-                  }
-                  className={settingsFieldClassName}
-                />
-              </div>
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1">
                 <label htmlFor="settings-context-window" className={settingsLabelClassName}>
                   Context Window Size
@@ -737,14 +623,6 @@ export default function SettingsRoute() {
                 </select>
               </div>
             </div>
-
-            <Switch
-              checked={formState.heartbeatOnlyIfSignal}
-              onCheckedChange={(checked) =>
-                setFormState((current) => ({ ...current, heartbeatOnlyIfSignal: checked }))
-              }
-              label="Only send heartbeat with signal"
-            />
 
             {feedback ? <p className="m-0 text-sm text-[#b42318]">{feedback.message}</p> : null}
 
@@ -827,31 +705,6 @@ export default function SettingsRoute() {
                 <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
                 {availableModels.map((model) => (
                   <option key={`scheduled-${model}`} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid gap-1">
-              <label htmlFor="model-default-heartbeat" className={settingsLabelClassName}>
-                heartbeat
-              </label>
-              <select
-                id="model-default-heartbeat"
-                value={defaultsState.heartbeat}
-                onChange={(event) =>
-                  setDefaultsFormState((current) => ({
-                    ...(current ?? defaultsState),
-                    heartbeat: event.target.value,
-                  }))
-                }
-                className={settingsFieldClassName}
-                disabled={isLoadingModels}
-              >
-                <option value={INHERIT_OPTION_VALUE}>inherit OpenCode default</option>
-                {availableModels.map((model) => (
-                  <option key={`heartbeat-${model}`} value={model}>
                     {model}
                   </option>
                 ))}

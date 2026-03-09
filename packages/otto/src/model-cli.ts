@@ -39,12 +39,7 @@ const updateTaskModelResponseSchema = z.object({
   status: z.enum(["created", "updated", "deleted", "run_now_scheduled"]),
 })
 
-const defaultsFlowOrder = [
-  "interactiveAssistant",
-  "scheduledTasks",
-  "heartbeat",
-  "watchdogFailures",
-] as const
+const defaultsFlowOrder = ["interactiveAssistant", "scheduledTasks", "watchdogFailures"] as const
 
 const usage = `Usage: model-cli <command> [options]
 

@@ -20,7 +20,6 @@ describe("settings-notification-profile service", () => {
       quietHoursStart: "20:00",
       quietHoursEnd: "08:00",
       quietMode: "critical_only",
-      heartbeatOnlyIfSignal: true,
       interactiveContextWindowSize: 20,
       contextRetentionCap: 100,
     })

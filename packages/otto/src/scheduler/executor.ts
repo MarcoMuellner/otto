@@ -22,7 +22,6 @@ import type {
 import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
-import { executeHeartbeatTask, HEARTBEAT_TASK_TYPE } from "./heartbeat.js"
 import { resolveScheduleTransition } from "./schedule.js"
 import {
   buildEffectiveTaskExecutionConfig,
@@ -966,25 +965,6 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             promptResolution.systemPrompt ?? "",
             runPromptProvenance
           )
-        } else if (job.type === HEARTBEAT_TASK_TYPE) {
-          const heartbeatResult = executeHeartbeatTask(
-            {
-              jobsRepository: dependencies.jobsRepository,
-              outboundMessagesRepository: dependencies.outboundMessagesRepository,
-              userProfileRepository: dependencies.userProfileRepository,
-              defaultChatId: dependencies.defaultWatchdogChatId,
-              sessionBindingsRepository: dependencies.sessionBindingsRepository,
-              nonInteractiveContextCaptureService: dependencies.nonInteractiveContextCaptureService,
-            },
-            job.payload,
-            startedAt
-          )
-
-          result = {
-            status: heartbeatResult.status,
-            summary: heartbeatResult.summary,
-            errors: [],
-          }
         } else if (job.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE) {
           const payloadParsed = parseTaskPayload(job.payload)
           if (payloadParsed.error) {

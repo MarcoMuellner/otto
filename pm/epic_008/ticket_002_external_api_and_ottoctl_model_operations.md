@@ -34,7 +34,7 @@ Marco needs direct operator controls to inspect/refresh catalog, change flow def
 - Runtime external APIs:
   - `GET /external/models/catalog` -> `{ models: string[], updatedAt: number | null, source: string }`
   - `POST /external/models/refresh` -> `{ status: "ok", updatedAt: number, count: number }`
-  - `GET /external/models/defaults` -> `{ flowDefaults: { interactiveAssistant, scheduledTasks, heartbeat, watchdogFailures } }`
+  - `GET /external/models/defaults` -> `{ flowDefaults: { interactiveAssistant, scheduledTasks, watchdogFailures } }`
   - `PUT /external/models/defaults` -> same shape as read response
 - Job mutation contract:
   - `POST/PATCH /external/jobs*` accept `modelRef?: string | null`
@@ -76,3 +76,7 @@ Marco needs direct operator controls to inspect/refresh catalog, change flow def
 ## Deployability
 
 - Deployable operator-control increment for runtime model management via CLI and API.
+
+## Historical Note (2026-03)
+
+- The earlier `heartbeat` flow default in this ticket has been removed from the live API and CLI surface.

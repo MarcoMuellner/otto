@@ -213,7 +213,7 @@ describe("api.jobs action", () => {
       request: new Request("http://localhost/api/jobs", {
         method: "POST",
         body: JSON.stringify({
-          type: "heartbeat",
+          type: "watchdog_failures",
           scheduleType: "recurring",
           cadenceMinutes: 10,
         }),

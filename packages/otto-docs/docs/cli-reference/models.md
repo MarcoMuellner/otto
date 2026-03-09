@@ -32,7 +32,6 @@ ottoctl model list
 ottoctl model refresh
 ottoctl model defaults show
 ottoctl model defaults set interactiveAssistant openai/gpt-5-mini
-ottoctl model defaults set heartbeat inherit
 ```
 
 ## Failure Modes

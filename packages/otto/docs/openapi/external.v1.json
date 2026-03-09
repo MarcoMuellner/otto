@@ -844,51 +844,6 @@
                             }
                           ]
                         },
-                        "heartbeatMorning": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatMidday": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatEvening": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatCadenceMinutes": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatOnlyIfSignal": {
-                          "type": "boolean"
-                        },
                         "interactiveContextWindowSize": {
                           "type": "integer",
                           "minimum": 5,
@@ -935,11 +890,6 @@
                         "quietHoursEnd",
                         "quietMode",
                         "muteUntil",
-                        "heartbeatMorning",
-                        "heartbeatMidday",
-                        "heartbeatEvening",
-                        "heartbeatCadenceMinutes",
-                        "heartbeatOnlyIfSignal",
                         "interactiveContextWindowSize",
                         "contextRetentionCap",
                         "onboardingCompletedAt",
@@ -1041,54 +991,6 @@
                         "type": "null"
                       }
                     ]
-                  },
-                  "heartbeatMorning": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "pattern": "^(?:[01]?\\d|2[0-3]):[0-5]\\d$"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "heartbeatMidday": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "pattern": "^(?:[01]?\\d|2[0-3]):[0-5]\\d$"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "heartbeatEvening": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "pattern": "^(?:[01]?\\d|2[0-3]):[0-5]\\d$"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "heartbeatCadenceMinutes": {
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "minimum": 30,
-                        "maximum": 1440
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "heartbeatOnlyIfSignal": {
-                    "type": "boolean"
                   },
                   "interactiveContextWindowSize": {
                     "type": "integer",
@@ -1200,51 +1102,6 @@
                             }
                           ]
                         },
-                        "heartbeatMorning": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatMidday": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatEvening": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatCadenceMinutes": {
-                          "anyOf": [
-                            {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "heartbeatOnlyIfSignal": {
-                          "type": "boolean"
-                        },
                         "interactiveContextWindowSize": {
                           "type": "integer",
                           "minimum": 5,
@@ -1291,11 +1148,6 @@
                         "quietHoursEnd",
                         "quietMode",
                         "muteUntil",
-                        "heartbeatMorning",
-                        "heartbeatMidday",
-                        "heartbeatEvening",
-                        "heartbeatCadenceMinutes",
-                        "heartbeatOnlyIfSignal",
                         "interactiveContextWindowSize",
                         "contextRetentionCap",
                         "onboardingCompletedAt",
@@ -2492,17 +2344,6 @@
                             }
                           ]
                         },
-                        "heartbeat": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "pattern": "^[^\\s/]+\\/\\S+$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
                         "watchdogFailures": {
                           "anyOf": [
                             {
@@ -2518,7 +2359,6 @@
                       "required": [
                         "interactiveAssistant",
                         "scheduledTasks",
-                        "heartbeat",
                         "watchdogFailures"
                       ],
                       "additionalProperties": false
@@ -2636,17 +2476,6 @@
                           }
                         ]
                       },
-                      "heartbeat": {
-                        "anyOf": [
-                          {
-                            "type": "string",
-                            "pattern": "^[^\\s/]+\\/\\S+$"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
                       "watchdogFailures": {
                         "anyOf": [
                           {
@@ -2662,7 +2491,6 @@
                     "required": [
                       "interactiveAssistant",
                       "scheduledTasks",
-                      "heartbeat",
                       "watchdogFailures"
                     ],
                     "additionalProperties": false
@@ -2709,17 +2537,6 @@
                             }
                           ]
                         },
-                        "heartbeat": {
-                          "anyOf": [
-                            {
-                              "type": "string",
-                              "pattern": "^[^\\s/]+\\/\\S+$"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
                         "watchdogFailures": {
                           "anyOf": [
                             {
@@ -2735,7 +2552,6 @@
                       "required": [
                         "interactiveAssistant",
                         "scheduledTasks",
-                        "heartbeat",
                         "watchdogFailures"
                       ],
                       "additionalProperties": false

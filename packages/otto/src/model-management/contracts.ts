@@ -5,7 +5,6 @@ import type { RuntimeModelFlow } from "./types.js"
 const runtimeModelFlowValues = [
   "interactiveAssistant",
   "scheduledTasks",
-  "heartbeat",
   "watchdogFailures",
 ] as const satisfies readonly RuntimeModelFlow[]
 
@@ -19,14 +18,12 @@ export const modelRefSchema = z
 export const DEFAULT_MODEL_FLOW_DEFAULTS: Record<RuntimeModelFlow, string | null> = {
   interactiveAssistant: null,
   scheduledTasks: null,
-  heartbeat: null,
   watchdogFailures: null,
 }
 
 export const modelFlowDefaultsSchema = z.object({
   interactiveAssistant: modelRefSchema.nullable(),
   scheduledTasks: modelRefSchema.nullable(),
-  heartbeat: modelRefSchema.nullable(),
   watchdogFailures: modelRefSchema.nullable(),
 })
 

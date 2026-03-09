@@ -15,7 +15,6 @@ operator-safe examples.
 - [Setup and Configuration Commands](./setup-and-config.md)
 - [Task Commands](./tasks.md)
 - [Model Commands](./models.md)
-- [Heartbeat Commands](./heartbeat.md)
 - [Prompt Command](./prompt.md)
 - [Extension Commands](./extensions.md)
 - [Doctor Commands](./doctor.md)

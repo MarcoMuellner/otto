@@ -175,8 +175,8 @@ describe("tasks-mutations service", () => {
   it("rejects updates for system-managed jobs", () => {
     // Arrange
     const harness = createMutationHarness([
-      createJobRecord("system-heartbeat", {
-        type: "heartbeat",
+      createJobRecord("system-watchdog-failures", {
+        type: "watchdog_failures",
       }),
     ])
 
@@ -185,7 +185,7 @@ describe("tasks-mutations service", () => {
     try {
       updateTaskMutation(
         harness.dependencies,
-        "system-heartbeat",
+        "system-watchdog-failures",
         {
           type: "mutated",
         },

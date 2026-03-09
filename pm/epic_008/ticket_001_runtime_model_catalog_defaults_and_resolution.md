@@ -26,7 +26,6 @@ Without runtime-side model data and resolution rules, CLI/UI controls would be c
 - Extend Otto config schema with flow defaults in `~/.config/otto/config.jsonc`:
   - `modelManagement.flowDefaults.interactiveAssistant`
   - `modelManagement.flowDefaults.scheduledTasks`
-  - `modelManagement.flowDefaults.heartbeat`
   - `modelManagement.flowDefaults.watchdogFailures`
 - Add job-level model override field:
   - SQLite migration adding nullable `jobs.model_ref`
@@ -85,3 +84,7 @@ Without runtime-side model data and resolution rules, CLI/UI controls would be c
 ## Deployability
 
 - Deployable runtime increment with no UI dependency; existing behavior preserved when no model defaults/overrides are configured.
+
+## Historical Note (2026-03)
+
+- `modelManagement.flowDefaults.heartbeat` is removed from active runtime.

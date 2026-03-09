@@ -4,6 +4,11 @@
 
 - `state`: `done`
 
+## Historical Note (2026-03)
+
+- This ticket was completed historically, but scheduler heartbeat has since been removed from runtime.
+- Watchdog remains the active failure-notification path.
+
 ## Objective
 
 Send concise morning/midday/evening heartbeat summaries using profile timezone and queue delivery.

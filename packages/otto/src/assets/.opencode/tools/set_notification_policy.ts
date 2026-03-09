@@ -17,7 +17,7 @@ const resolveInternalApiConfiguration = (): { baseUrl: string; token: string } =
 
 export default tool({
   description:
-    "Update notification policy settings (quiet hours, heartbeat windows, cadence, temporary mute, interactive context window size, and context retention cap).",
+    "Update notification policy settings (quiet hours, temporary mute, interactive context window size, and context retention cap).",
   args: {
     timezone: tool.schema.string().optional().describe("IANA timezone, e.g. Europe/Vienna"),
     quietHoursStart: tool.schema
@@ -49,36 +49,6 @@ export default tool({
       .nullable()
       .optional()
       .describe("Absolute mute-until epoch millis, or null to unmute"),
-    heartbeatMorning: tool.schema
-      .string()
-      .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-      .nullable()
-      .optional()
-      .describe("Morning heartbeat HH:MM or null to disable"),
-    heartbeatMidday: tool.schema
-      .string()
-      .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-      .nullable()
-      .optional()
-      .describe("Midday heartbeat HH:MM or null to disable"),
-    heartbeatEvening: tool.schema
-      .string()
-      .regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/)
-      .nullable()
-      .optional()
-      .describe("Evening heartbeat HH:MM or null to disable"),
-    heartbeatCadenceMinutes: tool.schema
-      .number()
-      .int()
-      .min(30)
-      .max(24 * 60)
-      .nullable()
-      .optional()
-      .describe("Lookback cadence used by heartbeat summaries"),
-    heartbeatOnlyIfSignal: tool.schema
-      .boolean()
-      .optional()
-      .describe("Only send heartbeat when there is meaningful activity"),
     interactiveContextWindowSize: tool.schema
       .number()
       .int()

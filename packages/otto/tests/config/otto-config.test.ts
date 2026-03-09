@@ -59,7 +59,6 @@ describe("ensureOttoConfigFile", () => {
         flowDefaults: {
           interactiveAssistant: "openai/gpt-5.3-codex",
           scheduledTasks: null,
-          heartbeat: null,
           watchdogFailures: null,
         },
       },
@@ -104,7 +103,6 @@ describe("ensureOttoConfigFile", () => {
           flowDefaults: {
             interactiveAssistant: "invalid",
             scheduledTasks: null,
-            heartbeat: null,
             watchdogFailures: null,
           },
         },
@@ -131,7 +129,6 @@ describe("ensureOttoConfigFile", () => {
           flowDefaults: {
             interactiveAssistant: "openrouter/openai/gpt-5.3-codex",
             scheduledTasks: null,
-            heartbeat: null,
             watchdogFailures: null,
           },
         },
@@ -160,7 +157,6 @@ describe("ensureOttoConfigFile", () => {
       {
         interactiveAssistant: "openai/gpt-5.3-codex",
         scheduledTasks: "anthropic/claude-sonnet-4",
-        heartbeat: null,
         watchdogFailures: null,
       },
       homeDirectory
@@ -171,7 +167,6 @@ describe("ensureOttoConfigFile", () => {
     expect(flowDefaults).toEqual({
       interactiveAssistant: "openai/gpt-5.3-codex",
       scheduledTasks: "anthropic/claude-sonnet-4",
-      heartbeat: null,
       watchdogFailures: null,
     })
   })
@@ -207,7 +202,6 @@ describe("ensureOttoConfigFile", () => {
       {
         interactiveAssistant: "openai/gpt-5.2",
         scheduledTasks: null,
-        heartbeat: null,
         watchdogFailures: null,
       },
       homeDirectory
@@ -252,7 +246,6 @@ describe("ensureOttoConfigFile", () => {
       {
         interactiveAssistant: null,
         scheduledTasks: "openai/gpt-5.2",
-        heartbeat: null,
         watchdogFailures: null,
       },
       homeDirectory

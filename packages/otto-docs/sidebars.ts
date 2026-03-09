@@ -38,7 +38,6 @@ const sidebars: SidebarsConfig = {
         "cli-reference/setup-and-config",
         "cli-reference/tasks",
         "cli-reference/models",
-        "cli-reference/heartbeat",
         "cli-reference/prompt",
         "cli-reference/extensions",
         "cli-reference/doctor",

@@ -8,7 +8,6 @@ export const modelRefSchema = z
 export const modelFlowDefaultsSchema = z.object({
   interactiveAssistant: modelRefSchema.nullable(),
   scheduledTasks: modelRefSchema.nullable(),
-  heartbeat: modelRefSchema.nullable(),
   watchdogFailures: modelRefSchema.nullable(),
 })
 

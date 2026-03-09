@@ -456,9 +456,7 @@ export const createOutboundQueueProcessor = (
           gateDecision.action === "deliver_now"
         ) {
           const since = profile.lastDigestAt ?? now - 24 * 60 * 60 * 1000
-          const runs = dependencies.jobsRepository
-            .listRecentRuns(since, 200)
-            .filter((run) => run.jobType !== "heartbeat")
+          const runs = dependencies.jobsRepository.listRecentRuns(since, 200)
 
           const groupedByChatId = new Map<number, OutboundDeliveryRecord[]>()
           for (const message of releasedSuppressedMessages) {

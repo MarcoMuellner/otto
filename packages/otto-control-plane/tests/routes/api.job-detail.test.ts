@@ -241,7 +241,7 @@ describe("api.job-detail action", () => {
       request: new Request("http://localhost/api/jobs/job-1", {
         method: "PATCH",
         body: JSON.stringify({
-          type: "heartbeat",
+          type: "watchdog_failures",
         }),
       }),
     })

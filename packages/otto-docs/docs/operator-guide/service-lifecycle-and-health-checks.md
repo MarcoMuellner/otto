@@ -32,8 +32,8 @@ ottoctl doctor --deep
 ```bash
 ottoctl task list
 ottoctl model list
+ottoctl model defaults show
 ottoctl extension list
-ottoctl heartbeat status
 ```
 
 ## Expected Signals

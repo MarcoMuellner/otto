@@ -180,11 +180,6 @@ const createUserProfileRepositoryStub = () => {
     quietHoursEnd: string | null
     quietMode: "critical_only" | "off" | null
     muteUntil: number | null
-    heartbeatMorning: string | null
-    heartbeatMidday: string | null
-    heartbeatEvening: string | null
-    heartbeatCadenceMinutes: number | null
-    heartbeatOnlyIfSignal: boolean
     interactiveContextWindowSize: number
     contextRetentionCap: number
     onboardingCompletedAt: number | null
@@ -205,11 +200,6 @@ const createUserProfileRepositoryStub = () => {
           quietHoursEnd: null,
           quietMode: "critical_only",
           muteUntil,
-          heartbeatMorning: null,
-          heartbeatMidday: null,
-          heartbeatEvening: null,
-          heartbeatCadenceMinutes: 180,
-          heartbeatOnlyIfSignal: true,
           interactiveContextWindowSize: 20,
           contextRetentionCap: 100,
           onboardingCompletedAt: null,
@@ -982,8 +972,8 @@ describe("buildInternalApiServer", () => {
     // Arrange
     const jobsRepository = createJobsRepositoryStub()
     jobsRepository.createTask({
-      id: "system-heartbeat",
-      type: "heartbeat",
+      id: "system-watchdog-failures",
+      type: "watchdog_failures",
       status: "idle",
       scheduleType: "recurring",
       profileId: null,
@@ -1034,7 +1024,7 @@ describe("buildInternalApiServer", () => {
       },
       payload: {
         lane: "interactive",
-        id: "system-heartbeat",
+        id: "system-watchdog-failures",
         type: "attempted-system-mutation",
       },
     })

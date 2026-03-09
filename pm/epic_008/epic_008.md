@@ -20,8 +20,12 @@ Model selection is currently global and opaque. Otto needs a simple way to expos
 - Flow defaults in MVP:
   - `interactiveAssistant`
   - `scheduledTasks`
-  - `heartbeat`
   - `watchdogFailures`
+
+## Historical Note (2026-03)
+
+- The previously documented `heartbeat` model flow default was removed with scheduler heartbeat deprecation.
+- Active model flows are `interactiveAssistant`, `scheduledTasks`, and `watchdogFailures`.
 - Per-job model selection is direct on job record (`modelRef`) with two states:
   - explicit model
   - inherit scheduled flow default (`null`)

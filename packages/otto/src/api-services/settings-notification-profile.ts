@@ -17,17 +17,6 @@ export const notificationProfileUpdateSchema = z.object({
     .optional(),
   quietHoursStart: notificationTimeSchema.nullable().optional(),
   quietHoursEnd: notificationTimeSchema.nullable().optional(),
-  heartbeatMorning: notificationTimeSchema.nullable().optional(),
-  heartbeatMidday: notificationTimeSchema.nullable().optional(),
-  heartbeatEvening: notificationTimeSchema.nullable().optional(),
-  heartbeatCadenceMinutes: z
-    .number()
-    .int()
-    .min(30)
-    .max(24 * 60)
-    .nullable()
-    .optional(),
-  heartbeatOnlyIfSignal: z.boolean().optional(),
   interactiveContextWindowSize: z.number().int().min(5).max(200).optional(),
   contextRetentionCap: z.number().int().min(5).max(200).optional(),
   quietMode: z.enum(["critical_only", "off"]).optional(),
@@ -50,11 +39,6 @@ const defaultNotificationProfile = (): UserProfileRecord => {
     quietHoursEnd: "08:00",
     quietMode: "critical_only",
     muteUntil: null,
-    heartbeatMorning: "08:30",
-    heartbeatMidday: "12:30",
-    heartbeatEvening: "19:00",
-    heartbeatCadenceMinutes: 180,
-    heartbeatOnlyIfSignal: true,
     interactiveContextWindowSize: 20,
     contextRetentionCap: 100,
     onboardingCompletedAt: null,
@@ -88,17 +72,6 @@ export const applyNotificationProfileUpdate = (
     quietHoursEnd: input.quietHoursEnd === undefined ? existing.quietHoursEnd : input.quietHoursEnd,
     quietMode: input.quietMode ?? existing.quietMode,
     muteUntil,
-    heartbeatMorning:
-      input.heartbeatMorning === undefined ? existing.heartbeatMorning : input.heartbeatMorning,
-    heartbeatMidday:
-      input.heartbeatMidday === undefined ? existing.heartbeatMidday : input.heartbeatMidday,
-    heartbeatEvening:
-      input.heartbeatEvening === undefined ? existing.heartbeatEvening : input.heartbeatEvening,
-    heartbeatCadenceMinutes:
-      input.heartbeatCadenceMinutes === undefined
-        ? existing.heartbeatCadenceMinutes
-        : input.heartbeatCadenceMinutes,
-    heartbeatOnlyIfSignal: input.heartbeatOnlyIfSignal ?? existing.heartbeatOnlyIfSignal,
     interactiveContextWindowSize:
       input.interactiveContextWindowSize ?? existing.interactiveContextWindowSize,
     contextRetentionCap: input.contextRetentionCap ?? existing.contextRetentionCap,

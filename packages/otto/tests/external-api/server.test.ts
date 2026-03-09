@@ -28,7 +28,7 @@ afterEach(async () => {
 const createTaskListRecord = (id: string): TaskListRecord => {
   return {
     id,
-    type: "heartbeat",
+    type: "watchdog_failures",
     scheduleType: "recurring",
     profileId: null,
     modelRef: null,
@@ -45,7 +45,7 @@ const createTaskListRecord = (id: string): TaskListRecord => {
 const createJobRecord = (id: string): JobRecord => {
   return {
     id,
-    type: "heartbeat",
+    type: "watchdog_failures",
     status: "idle",
     scheduleType: "recurring",
     profileId: null,
@@ -154,18 +154,15 @@ type ModelManagementStub = {
   getFlowDefaults: () => Promise<{
     interactiveAssistant: string | null
     scheduledTasks: string | null
-    heartbeat: string | null
     watchdogFailures: string | null
   }>
   updateFlowDefaults: (flowDefaults: {
     interactiveAssistant: string | null
     scheduledTasks: string | null
-    heartbeat: string | null
     watchdogFailures: string | null
   }) => Promise<{
     interactiveAssistant: string | null
     scheduledTasks: string | null
-    heartbeat: string | null
     watchdogFailures: string | null
   }>
 }
@@ -251,7 +248,6 @@ const createModelManagementStub = (
     getFlowDefaults: async () => ({
       interactiveAssistant: null,
       scheduledTasks: "openai/gpt-5.3-codex",
-      heartbeat: null,
       watchdogFailures: null,
     }),
     updateFlowDefaults: async (flowDefaults) => flowDefaults,
@@ -666,11 +662,6 @@ describe("buildExternalApiServer", () => {
       quietHoursEnd: "07:30",
       quietMode: "critical_only",
       muteUntil: null,
-      heartbeatMorning: "08:30",
-      heartbeatMidday: "12:30",
-      heartbeatEvening: "19:00",
-      heartbeatCadenceMinutes: 180,
-      heartbeatOnlyIfSignal: true,
       interactiveContextWindowSize: 20,
       contextRetentionCap: 100,
       onboardingCompletedAt: null,
@@ -1198,7 +1189,6 @@ describe("buildExternalApiServer", () => {
     let currentDefaults = {
       interactiveAssistant: "openai/gpt-5.3-codex",
       scheduledTasks: null,
-      heartbeat: null,
       watchdogFailures: null,
     }
 
@@ -1248,7 +1238,6 @@ describe("buildExternalApiServer", () => {
         flowDefaults: {
           interactiveAssistant: "anthropic/claude-sonnet-4",
           scheduledTasks: "openai/gpt-5.3-codex",
-          heartbeat: null,
           watchdogFailures: null,
         },
       },
@@ -1260,7 +1249,6 @@ describe("buildExternalApiServer", () => {
       flowDefaults: {
         interactiveAssistant: "openai/gpt-5.3-codex",
         scheduledTasks: null,
-        heartbeat: null,
         watchdogFailures: null,
       },
     })
@@ -1270,7 +1258,6 @@ describe("buildExternalApiServer", () => {
       flowDefaults: {
         interactiveAssistant: "anthropic/claude-sonnet-4",
         scheduledTasks: "openai/gpt-5.3-codex",
-        heartbeat: null,
         watchdogFailures: null,
       },
     })
@@ -1314,7 +1301,6 @@ describe("buildExternalApiServer", () => {
         flowDefaults: {
           interactiveAssistant: "invalid",
           scheduledTasks: null,
-          heartbeat: null,
           watchdogFailures: null,
         },
       },
@@ -1459,7 +1445,7 @@ describe("buildExternalApiServer", () => {
     // Assert
     expect(scheduledResponse.statusCode).toBe(200)
     expect(scheduledResponse.json()).toMatchObject({
-      jobs: [{ id: "job-system-1", type: "heartbeat" }],
+      jobs: [{ id: "job-system-1", type: "watchdog_failures" }],
     })
 
     expect(interactiveResponse.statusCode).toBe(200)
@@ -1857,7 +1843,7 @@ describe("buildExternalApiServer", () => {
     expect(response.json()).toMatchObject({
       job: {
         id: "job-2",
-        type: "heartbeat",
+        type: "watchdog_failures",
         managedBy: "system",
         isMutable: false,
       },
@@ -2285,7 +2271,7 @@ describe("buildExternalApiServer", () => {
 
   it("rejects mutation attempts for system-managed jobs", async () => {
     // Arrange
-    const systemJob = createJobRecord("system-heartbeat")
+    const systemJob = createJobRecord("system-watchdog-failures")
     const app = buildExternalApiServer({
       logger: pino({ enabled: false }),
       config: {
@@ -2304,7 +2290,7 @@ describe("buildExternalApiServer", () => {
     // Act
     const response = await app.inject({
       method: "PATCH",
-      url: "/external/jobs/system-heartbeat",
+      url: "/external/jobs/system-watchdog-failures",
       headers: {
         authorization: "Bearer secret",
       },

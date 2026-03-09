@@ -55,7 +55,11 @@ Deliver complete, release-matched operator documentation for `ottoctl`, runtime/
 ## Implementation Notes
 
 - Replaced placeholder docs with release-matched operator documentation across `packages/otto-docs/docs/cli-reference/**` and `packages/otto-docs/docs/operator-guide/**`.
-- Documented full `ottoctl` command surface from `packages/otto/bin/ottoctl`, including lifecycle, setup/config, tasks (`run-now` included), model, heartbeat, prompt, extension, doctor, and update commands.
+- Documented full `ottoctl` command surface from `packages/otto/bin/ottoctl`, including lifecycle, setup/config, tasks (`run-now` included), model, prompt, extension, doctor, and update commands.
+
+## Historical Note (2026-03)
+
+- Heartbeat command documentation originally added by this ticket was removed when scheduler heartbeat was deprecated.
 - Added operator runbooks for setup, lifecycle, update, incident triage, and troubleshooting workflows tied to runtime live-view signals (`state`, `processes`, `limits`, `sources`, `openRisks`).
 - Added explicit static-vs-live documentation boundary guidance for public docs and deployed token-authenticated live docs usage.
 - Updated docs sidebar navigation to include all new CLI reference and operator-guide pages.

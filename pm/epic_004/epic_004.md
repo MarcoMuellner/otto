@@ -7,6 +7,11 @@
 - `state`: `done`
 - `goal`: deliver daily heartbeat value, user profile onboarding, quiet-hours policy, and operator observability.
 
+## Historical Note (2026-03)
+
+- Scheduler heartbeat was removed from runtime as redundant with watchdog.
+- Heartbeat-specific references in this epic remain as implementation history.
+
 ## Why
 
 To become a dependable daily assistant, Otto needs predictable heartbeat outputs, configurable user timing preferences, and strong operational controls.

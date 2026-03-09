@@ -1,8 +1,4 @@
-export type RuntimeModelFlow =
-  | "interactiveAssistant"
-  | "scheduledTasks"
-  | "heartbeat"
-  | "watchdogFailures"
+export type RuntimeModelFlow = "interactiveAssistant" | "scheduledTasks" | "watchdogFailures"
 
 export type ModelSelectionSource =
   | "job"

@@ -11,7 +11,7 @@ Use this flow when health checks fail or operator-visible behavior drifts.
 ```bash
 ottoctl doctor
 ottoctl task audit 100
-ottoctl heartbeat status
+ottoctl model defaults show
 ```
 
 If needed, run deep checks:

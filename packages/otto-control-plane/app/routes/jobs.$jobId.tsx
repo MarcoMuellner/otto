@@ -45,7 +45,7 @@ type MutationFeedback = {
 
 const INHERIT_MODEL_OPTION = "__INHERIT__"
 
-const systemReservedJobTypes = new Set(["heartbeat", "watchdog_failures"])
+const systemReservedJobTypes = new Set(["watchdog_failures"])
 
 const isSystemReservedJobType = (type: string): boolean => {
   return systemReservedJobTypes.has(type.trim().toLowerCase())

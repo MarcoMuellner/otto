@@ -42,7 +42,6 @@ import {
   materializeEffectiveOpencodeConfig,
   syncOpencodeToolsPackageJson,
 } from "../extensions/index.js"
-import { ensureHeartbeatTask, HEARTBEAT_DEFAULT_CADENCE_MINUTES } from "../scheduler/heartbeat.js"
 import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { createTaskExecutionEngine } from "../scheduler/executor.js"
 import { startSchedulerKernel } from "../scheduler/kernel.js"
@@ -452,24 +451,6 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
         hasChatId: Boolean(watchdogChatId),
       },
       "Watchdog task ensured"
-    )
-
-    const heartbeatEnsureResult = ensureHeartbeatTask(
-      jobsRepository,
-      {
-        cadenceMinutes: HEARTBEAT_DEFAULT_CADENCE_MINUTES,
-        chatId: watchdogChatId,
-      },
-      Date.now
-    )
-    logger.info(
-      {
-        taskId: heartbeatEnsureResult.taskId,
-        created: heartbeatEnsureResult.created,
-        cadenceMinutes: heartbeatEnsureResult.cadenceMinutes,
-        hasChatId: Boolean(watchdogChatId),
-      },
-      "Heartbeat task ensured"
     )
 
     const schedulerSessionGateway = createOpencodeSessionGateway(server.url, logger, modelResolver)

@@ -193,7 +193,7 @@ const resolveMessageTone = (role: ChatMessage["role"]): string => {
 }
 
 const nonInteractiveTitlePattern =
-  /\b(heartbeat|health\s*check|scheduler|scheduled|cron|job(?:\s+run)?|automation)\b/iu
+  /\b(health\s*check|scheduler|scheduled|cron|job(?:\s+run)?|automation)\b/iu
 
 const isInteractiveLaneThread = (thread: ChatThread): boolean => {
   const hasSchedulerBinding = thread.bindings.some((binding) => binding.source === "scheduler")

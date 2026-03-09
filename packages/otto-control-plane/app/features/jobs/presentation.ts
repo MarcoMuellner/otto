@@ -1,5 +1,4 @@
 const SYSTEM_JOB_TYPE_LABELS: Record<string, string> = {
-  heartbeat: "Heartbeat",
   watchdog_failures: "Failure Watchdog",
   interactive_background_oneshot: "Interactive Background Task",
 }

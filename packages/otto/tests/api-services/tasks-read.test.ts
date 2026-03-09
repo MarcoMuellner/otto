@@ -12,7 +12,7 @@ import type { JobRecord, TaskListRecord } from "../../src/persistence/repositori
 const createTaskListRecord = (id: string): TaskListRecord => {
   return {
     id,
-    type: "heartbeat",
+    type: "watchdog_failures",
     scheduleType: "recurring",
     profileId: null,
     modelRef: null,
@@ -29,7 +29,7 @@ const createTaskListRecord = (id: string): TaskListRecord => {
 const createJobRecord = (id: string): JobRecord => {
   return {
     id,
-    type: "heartbeat",
+    type: "watchdog_failures",
     status: "idle",
     scheduleType: "recurring",
     profileId: null,
@@ -108,7 +108,7 @@ describe("tasks-read services", () => {
 
   it("classifies system managed tasks by id prefix", () => {
     // Arrange
-    const task = createTaskListRecord("system-heartbeat")
+    const task = createTaskListRecord("system-watchdog-failures")
 
     // Act
     const result = resolveTaskManagedBy(task)

@@ -63,7 +63,7 @@ const defaultCreateJobFormState: CreateJobFormState = {
   payloadText: "",
 }
 
-const systemReservedJobTypes = new Set(["heartbeat", "watchdog_failures"])
+const systemReservedJobTypes = new Set(["watchdog_failures"])
 
 const isSystemReservedJobType = (type: string): boolean => {
   return systemReservedJobTypes.has(type.trim().toLowerCase())

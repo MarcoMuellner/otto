@@ -802,8 +802,8 @@ export const startTelegramWorker = async (
           await bot.sendMessage(
             update.chatId,
             [
-              "Before I start proactive heartbeats, I should configure your notification profile.",
-              "Suggested defaults: timezone Europe/Vienna, quiet hours 20:00-08:00, and heartbeat windows 08:30 / 12:30 / 19:00.",
+              "Before I send proactive notifications, I should configure your notification profile.",
+              "Suggested defaults: timezone Europe/Vienna and quiet hours 20:00-08:00.",
               "You can tell me naturally, for example: 'quiet hours 21:00-07:30 and mute until tomorrow 08:00'.",
             ].join("\n")
           )

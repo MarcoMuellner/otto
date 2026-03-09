@@ -52,3 +52,7 @@ Capture non-interactive outbound user-facing messages into the context stream at
 ## Deployability
 
 - Deployable runtime increment; existing outbound delivery behavior remains unchanged.
+
+## Historical Note (2026-03)
+
+- `packages/otto/src/scheduler/heartbeat.ts` was removed when scheduler heartbeat was deprecated.

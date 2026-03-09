@@ -2,7 +2,7 @@ import { ZodError } from "zod"
 
 import { OttoExternalApiError } from "./otto-external-api.server.js"
 
-const systemReservedTaskTypes = new Set(["heartbeat", "watchdog_failures"])
+const systemReservedTaskTypes = new Set(["watchdog_failures"])
 
 export const isSystemReservedTaskType = (type: string): boolean => {
   return systemReservedTaskTypes.has(type.trim().toLowerCase())

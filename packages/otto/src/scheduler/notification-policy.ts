@@ -8,11 +8,6 @@ export type EffectiveNotificationProfile = {
   quietHoursEnd: string | null
   quietMode: "critical_only" | "off"
   muteUntil: number | null
-  heartbeatMorning: string
-  heartbeatMidday: string
-  heartbeatEvening: string
-  heartbeatCadenceMinutes: number
-  heartbeatOnlyIfSignal: boolean
   onboardingCompletedAt: number | null
   lastDigestAt: number | null
 }
@@ -24,10 +19,6 @@ export type NotificationGateDecision = {
 }
 
 const DEFAULT_TIMEZONE = "Europe/Vienna"
-const DEFAULT_HEARTBEAT_MORNING = "08:30"
-const DEFAULT_HEARTBEAT_MIDDAY = "12:30"
-const DEFAULT_HEARTBEAT_EVENING = "19:00"
-const DEFAULT_HEARTBEAT_CADENCE_MINUTES = 180
 const QUIET_RELEASE_SEARCH_WINDOW_MS = 48 * 60 * 60 * 1000
 const QUIET_RELEASE_STEP_MS = 60 * 1000
 
@@ -140,14 +131,6 @@ export const resolveEffectiveNotificationProfile = (
     quietHoursEnd: record?.quietHoursEnd ?? null,
     quietMode: record?.quietMode ?? "critical_only",
     muteUntil: record?.muteUntil ?? null,
-    heartbeatMorning: record?.heartbeatMorning?.trim() || DEFAULT_HEARTBEAT_MORNING,
-    heartbeatMidday: record?.heartbeatMidday?.trim() || DEFAULT_HEARTBEAT_MIDDAY,
-    heartbeatEvening: record?.heartbeatEvening?.trim() || DEFAULT_HEARTBEAT_EVENING,
-    heartbeatCadenceMinutes:
-      record?.heartbeatCadenceMinutes && record.heartbeatCadenceMinutes >= 30
-        ? record.heartbeatCadenceMinutes
-        : DEFAULT_HEARTBEAT_CADENCE_MINUTES,
-    heartbeatOnlyIfSignal: record?.heartbeatOnlyIfSignal ?? true,
     onboardingCompletedAt: record?.onboardingCompletedAt ?? null,
     lastDigestAt: record?.lastDigestAt ?? null,
   }
