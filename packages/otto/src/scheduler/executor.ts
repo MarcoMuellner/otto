@@ -1052,7 +1052,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 runId,
                 serializedPromptProvenance
               )
-              const tools = resolveTools(assistant?.tools)
+              const tools = resolveBackgroundTools(assistant?.tools)
 
               const sessionId = await dependencies.sessionGateway.ensureSession(null)
               dependencies.jobRunSessionsRepository.insert({
