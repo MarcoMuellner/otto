@@ -38,7 +38,7 @@ Otto currently learns implicitly across sessions but has no durable, auditable d
 ## Delivery Plan (Deployable Tickets)
 
 1. `ticket_001`: EOD persistence schema and repositories. (`done`)
-2. `ticket_002`: system nightly task bootstrap and timezone-midnight scheduler semantics.
+2. `ticket_002`: system nightly task bootstrap and timezone-midnight scheduler semantics. (`done`)
 3. `ticket_003`: EOD scheduled profile and tool permission policy.
 4. `ticket_004`: 24h evidence aggregation service.
 5. `ticket_005`: EOD decision engine and memory/journal auto-apply pipeline.

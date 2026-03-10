@@ -2,7 +2,7 @@
 
 ## Status
 
-- `state`: `planned`
+- `state`: `done`
 - `category`: `feature`
 
 ## Objective
@@ -20,6 +20,7 @@ Ensure Otto always has a dedicated `system-daily-eod-learning` recurring task th
 
 - No EOD evidence aggregation or apply pipeline.
 - No Telegram digest formatting.
+- No task-type-specific post-run re-alignment to timezone midnight; recurring cadence remains fixed at 24h after bootstrap.
 
 ## Dependencies
 
@@ -49,3 +50,4 @@ Ensure Otto always has a dedicated `system-daily-eod-learning` recurring task th
 ## Deployability
 
 - Deployable system-task bootstrap slice; task exists but can remain behavior-minimal until handler tickets land.
+- Follow-up needed for per-run timezone-midnight re-alignment to eliminate drift after late runs and DST boundaries.

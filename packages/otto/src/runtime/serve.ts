@@ -24,6 +24,7 @@ import {
   type ModelCatalogService,
 } from "../model-management/index.js"
 import { openPersistenceDatabase } from "../persistence/index.js"
+import type { JobRecord } from "../persistence/repositories.js"
 import { createJobsRepository } from "../persistence/repositories.js"
 import { createJobRunSessionsRepository } from "../persistence/repositories.js"
 import { createOutboundMessagesRepository } from "../persistence/repositories.js"
@@ -45,6 +46,7 @@ import {
 import { resolveSchedulerConfig } from "../scheduler/config.js"
 import { createTaskExecutionEngine } from "../scheduler/executor.js"
 import { startSchedulerKernel } from "../scheduler/kernel.js"
+import { ensureEodLearningTask } from "../scheduler/eod-learning.js"
 import { createNonInteractiveContextCaptureService } from "./non-interactive-context-capture.js"
 import {
   ensureWatchdogTask,
@@ -435,23 +437,13 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
     })
 
     const watchdogChatId = resolveDefaultWatchdogChatId()
-    const watchdogEnsureResult = ensureWatchdogTask(
+    ensureSystemBootstrapTasks({
+      logger,
       jobsRepository,
-      {
-        cadenceMinutes: WATCHDOG_DEFAULT_CADENCE_MINUTES,
-        chatId: watchdogChatId,
-      },
-      Date.now
-    )
-    logger.info(
-      {
-        taskId: watchdogEnsureResult.taskId,
-        created: watchdogEnsureResult.created,
-        cadenceMinutes: watchdogEnsureResult.cadenceMinutes,
-        hasChatId: Boolean(watchdogChatId),
-      },
-      "Watchdog task ensured"
-    )
+      timezone: userProfileRepository.get()?.timezone ?? null,
+      watchdogChatId,
+      now: Date.now,
+    })
 
     const schedulerSessionGateway = createOpencodeSessionGateway(server.url, logger, modelResolver)
     interactiveSessionController = schedulerSessionGateway.closeSession
@@ -586,4 +578,60 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
 
     logger.info("OpenCode server stopped")
   }
+}
+
+/**
+ * Ensures long-lived system-owned scheduler tasks at runtime startup so deployable services
+ * always recover required recurring jobs after restarts.
+ *
+ * @param dependencies Logger, repositories, and bootstrap context values.
+ */
+export const ensureSystemBootstrapTasks = (dependencies: {
+  logger: Pick<Logger, "info">
+  jobsRepository: {
+    getById: (jobId: string) => JobRecord | null
+    createTask: (record: JobRecord) => void
+  }
+  timezone: string | null
+  watchdogChatId: number | null
+  now?: () => number
+}): void => {
+  const now = dependencies.now ?? Date.now
+
+  const watchdogEnsureResult = ensureWatchdogTask(
+    dependencies.jobsRepository,
+    {
+      cadenceMinutes: WATCHDOG_DEFAULT_CADENCE_MINUTES,
+      chatId: dependencies.watchdogChatId,
+    },
+    now
+  )
+  dependencies.logger.info(
+    {
+      taskId: watchdogEnsureResult.taskId,
+      created: watchdogEnsureResult.created,
+      cadenceMinutes: watchdogEnsureResult.cadenceMinutes,
+      hasChatId: Boolean(dependencies.watchdogChatId),
+    },
+    "Watchdog task ensured"
+  )
+
+  const eodEnsureResult = ensureEodLearningTask(
+    dependencies.jobsRepository,
+    {
+      timezone: dependencies.timezone,
+    },
+    now
+  )
+  dependencies.logger.info(
+    {
+      taskId: eodEnsureResult.taskId,
+      created: eodEnsureResult.created,
+      cadenceMinutes: eodEnsureResult.cadenceMinutes,
+      timezone: eodEnsureResult.timezone,
+      nextRunAt: eodEnsureResult.nextRunAt,
+      nextRunAtIso: new Date(eodEnsureResult.nextRunAt).toISOString(),
+    },
+    "EOD learning task ensured"
+  )
 }
