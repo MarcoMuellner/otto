@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest"
 
 import { createJobsRepository, openPersistenceDatabase } from "../../src/persistence/index.js"
 import {
+  EOD_LEARNING_PROFILE_ID,
   EOD_LEARNING_TASK_ID,
   EOD_LEARNING_TASK_TYPE,
   ensureEodLearningTask,
@@ -103,8 +104,53 @@ describe("eod-learning scheduler bootstrap", () => {
     const task = jobsRepository.getById(EOD_LEARNING_TASK_ID)
     expect(task?.type).toBe(EOD_LEARNING_TASK_TYPE)
     expect(task?.scheduleType).toBe("recurring")
+    expect(task?.profileId).toBe(EOD_LEARNING_PROFILE_ID)
     expect(task?.nextRunAt).toBe(Date.parse("2026-01-10T23:00:00.000Z"))
     expect(task?.payload).toContain("Europe/Vienna")
+
+    db.close()
+  })
+
+  it("upgrades legacy EOD task records to the eod-learning profile", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+
+    jobsRepository.createTask({
+      id: EOD_LEARNING_TASK_ID,
+      type: EOD_LEARNING_TASK_TYPE,
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: null,
+      modelRef: null,
+      runAt: Date.parse("2026-01-10T23:00:00.000Z"),
+      cadenceMinutes: 24 * 60,
+      payload: JSON.stringify({ timezone: "Europe/Vienna" }),
+      lastRunAt: null,
+      nextRunAt: Date.parse("2026-01-10T23:00:00.000Z"),
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: Date.parse("2026-01-10T10:15:00.000Z"),
+      updatedAt: Date.parse("2026-01-10T10:15:00.000Z"),
+    })
+
+    // Act
+    const result = ensureEodLearningTask(
+      jobsRepository,
+      {
+        timezone: "Europe/Vienna",
+      },
+      () => Date.parse("2026-01-10T11:00:00.000Z")
+    )
+
+    // Assert
+    expect(result.created).toBe(false)
+    const task = jobsRepository.getById(EOD_LEARNING_TASK_ID)
+    expect(task?.profileId).toBe(EOD_LEARNING_PROFILE_ID)
 
     db.close()
   })

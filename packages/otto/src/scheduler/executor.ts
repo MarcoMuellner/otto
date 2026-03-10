@@ -22,6 +22,7 @@ import type {
 import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
+import { EOD_LEARNING_PROFILE_ID, EOD_LEARNING_TASK_ID } from "./eod-learning.js"
 import { resolveScheduleTransition } from "./schedule.js"
 import {
   buildEffectiveTaskExecutionConfig,
@@ -274,6 +275,14 @@ const resolveBackgroundTools = (value: unknown): Record<string, boolean> | undef
     ...tools,
     spawn_background_job: false,
   }
+}
+
+const hasErrnoCode = (error: unknown, code: string): boolean => {
+  if (typeof error !== "object" || error === null) {
+    return false
+  }
+
+  return (error as { code?: unknown }).code === code
 }
 
 const serializePromptProvenance = (provenance: PromptProvenance | null): string | null => {
@@ -670,7 +679,6 @@ const buildInteractiveBackgroundPrompt = (
   return [
     "Execute this interactive background request now.",
     "Work autonomously and do not ask clarifying questions.",
-    "Do not call spawn_background_job and do not create additional background jobs.",
     "When useful, call report_background_milestone with concise free-text phase updates.",
     "Do not spam milestone updates; call it only on meaningful phase changes.",
     "Return only a JSON object with keys: status, summary, errors.",
@@ -1044,7 +1052,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 runId,
                 serializedPromptProvenance
               )
-              const tools = resolveBackgroundTools(assistant?.tools)
+              const tools = resolveTools(assistant?.tools)
 
               const sessionId = await dependencies.sessionGateway.ensureSession(null)
               dependencies.jobRunSessionsRepository.insert({
@@ -1153,9 +1161,28 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             result = toFailureResult("invalid_task_payload", payloadParsed.error)
           } else {
             const baseConfig = await loadTaskRuntimeBaseConfig(dependencies.ottoHome)
-            const profile = job.profileId
-              ? await loadTaskProfile(dependencies.ottoHome, job.profileId)
-              : undefined
+            let profile = undefined
+            if (job.profileId) {
+              try {
+                profile = await loadTaskProfile(dependencies.ottoHome, job.profileId)
+              } catch (error) {
+                if (
+                  job.id === EOD_LEARNING_TASK_ID &&
+                  job.profileId === EOD_LEARNING_PROFILE_ID &&
+                  hasErrnoCode(error, "ENOENT")
+                ) {
+                  dependencies.logger.warn(
+                    {
+                      jobId: job.id,
+                      profileId: job.profileId,
+                    },
+                    "EOD profile config is missing; falling back to base scheduled task config. Run 'otto setup' to refresh workspace assets."
+                  )
+                } else {
+                  throw error
+                }
+              }
+            }
             const effectiveConfig = buildEffectiveTaskExecutionConfig(
               baseConfig,
               "scheduled",
