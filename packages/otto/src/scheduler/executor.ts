@@ -18,6 +18,7 @@ import type {
   EodLearningRunArtifacts,
   InteractiveContextEventRecord,
   JobRecord,
+  JobScheduleType,
   JobRunStatus,
   JobTerminalState,
   TaskAuditRecord,
@@ -33,6 +34,7 @@ import {
 } from "./eod-learning.js"
 import { evaluateEodLearningDecisions } from "./eod-learning/decision-engine.js"
 import { aggregateEodEvidenceBundle } from "./eod-learning/evidence-aggregation.js"
+import { scheduleEodFollowUpActions } from "./eod-learning/follow-up-actions.js"
 import {
   buildEodLearningApplyPrompt,
   buildEodLearningCandidatePrompt,
@@ -183,6 +185,25 @@ type TaskExecutionEngineDependencies = {
       errorMessage: string | null
       resultJson: string | null
     }>
+    listTasks?: () => Array<{ id: string }>
+    getById?: (jobId: string) => JobRecord | null
+    createTask?: (record: JobRecord) => void
+    updateTask?: (
+      jobId: string,
+      update: {
+        type: string
+        scheduleType: JobScheduleType
+        profileId: string | null
+        modelRef: string | null
+        runAt: number | null
+        cadenceMinutes: number | null
+        payload: string | null
+        nextRunAt: number | null
+      },
+      updatedAt?: number
+    ) => void
+    cancelTask?: (jobId: string, reason: string | null, updatedAt?: number) => void
+    runTaskNow?: (jobId: string, scheduledFor: number, updatedAt?: number) => void
   }
   jobRunSessionsRepository: {
     insert: (record: {
@@ -229,6 +250,7 @@ type TaskExecutionEngineDependencies = {
     setLastDigestAt: (lastDigestAt: number, updatedAt?: number) => void
   }
   taskAuditRepository?: {
+    insert?: (record: TaskAuditRecord) => void
     listRecent: (limit?: number) => TaskAuditRecord[]
     listByCreatedWindow?: (windowStart: number, windowEnd: number) => TaskAuditRecord[]
   }
@@ -245,6 +267,8 @@ type TaskExecutionEngineDependencies = {
   }
   eodLearningRepository?: {
     insertRunWithArtifacts: (record: EodLearningRunArtifacts) => void
+    listRecentRuns?: (limit?: number) => Array<{ id: string }>
+    getRunDetails?: (runId: string) => EodLearningRunArtifacts | null
   }
   nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
   now?: () => number
@@ -818,6 +842,77 @@ const buildEodRunArtifacts = (input: {
   }
 }
 
+const collectFollowUpFingerprintsFromRun = (
+  artifacts: EodLearningRunArtifacts | null
+): Set<string> => {
+  const fingerprints = new Set<string>()
+  if (!artifacts) {
+    return fingerprints
+  }
+
+  for (const item of artifacts.items) {
+    for (const action of item.actions) {
+      if (action.actionType !== "follow_up_schedule") {
+        continue
+      }
+
+      if (action.status !== "success") {
+        continue
+      }
+
+      if (!action.metadataJson) {
+        continue
+      }
+
+      try {
+        const parsed = JSON.parse(action.metadataJson) as Record<string, unknown>
+        const fingerprint = parsed.fingerprint
+        if (typeof fingerprint === "string" && fingerprint.trim().length > 0) {
+          fingerprints.add(fingerprint)
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+
+  return fingerprints
+}
+
+const collectFollowUpFingerprintsFromTasks = (input: {
+  listTasks?: () => Array<{ id: string }>
+  getById?: (jobId: string) => Pick<JobRecord, "payload"> | null
+}): Set<string> => {
+  const fingerprints = new Set<string>()
+  if (!input.listTasks || !input.getById) {
+    return fingerprints
+  }
+
+  for (const task of input.listTasks()) {
+    const record = input.getById(task.id)
+    if (!record?.payload) {
+      continue
+    }
+
+    try {
+      const parsed = JSON.parse(record.payload) as Record<string, unknown>
+      if (parsed.mode !== "eod_follow_up") {
+        continue
+      }
+
+      const source = parsed.source as Record<string, unknown> | null
+      const fingerprint = source?.fingerprint
+      if (typeof fingerprint === "string" && fingerprint.trim().length > 0) {
+        fingerprints.add(fingerprint)
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return fingerprints
+}
+
 const executeEodLearningTask = async (input: {
   dependencies: TaskExecutionEngineDependencies
   job: ClaimedJobRecord
@@ -944,6 +1039,60 @@ const executeEodLearningTask = async (input: {
       evidenceBundle,
     })
     const evidenceById = new Map(evidenceBundle.evidence.map((entry) => [entry.id, entry]))
+    const recentRunCandidates = input.dependencies.eodLearningRepository?.listRecentRuns?.(2) ?? []
+    const previousRunId = recentRunCandidates.find((run) => run.id !== input.runId)?.id
+    const priorArtifacts = previousRunId
+      ? (input.dependencies.eodLearningRepository?.getRunDetails?.(previousRunId) ?? null)
+      : null
+    const followUpFingerprints = collectFollowUpFingerprintsFromRun(priorArtifacts)
+    const persistedFollowUpFingerprints = collectFollowUpFingerprintsFromTasks({
+      listTasks: input.dependencies.jobsRepository.listTasks,
+      getById: input.dependencies.jobsRepository.getById,
+    })
+    for (const fingerprint of persistedFollowUpFingerprints) {
+      followUpFingerprints.add(fingerprint)
+    }
+    let followUpMutationDependencies: {
+      jobsRepository: {
+        getById: NonNullable<TaskExecutionEngineDependencies["jobsRepository"]["getById"]>
+        createTask: NonNullable<TaskExecutionEngineDependencies["jobsRepository"]["createTask"]>
+        updateTask: NonNullable<TaskExecutionEngineDependencies["jobsRepository"]["updateTask"]>
+        cancelTask: NonNullable<TaskExecutionEngineDependencies["jobsRepository"]["cancelTask"]>
+        runTaskNow: NonNullable<TaskExecutionEngineDependencies["jobsRepository"]["runTaskNow"]>
+      }
+      taskAuditRepository: {
+        insert: NonNullable<
+          NonNullable<TaskExecutionEngineDependencies["taskAuditRepository"]>["insert"]
+        >
+      }
+    } | null = null
+
+    if (
+      input.dependencies.taskAuditRepository?.insert &&
+      input.dependencies.jobsRepository.getById &&
+      input.dependencies.jobsRepository.createTask &&
+      input.dependencies.jobsRepository.updateTask &&
+      input.dependencies.jobsRepository.cancelTask &&
+      input.dependencies.jobsRepository.runTaskNow
+    ) {
+      followUpMutationDependencies = {
+        jobsRepository: {
+          getById: input.dependencies.jobsRepository.getById,
+          createTask: input.dependencies.jobsRepository.createTask,
+          updateTask: input.dependencies.jobsRepository.updateTask,
+          cancelTask: input.dependencies.jobsRepository.cancelTask,
+          runTaskNow: input.dependencies.jobsRepository.runTaskNow,
+        },
+        taskAuditRepository: {
+          insert: input.dependencies.taskAuditRepository.insert,
+        },
+      }
+    }
+
+    let followUpScheduledCount = 0
+    let followUpSkippedCount = 0
+    let followUpFailedCount = 0
+
     const persistedItems: Array<{
       id: string
       ordinal: number
@@ -1093,6 +1242,50 @@ const executeEodLearningTask = async (input: {
         })
       }
 
+      const followUpOutcomes = scheduleEodFollowUpActions({
+        runId: input.runId,
+        itemId,
+        decision,
+        candidate,
+        existingFingerprints: followUpFingerprints,
+        mutationDependencies: followUpMutationDependencies,
+        nowTimestamp: input.startedAt,
+      })
+
+      for (const outcome of followUpOutcomes) {
+        if (outcome.status === "success") {
+          followUpScheduledCount += 1
+        }
+
+        if (outcome.status === "skipped") {
+          followUpSkippedCount += 1
+        }
+
+        if (outcome.status === "failed") {
+          followUpFailedCount += 1
+        }
+
+        actionRows.push({
+          id: randomUUID(),
+          ordinal: actionRows.length,
+          actionType: "follow_up_schedule",
+          status: outcome.status,
+          expectedValue: outcome.proposal.expectedValue,
+          detail: outcome.detail,
+          errorMessage: outcome.errorMessage,
+          metadataJson: JSON.stringify({
+            reasonCode: outcome.reasonCode,
+            fingerprint: outcome.fingerprint,
+            taskId: outcome.taskId,
+            proposalTitle: outcome.proposal.title,
+            proposalRationale: outcome.proposal.rationale,
+            reversible: outcome.proposal.reversible,
+            runId: input.runId,
+            itemId,
+          }),
+        })
+      }
+
       persistedItems.push({
         id: itemId,
         ordinal: decision.ordinal,
@@ -1128,6 +1321,9 @@ const executeEodLearningTask = async (input: {
           autoApplyCount: persistedItems.filter((item) => item.applyStatus === "applied").length,
           failedApplyCount: persistedItems.filter((item) => item.applyStatus === "failed").length,
           skippedCount: persistedItems.filter((item) => item.applyStatus === "skipped").length,
+          followUpScheduledCount,
+          followUpSkippedCount,
+          followUpFailedCount,
         },
         items: persistedItems,
       })
@@ -1135,7 +1331,7 @@ const executeEodLearningTask = async (input: {
 
     return {
       status: "success",
-      summary: `EOD processed ${parsedCandidates.candidates.length} candidates (${persistedItems.filter((item) => item.applyStatus === "applied").length} auto-applied, ${persistedItems.filter((item) => item.applyStatus === "failed").length} failed)`,
+      summary: `EOD processed ${parsedCandidates.candidates.length} candidates (${persistedItems.filter((item) => item.applyStatus === "applied").length} auto-applied, ${persistedItems.filter((item) => item.applyStatus === "failed").length} failed, ${followUpScheduledCount} follow-ups scheduled)`,
       errors: [],
     }
   } catch (error) {
