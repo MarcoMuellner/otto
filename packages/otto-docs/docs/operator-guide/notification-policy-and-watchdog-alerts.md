@@ -48,6 +48,9 @@ should ask whether you want:
 - Muted or disabled watchdog alerts are skipped cleanly and do not require
   chat-id configuration.
 - Existing global quiet-hours and global mute behavior remains unchanged.
+- Nightly EOD transparency digests use the same outbound queue + notification
+  policy gates (quiet-hours hold/release, mute behavior), so delivery behavior
+  is consistent with other Telegram notifications.
 
 ## Verification
 

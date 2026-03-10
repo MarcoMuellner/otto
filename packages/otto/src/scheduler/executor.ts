@@ -33,6 +33,7 @@ import {
   EOD_LEARNING_TASK_TYPE,
 } from "./eod-learning.js"
 import { evaluateEodLearningDecisions } from "./eod-learning/decision-engine.js"
+import { buildEodLearningDigestMessage } from "./eod-learning/digest.js"
 import { aggregateEodEvidenceBundle } from "./eod-learning/evidence-aggregation.js"
 import { scheduleEodFollowUpActions } from "./eod-learning/follow-up-actions.js"
 import {
@@ -1307,27 +1308,43 @@ const executeEodLearningTask = async (input: {
     }
 
     const finishedAt = input.dependencies.now ? input.dependencies.now() : Date.now()
-    input.dependencies.eodLearningRepository?.insertRunWithArtifacts(
-      buildEodRunArtifacts({
+    const persistedArtifacts = buildEodRunArtifacts({
+      runId: input.runId,
+      profileId: input.job.profileId,
+      windowStartedAt,
+      windowEndedAt,
+      startedAt: input.startedAt,
+      finishedAt,
+      status: "success",
+      summary: {
+        candidateCount: parsedCandidates.candidates.length,
+        autoApplyCount: persistedItems.filter((item) => item.applyStatus === "applied").length,
+        failedApplyCount: persistedItems.filter((item) => item.applyStatus === "failed").length,
+        skippedCount: persistedItems.filter((item) => item.applyStatus === "skipped").length,
+        followUpScheduledCount,
+        followUpSkippedCount,
+        followUpFailedCount,
+      },
+      items: persistedItems,
+    })
+    input.dependencies.eodLearningRepository?.insertRunWithArtifacts(persistedArtifacts)
+
+    try {
+      enqueueEodLearningDigest(input.dependencies, {
         runId: input.runId,
-        profileId: input.job.profileId,
-        windowStartedAt,
-        windowEndedAt,
-        startedAt: input.startedAt,
-        finishedAt,
-        status: "success",
-        summary: {
-          candidateCount: parsedCandidates.candidates.length,
-          autoApplyCount: persistedItems.filter((item) => item.applyStatus === "applied").length,
-          failedApplyCount: persistedItems.filter((item) => item.applyStatus === "failed").length,
-          skippedCount: persistedItems.filter((item) => item.applyStatus === "skipped").length,
-          followUpScheduledCount,
-          followUpSkippedCount,
-          followUpFailedCount,
-        },
-        items: persistedItems,
+        messageContent: buildEodLearningDigestMessage(persistedArtifacts),
+        timestamp: finishedAt,
       })
-    )
+    } catch (error) {
+      const err = error as Error
+      input.dependencies.logger.warn(
+        {
+          runId: input.runId,
+          error: err.message,
+        },
+        "Failed to enqueue EOD learning transparency digest"
+      )
+    }
 
     return {
       status: "success",
@@ -1549,6 +1566,62 @@ const enqueueBackgroundLifecycleMessage = (
       "Failed to enqueue background lifecycle Telegram message"
     )
   }
+}
+
+const enqueueEodLearningDigest = (
+  dependencies: TaskExecutionEngineDependencies,
+  input: {
+    runId: string
+    messageContent: string
+    timestamp: number
+  }
+): void => {
+  const chatId = dependencies.defaultWatchdogChatId
+  if (!chatId) {
+    dependencies.logger.info(
+      {
+        runId: input.runId,
+      },
+      "Skipped EOD learning digest enqueue because chat id is not configured"
+    )
+    return
+  }
+
+  const dedupeKey = `eod-learning-digest:${input.runId}`
+  const enqueueResult = enqueueTelegramMessage(
+    {
+      chatId,
+      content: input.messageContent,
+      dedupeKey,
+      priority: "normal",
+    },
+    dependencies.outboundMessagesRepository,
+    input.timestamp
+  )
+
+  dependencies.nonInteractiveContextCaptureService?.captureQueuedTextMessage({
+    sourceSessionId:
+      dependencies.sessionBindingsRepository.getSessionIdByTelegramChatId?.(chatId) ?? null,
+    sourceLane: "scheduler",
+    sourceKind: "eod_learning_digest",
+    sourceRef: input.runId,
+    content: input.messageContent,
+    messageIds: enqueueResult.messageIds,
+    enqueueStatus: enqueueResult.status,
+    timestamp: input.timestamp,
+  })
+
+  dependencies.logger.info(
+    {
+      runId: input.runId,
+      chatId,
+      dedupeKey,
+      queueStatus: enqueueResult.status,
+      queuedCount: enqueueResult.queuedCount,
+      duplicateCount: enqueueResult.duplicateCount,
+    },
+    "Queued EOD learning transparency digest"
+  )
 }
 
 const executeWatchdogTask = async (
