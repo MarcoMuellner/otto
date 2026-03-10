@@ -10,6 +10,8 @@ import { buildInternalApiServer, resolveInternalApiConfig } from "../../src/inte
 import type { NonInteractiveContextCaptureService } from "../../src/runtime/non-interactive-context-capture.js"
 import type { OutboundMessageEnqueueRepository } from "../../src/telegram-worker/outbound-enqueue.js"
 import type {
+  EodLearningRunArtifacts,
+  EodLearningRunRecord,
   FailedJobRunRecord,
   JobRecord,
   JobRunSessionRecord,
@@ -290,6 +292,48 @@ const createJobRunSessionsRepositoryStub = () => {
   }
 }
 
+const createEodLearningRepositoryStub = (input?: {
+  runs?: EodLearningRunRecord[]
+  detailsByRunId?: Record<string, EodLearningRunArtifacts>
+}) => {
+  const runs = input?.runs ?? []
+  const detailsByRunId = input?.detailsByRunId ?? {}
+
+  return {
+    listRecentRuns: vi.fn((limit = 20) => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 20
+      return runs.slice(0, normalizedLimit)
+    }),
+    listRecentRunsByFilter: vi.fn(
+      (
+        filter: {
+          status?: string
+          profileId?: string
+        },
+        limit = 20
+      ) => {
+        const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 20
+        return runs
+          .filter((run) => {
+            if (filter.status && run.status !== filter.status) {
+              return false
+            }
+
+            if (filter.profileId && run.profileId !== filter.profileId) {
+              return false
+            }
+
+            return true
+          })
+          .slice(0, normalizedLimit)
+      }
+    ),
+    getRunDetails: vi.fn((runId: string) => {
+      return detailsByRunId[runId] ?? null
+    }),
+  }
+}
+
 describe("resolveInternalApiConfig", () => {
   it("creates and reuses a persisted token file", async () => {
     // Arrange
@@ -399,6 +443,12 @@ describe("buildInternalApiServer", () => {
     expect(openApi.paths["/internal/tools/tasks/create"]?.post?.responses?.default).toBeUndefined()
     expect(openApi.paths["/internal/tools/docs/search"]?.post?.responses?.["200"]).toBeTruthy()
     expect(openApi.paths["/internal/tools/docs/open"]?.post?.responses?.["200"]).toBeTruthy()
+    expect(
+      openApi.paths["/internal/tools/eod-learning/list"]?.post?.responses?.["200"]
+    ).toBeTruthy()
+    expect(
+      openApi.paths["/internal/tools/eod-learning/show"]?.post?.responses?.["200"]
+    ).toBeTruthy()
     expect(
       JSON.stringify(
         openApi.paths["/internal/tools/queue-telegram-message"]?.post?.responses?.["400"]
@@ -2345,6 +2395,350 @@ describe("buildInternalApiServer", () => {
       relativePath: "layers/surface-watchdog.md",
       content: "# Updated watchdog surface\nNew behavior",
     })
+
+    await app.close()
+  })
+
+  it("lists EOD learning runs and applies status/profile filters", async () => {
+    // Arrange
+    const eodLearningRepository = createEodLearningRepositoryStub({
+      runs: [
+        {
+          id: "run-eod-1",
+          profileId: "eod-learning",
+          lane: "scheduled",
+          windowStartedAt: 10,
+          windowEndedAt: 20,
+          startedAt: 21,
+          finishedAt: 22,
+          status: "success",
+          summaryJson: JSON.stringify({ summary: "ok" }),
+          createdAt: 22,
+        },
+        {
+          id: "run-eod-2",
+          profileId: "eod-learning",
+          lane: "scheduled",
+          windowStartedAt: 30,
+          windowEndedAt: 40,
+          startedAt: 41,
+          finishedAt: 42,
+          status: "failed",
+          summaryJson: JSON.stringify({ summary: "failed" }),
+          createdAt: 42,
+        },
+      ],
+    })
+    const commandAuditRepository = createCommandAuditRepositoryStub()
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository,
+      userProfileRepository: createUserProfileRepositoryStub(),
+      eodLearningRepository,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/eod-learning/list",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        status: "success",
+        profileId: "eod-learning",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      total: 1,
+      runs: [{ id: "run-eod-1", status: "success", profileId: "eod-learning" }],
+    })
+
+    const commands = commandAuditRepository.listRecent() as Array<{ command: string }>
+    expect(commands[0]?.command).toBe("list_eod_learning")
+
+    await app.close()
+  })
+
+  it("applies EOD status filter before limit", async () => {
+    // Arrange
+    const eodLearningRepository = createEodLearningRepositoryStub({
+      runs: [
+        {
+          id: "run-filter-1",
+          profileId: "eod-learning",
+          lane: "scheduled",
+          windowStartedAt: 10,
+          windowEndedAt: 20,
+          startedAt: 21,
+          finishedAt: 22,
+          status: "failed",
+          summaryJson: null,
+          createdAt: 22,
+        },
+        {
+          id: "run-filter-2",
+          profileId: "eod-learning",
+          lane: "scheduled",
+          windowStartedAt: 30,
+          windowEndedAt: 40,
+          startedAt: 41,
+          finishedAt: 42,
+          status: "success",
+          summaryJson: null,
+          createdAt: 42,
+        },
+      ],
+    })
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      eodLearningRepository,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/eod-learning/list",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        status: "success",
+        limit: 1,
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      runs: [{ id: "run-filter-2", status: "success" }],
+      total: 1,
+    })
+
+    await app.close()
+  })
+
+  it("shows one EOD learning run and returns not_found for unknown ids", async () => {
+    // Arrange
+    const runDetails: EodLearningRunArtifacts = {
+      run: {
+        id: "run-eod-detail-1",
+        profileId: "eod-learning",
+        lane: "scheduled",
+        windowStartedAt: 100,
+        windowEndedAt: 200,
+        startedAt: 201,
+        finishedAt: 202,
+        status: "success",
+        summaryJson: JSON.stringify({ summary: "completed" }),
+        createdAt: 202,
+      },
+      items: [
+        {
+          item: {
+            id: "item-1",
+            runId: "run-eod-detail-1",
+            ordinal: 0,
+            title: "Capture stronger evidence for tool mismatch",
+            decision: "apply",
+            confidence: 0.82,
+            contradictionFlag: 0,
+            expectedValue: 0.5,
+            applyStatus: "applied",
+            applyError: null,
+            metadataJson: null,
+            createdAt: 202,
+          },
+          evidence: [
+            {
+              id: "evidence-1",
+              runId: "run-eod-detail-1",
+              itemId: "item-1",
+              ordinal: 0,
+              signalGroup: "task",
+              sourceKind: "task_audit",
+              sourceId: "audit-1",
+              occurredAt: 190,
+              excerpt: "Repeated task failure.",
+              contradictionFlag: 0,
+              metadataJson: null,
+              createdAt: 202,
+            },
+          ],
+          actions: [
+            {
+              id: "action-1",
+              runId: "run-eod-detail-1",
+              itemId: "item-1",
+              ordinal: 0,
+              actionType: "memory_set",
+              status: "applied",
+              expectedValue: 0.5,
+              detail: "Updated durable preference.",
+              errorMessage: null,
+              metadataJson: null,
+              createdAt: 202,
+            },
+          ],
+        },
+      ],
+    }
+
+    const eodLearningRepository = createEodLearningRepositoryStub({
+      detailsByRunId: {
+        "run-eod-detail-1": runDetails,
+      },
+    })
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      eodLearningRepository,
+    })
+
+    // Act
+    const found = await app.inject({
+      method: "POST",
+      url: "/internal/tools/eod-learning/show",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        runId: "run-eod-detail-1",
+      },
+    })
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/internal/tools/eod-learning/show",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        runId: "run-missing",
+      },
+    })
+
+    // Assert
+    expect(found.statusCode).toBe(200)
+    expect(found.json()).toMatchObject({
+      run: { id: "run-eod-detail-1", status: "success" },
+      items: [
+        { item: { id: "item-1" }, evidence: [{ id: "evidence-1" }], actions: [{ id: "action-1" }] },
+      ],
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json()).toMatchObject({
+      error: "not_found",
+    })
+
+    await app.close()
+  })
+
+  it("returns unauthorized for EOD learning routes when token is missing", async () => {
+    // Arrange
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      eodLearningRepository: createEodLearningRepositoryStub(),
+    })
+
+    // Act
+    const listResponse = await app.inject({
+      method: "POST",
+      url: "/internal/tools/eod-learning/list",
+      payload: {},
+    })
+    const showResponse = await app.inject({
+      method: "POST",
+      url: "/internal/tools/eod-learning/show",
+      payload: { runId: "run-1" },
+    })
+
+    // Assert
+    expect(listResponse.statusCode).toBe(401)
+    expect(showResponse.statusCode).toBe(401)
 
     await app.close()
   })

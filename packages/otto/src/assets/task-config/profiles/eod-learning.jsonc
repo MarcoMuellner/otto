@@ -20,6 +20,8 @@
               "get_notification_policy": false,
               "set_notification_policy": false,
               "list_task_audit": true,
+              "list_eod_learning": true,
+              "show_eod_learning_run": true,
               "get_journal_config": true,
               "set_journal_tags": true,
               "memory_list": true,
