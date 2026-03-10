@@ -205,6 +205,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       },
       jobsRepository,
       userProfileRepository,
+      eodLearningRepository,
       taskAuditRepository,
       commandAuditRepository,
       nonInteractiveContextCaptureService,

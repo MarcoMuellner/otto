@@ -38,6 +38,8 @@ import { stageOutboundTelegramFile } from "../telegram-worker/outbound-file-stag
 import { PromptFileAccessError, type PromptProvenance } from "../prompt-management/index.js"
 import type {
   CommandAuditRecord,
+  EodLearningRunArtifacts,
+  EodLearningRunRecord,
   FailedJobRunRecord,
   JobRecord,
   JobRunRecord,
@@ -126,6 +128,17 @@ type InternalApiServerDependencies = {
     get: () => UserProfileRecord | null
     upsert: (record: UserProfileRecord) => void
     setMuteUntil: (muteUntil: number | null, updatedAt?: number) => void
+  }
+  eodLearningRepository?: {
+    listRecentRuns: (limit?: number) => EodLearningRunRecord[]
+    listRecentRunsByFilter?: (
+      filter: {
+        status?: string
+        profileId?: string
+      },
+      limit?: number
+    ) => EodLearningRunRecord[]
+    getRunDetails: (runId: string) => EodLearningRunArtifacts | null
   }
   nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
   promptManagement?: {
@@ -311,6 +324,16 @@ const docsOpenApiSchema = z.object({
   section: z.string().trim().min(1).optional(),
 })
 
+const listEodLearningApiSchema = z.object({
+  limit: z.number().int().min(1).max(200).optional(),
+  status: z.string().trim().min(1).optional(),
+  profileId: z.string().trim().min(1).optional(),
+})
+
+const showEodLearningRunApiSchema = z.object({
+  runId: z.string().trim().min(1),
+})
+
 const unauthorizedResponseSchema = z.object({
   error: z.literal("unauthorized"),
 })
@@ -443,6 +466,79 @@ const docsOpenResponseSchema = z.object({
     .nullable(),
   sections: z.array(docsSectionReferenceSchema),
   liveData: z.unknown().nullable(),
+})
+
+const eodLearningRunSchema = z.object({
+  id: z.string().min(1),
+  profileId: z.string().nullable(),
+  lane: z.string().min(1),
+  windowStartedAt: z.number().int(),
+  windowEndedAt: z.number().int(),
+  startedAt: z.number().int(),
+  finishedAt: z.number().int().nullable(),
+  status: z.string().min(1),
+  summaryJson: z.string().nullable(),
+  createdAt: z.number().int(),
+})
+
+const eodLearningItemSchema = z.object({
+  id: z.string().min(1),
+  runId: z.string().min(1),
+  ordinal: z.number().int(),
+  title: z.string().min(1),
+  decision: z.string().min(1),
+  confidence: z.number(),
+  contradictionFlag: z.number().int(),
+  expectedValue: z.number().nullable(),
+  applyStatus: z.string().min(1),
+  applyError: z.string().nullable(),
+  metadataJson: z.string().nullable(),
+  createdAt: z.number().int(),
+})
+
+const eodLearningEvidenceSchema = z.object({
+  id: z.string().min(1),
+  runId: z.string().min(1),
+  itemId: z.string().min(1),
+  ordinal: z.number().int(),
+  signalGroup: z.string().nullable(),
+  sourceKind: z.string().min(1),
+  sourceId: z.string().min(1),
+  occurredAt: z.number().int().nullable(),
+  excerpt: z.string().nullable(),
+  contradictionFlag: z.number().int(),
+  metadataJson: z.string().nullable(),
+  createdAt: z.number().int(),
+})
+
+const eodLearningActionSchema = z.object({
+  id: z.string().min(1),
+  runId: z.string().min(1),
+  itemId: z.string().min(1),
+  ordinal: z.number().int(),
+  actionType: z.string().min(1),
+  status: z.string().min(1),
+  expectedValue: z.number().nullable(),
+  detail: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  metadataJson: z.string().nullable(),
+  createdAt: z.number().int(),
+})
+
+const eodLearningListResponseSchema = z.object({
+  runs: z.array(eodLearningRunSchema),
+  total: z.number().int(),
+})
+
+const eodLearningRunDetailsResponseSchema = z.object({
+  run: eodLearningRunSchema,
+  items: z.array(
+    z.object({
+      item: eodLearningItemSchema,
+      evidence: z.array(eodLearningEvidenceSchema),
+      actions: z.array(eodLearningActionSchema),
+    })
+  ),
 })
 
 type BackgroundMilestoneContext = {
@@ -689,6 +785,26 @@ const isActiveBackgroundRunSession = (
 
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
+}
+
+const filterEodLearningRuns = (
+  runs: EodLearningRunRecord[],
+  filter: {
+    status?: string
+    profileId?: string
+  }
+): EodLearningRunRecord[] => {
+  return runs.filter((run) => {
+    if (filter.status && run.status !== filter.status) {
+      return false
+    }
+
+    if (filter.profileId && run.profileId !== filter.profileId) {
+      return false
+    }
+
+    return true
+  })
 }
 
 const assertTaskMutationLane = (
@@ -1157,6 +1273,40 @@ export const buildInternalApiServer = (
         200: { description: "Recent audit entries", schema: taskAuditListResponseSchema },
         400: { description: "Invalid request", schema: validationErrorResponseSchema },
         401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/eod-learning/list",
+      tags: ["Tasks"],
+      summary: "List recent EOD learning runs",
+      security: internalSecurity,
+      requestBody: { schema: listEodLearningApiSchema },
+      responses: {
+        200: { description: "EOD learning runs", schema: eodLearningListResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/eod-learning/show",
+      tags: ["Tasks"],
+      summary: "Show one EOD learning run with items, evidence, and actions",
+      security: internalSecurity,
+      requestBody: { schema: showEodLearningRunApiSchema },
+      responses: {
+        200: {
+          description: "EOD learning run details",
+          schema: eodLearningRunDetailsResponseSchema,
+        },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        404: { description: "Not found", schema: notFoundResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
         500: { description: "Internal error", schema: internalErrorResponseSchema },
       },
     },
@@ -2700,6 +2850,142 @@ export const buildInternalApiServer = (
 
       const err = error as Error
       dependencies.logger.error({ error: err.message }, "Internal API task audit list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/eod-learning/list", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    if (!dependencies.eodLearningRepository) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = listEodLearningApiSchema.parse(request.body)
+      const runs = dependencies.eodLearningRepository.listRecentRunsByFilter
+        ? dependencies.eodLearningRepository.listRecentRunsByFilter(
+            {
+              status: payload.status,
+              profileId: payload.profileId,
+            },
+            payload.limit ?? 50
+          )
+        : filterEodLearningRuns(dependencies.eodLearningRepository.listRecentRuns(1_000), {
+            status: payload.status,
+            profileId: payload.profileId,
+          }).slice(0, payload.limit ?? 50)
+
+      writeCommandAudit(dependencies, {
+        command: "list_eod_learning",
+        lane: "scheduled",
+        status: "success",
+        metadataJson: JSON.stringify({
+          returned: runs.length,
+          status: payload.status ?? null,
+          profileId: payload.profileId ?? null,
+        }),
+      })
+
+      return reply.code(200).send({
+        runs,
+        total: runs.length,
+      })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "list_eod_learning",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "list_eod_learning",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API EOD learning list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/eod-learning/show", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    if (!dependencies.eodLearningRepository) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = showEodLearningRunApiSchema.parse(request.body)
+      const details = dependencies.eodLearningRepository.getRunDetails(payload.runId)
+      if (!details) {
+        writeCommandAudit(dependencies, {
+          command: "show_eod_learning_run",
+          lane: "scheduled",
+          status: "failed",
+          errorMessage: "EOD learning run not found",
+          metadataJson: JSON.stringify({ runId: payload.runId }),
+        })
+        return reply.code(404).send({
+          error: "not_found",
+          message: "EOD learning run not found",
+        })
+      }
+
+      writeCommandAudit(dependencies, {
+        command: "show_eod_learning_run",
+        lane: "scheduled",
+        status: "success",
+        metadataJson: JSON.stringify({
+          runId: payload.runId,
+          itemCount: details.items.length,
+        }),
+      })
+
+      return reply.code(200).send(details)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "show_eod_learning_run",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "show_eod_learning_run",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API EOD learning show failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })

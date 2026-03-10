@@ -2064,6 +2064,61 @@ export const createEodLearningRepository = (database: DatabaseSync) => {
      WHERE id = ?`
   )
 
+  const listRecentRunsByStatusStatement = database.prepare(
+    `SELECT
+      id,
+      profile_id as profileId,
+      lane,
+      window_started_at as windowStartedAt,
+      window_ended_at as windowEndedAt,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      summary_json as summaryJson,
+      created_at as createdAt
+     FROM eod_learning_runs
+     WHERE status = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
+  )
+
+  const listRecentRunsByProfileIdStatement = database.prepare(
+    `SELECT
+      id,
+      profile_id as profileId,
+      lane,
+      window_started_at as windowStartedAt,
+      window_ended_at as windowEndedAt,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      summary_json as summaryJson,
+      created_at as createdAt
+     FROM eod_learning_runs
+     WHERE profile_id = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
+  )
+
+  const listRecentRunsByStatusAndProfileIdStatement = database.prepare(
+    `SELECT
+      id,
+      profile_id as profileId,
+      lane,
+      window_started_at as windowStartedAt,
+      window_ended_at as windowEndedAt,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      summary_json as summaryJson,
+      created_at as createdAt
+     FROM eod_learning_runs
+     WHERE status = ?
+       AND profile_id = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
+  )
+
   const listItemsByRunIdStatement = database.prepare(
     `SELECT
       id,
@@ -2201,6 +2256,39 @@ export const createEodLearningRepository = (database: DatabaseSync) => {
     },
     listRecentRuns: (limit = 20): EodLearningRunRecord[] => {
       const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 20
+      return listRecentRunsStatement.all(normalizedLimit) as EodLearningRunRecord[]
+    },
+    listRecentRunsByFilter: (
+      filter: {
+        status?: string
+        profileId?: string
+      },
+      limit = 20
+    ): EodLearningRunRecord[] => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 20
+
+      if (filter.status && filter.profileId) {
+        return listRecentRunsByStatusAndProfileIdStatement.all(
+          filter.status,
+          filter.profileId,
+          normalizedLimit
+        ) as EodLearningRunRecord[]
+      }
+
+      if (filter.status) {
+        return listRecentRunsByStatusStatement.all(
+          filter.status,
+          normalizedLimit
+        ) as EodLearningRunRecord[]
+      }
+
+      if (filter.profileId) {
+        return listRecentRunsByProfileIdStatement.all(
+          filter.profileId,
+          normalizedLimit
+        ) as EodLearningRunRecord[]
+      }
+
       return listRecentRunsStatement.all(normalizedLimit) as EodLearningRunRecord[]
     },
     getRunDetails: (runId: string): EodLearningRunArtifacts | null => {

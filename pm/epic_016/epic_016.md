@@ -44,7 +44,7 @@ Otto currently learns implicitly across sessions but has no durable, auditable d
 5. `ticket_005`: EOD decision engine and memory/journal auto-apply pipeline. (`done`)
 6. `ticket_006`: autonomous follow-up scheduling with reversible guardrails. (`done`)
 7. `ticket_007`: Telegram transparency digest delivery. (`done`)
-8. `ticket_008`: internal EOD history read API and OpenCode tools for self-reference.
+8. `ticket_008`: internal EOD history read API and OpenCode tools for self-reference. (`done`)
 
 ## Out of Scope
 
