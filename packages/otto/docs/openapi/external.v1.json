@@ -844,6 +844,21 @@
                             }
                           ]
                         },
+                        "watchdogAlertsEnabled": {
+                          "type": "boolean"
+                        },
+                        "watchdogMuteUntil": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "interactiveContextWindowSize": {
                           "type": "integer",
                           "minimum": 5,
@@ -890,6 +905,8 @@
                         "quietHoursEnd",
                         "quietMode",
                         "muteUntil",
+                        "watchdogAlertsEnabled",
+                        "watchdogMuteUntil",
                         "interactiveContextWindowSize",
                         "contextRetentionCap",
                         "onboardingCompletedAt",
@@ -1026,6 +1043,29 @@
                     "minimum": 1,
                     "maximum": 10080
                   },
+                  "watchdogAlertsEnabled": {
+                    "type": "boolean"
+                  },
+                  "watchdogMuteUntil": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "watchdogMuteForMinutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10080
+                  },
+                  "watchdogUnmute": {
+                    "type": "boolean"
+                  },
                   "markOnboardingComplete": {
                     "type": "boolean"
                   }
@@ -1102,6 +1142,21 @@
                             }
                           ]
                         },
+                        "watchdogAlertsEnabled": {
+                          "type": "boolean"
+                        },
+                        "watchdogMuteUntil": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "interactiveContextWindowSize": {
                           "type": "integer",
                           "minimum": 5,
@@ -1148,6 +1203,8 @@
                         "quietHoursEnd",
                         "quietMode",
                         "muteUntil",
+                        "watchdogAlertsEnabled",
+                        "watchdogMuteUntil",
                         "interactiveContextWindowSize",
                         "contextRetentionCap",
                         "onboardingCompletedAt",

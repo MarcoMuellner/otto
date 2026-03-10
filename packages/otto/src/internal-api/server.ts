@@ -268,7 +268,7 @@ const setWatchdogPromptApiSchema = z.object({
 
 const spawnBackgroundJobApiSchema = z.object({
   lane: executionLaneSchema.optional().default("interactive"),
-  sessionId: z.string().trim().min(1).optional(),
+  sessionId: z.string().trim().min(1),
   request: z.string().trim().min(1),
   rationale: z.string().trim().min(1).max(500).optional(),
   sourceMessageId: z.string().trim().min(1).optional(),
@@ -357,6 +357,11 @@ const queueTelegramFileBadRequestResponseSchema = z.union([
 
 const laneForbiddenResponseSchema = z.object({
   error: z.literal("lane_forbidden"),
+  message: z.string().min(1),
+})
+
+const nestedBackgroundSpawnForbiddenResponseSchema = z.object({
+  error: z.literal("nested_background_spawn_forbidden"),
   message: z.string().min(1),
 })
 
@@ -669,6 +674,19 @@ const resolveBackgroundMilestoneContext = (
   }
 }
 
+const isActiveBackgroundRunSession = (
+  dependencies: InternalApiServerDependencies,
+  sessionId: string
+): boolean => {
+  const activeRun = dependencies.jobRunSessionsRepository.getLatestActiveBySessionId(sessionId)
+  if (!activeRun) {
+    return false
+  }
+
+  const job = dependencies.jobsRepository.getById(activeRun.jobId)
+  return job?.type === INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE
+}
+
 const canMutateTasks = (lane: "interactive" | "scheduled"): boolean => {
   return lane === "interactive"
 }
@@ -910,6 +928,10 @@ export const buildInternalApiServer = (
         200: { description: "Background job spawned", schema: genericObjectResponseSchema },
         400: { description: "Invalid request", schema: validationErrorResponseSchema },
         401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        409: {
+          description: "Nested background spawn forbidden",
+          schema: nestedBackgroundSpawnForbiddenResponseSchema,
+        },
         500: { description: "Internal error", schema: internalErrorResponseSchema },
       },
     },
@@ -1524,6 +1546,21 @@ export const buildInternalApiServer = (
           errorMessage: laneDecision.body.message,
         })
         return reply.code(laneDecision.statusCode).send(laneDecision.body)
+      }
+
+      if (payload.sessionId && isActiveBackgroundRunSession(dependencies, payload.sessionId)) {
+        const message =
+          "Background runs cannot spawn additional background jobs; continue work in the current job"
+        writeCommandAudit(dependencies, {
+          command: "spawn_background_job",
+          lane: payload.lane,
+          status: "denied",
+          errorMessage: message,
+        })
+        return reply.code(409).send({
+          error: "nested_background_spawn_forbidden",
+          message,
+        })
       }
 
       const resolvedSessionId = payload.sessionId

@@ -44,6 +44,11 @@ export default tool({
   },
   async execute(args, context): Promise<string> {
     const { baseUrl, token } = resolveInternalApiConfiguration()
+    const sessionId = context.sessionID?.trim()
+    if (!sessionId) {
+      throw new Error("spawn_background_job requires an active session context")
+    }
+
     const response = await fetch(`${baseUrl}/internal/tools/background-jobs/spawn`, {
       method: "POST",
       headers: {
@@ -52,7 +57,7 @@ export default tool({
       },
       body: JSON.stringify({
         lane: "interactive",
-        sessionId: context.sessionID,
+        sessionId,
         ...args,
       }),
     })

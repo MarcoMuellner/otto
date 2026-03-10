@@ -726,6 +726,15 @@ describe("task execution engine", () => {
         systemPrompt: expect.stringContaining("## Media\nChatapps media"),
       })
     )
+    expect(promptSession).toHaveBeenCalledWith(
+      "session-background-run-1",
+      expect.any(String),
+      expect.objectContaining({
+        tools: {
+          spawn_background_job: false,
+        },
+      })
+    )
 
     const task = jobsRepository.getById("job-background-1")
     expect(task?.terminalState).toBe("completed")

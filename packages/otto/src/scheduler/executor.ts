@@ -262,6 +262,20 @@ const resolveTools = (value: unknown): Record<string, boolean> | undefined => {
   return Object.fromEntries(toolEntries)
 }
 
+const resolveBackgroundTools = (value: unknown): Record<string, boolean> | undefined => {
+  const tools = resolveTools(value)
+  if (!tools) {
+    return {
+      spawn_background_job: false,
+    }
+  }
+
+  return {
+    ...tools,
+    spawn_background_job: false,
+  }
+}
+
 const serializePromptProvenance = (provenance: PromptProvenance | null): string | null => {
   if (!provenance) {
     return null
@@ -656,6 +670,7 @@ const buildInteractiveBackgroundPrompt = (
   return [
     "Execute this interactive background request now.",
     "Work autonomously and do not ask clarifying questions.",
+    "Do not call spawn_background_job and do not create additional background jobs.",
     "When useful, call report_background_milestone with concise free-text phase updates.",
     "Do not spam milestone updates; call it only on meaningful phase changes.",
     "Return only a JSON object with keys: status, summary, errors.",
@@ -1029,7 +1044,7 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 runId,
                 serializedPromptProvenance
               )
-              const tools = resolveTools(assistant?.tools)
+              const tools = resolveBackgroundTools(assistant?.tools)
 
               const sessionId = await dependencies.sessionGateway.ensureSession(null)
               dependencies.jobRunSessionsRepository.insert({

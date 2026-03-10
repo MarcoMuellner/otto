@@ -1106,6 +1106,160 @@ describe("buildInternalApiServer", () => {
     await app.close()
   })
 
+  it("requires sessionId for background spawn requests", async () => {
+    // Arrange
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => 777),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/spawn",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        request: "Analyze this repository and draft a migration plan",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({
+      error: "invalid_request",
+    })
+
+    await app.close()
+  })
+
+  it("denies nested background spawn when caller session belongs to an active background run", async () => {
+    // Arrange
+    const jobsRepository = createJobsRepositoryStub()
+    jobsRepository.createTask({
+      id: "job-background-parent-1",
+      type: "interactive_background_oneshot",
+      status: "running",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 5_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: "session-origin-parent-1",
+          sourceMessageId: "msg-parent-1",
+          chatId: 777,
+        },
+        request: {
+          text: "Investigate architecture docs",
+          requestedAt: 4_900,
+          rationale: "long-running analysis",
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 5_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: "lock-parent-1",
+      lockExpiresAt: 6_000,
+      createdAt: 4_900,
+      updatedAt: 4_900,
+    })
+
+    const jobRunSessionsRepository = createJobRunSessionsRepositoryStub()
+    jobRunSessionsRepository.insert({
+      runId: "run-parent-1",
+      jobId: "job-background-parent-1",
+      sessionId: "session-background-run-1",
+      createdAt: 5_000,
+    })
+
+    const commandAuditRepository = createCommandAuditRepositoryStub()
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => 777),
+      },
+      jobRunSessionsRepository,
+      jobsRepository,
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository,
+      userProfileRepository: createUserProfileRepositoryStub(),
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/background-jobs/spawn",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        sessionId: "session-background-run-1",
+        request: "Start another background task",
+        rationale: "should be blocked",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({
+      error: "nested_background_spawn_forbidden",
+      message:
+        "Background runs cannot spawn additional background jobs; continue work in the current job",
+    })
+
+    const commands = commandAuditRepository.listRecent() as Array<{
+      command: string
+      status: string
+      errorMessage: string | null
+    }>
+    expect(commands[0]).toMatchObject({
+      command: "spawn_background_job",
+      status: "denied",
+    })
+    expect(commands[0]?.errorMessage).toContain("cannot spawn additional background jobs")
+
+    await app.close()
+  })
+
   it("lists, shows, and cancels background tasks via dedicated endpoints", async () => {
     // Arrange
     const jobsRepository = createJobsRepositoryStub()

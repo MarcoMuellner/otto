@@ -703,6 +703,7 @@
                 },
                 "required": [
                   "lane",
+                  "sessionId",
                   "request"
                 ],
                 "additionalProperties": false
@@ -763,6 +764,31 @@
                   },
                   "required": [
                     "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nested background spawn forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "nested_background_spawn_forbidden"
+                    },
+                    "message": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
                   ],
                   "additionalProperties": false
                 }
@@ -2237,6 +2263,29 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 10080
+                  },
+                  "watchdogAlertsEnabled": {
+                    "type": "boolean"
+                  },
+                  "watchdogMuteUntil": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "watchdogMuteForMinutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10080
+                  },
+                  "watchdogUnmute": {
+                    "type": "boolean"
                   },
                   "markOnboardingComplete": {
                     "type": "boolean"
