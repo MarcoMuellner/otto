@@ -11,6 +11,18 @@ export const eodLearningCandidateSchema = z.object({
   expectedValue: z.number().finite().nullable().optional().default(null),
   evidenceIds: z.array(z.string().trim().min(1)).optional().default([]),
   rationale: z.string().trim().min(1).nullable().optional().default(null),
+  followUpActions: z
+    .array(
+      z.object({
+        title: z.string().trim().min(1),
+        rationale: z.string().trim().min(1).nullable().optional().default(null),
+        reversible: z.boolean().optional().default(false),
+        expectedValue: z.number().finite().nullable().optional().default(null),
+        runAt: z.number().int().nullable().optional().default(null),
+      })
+    )
+    .optional()
+    .default([]),
 })
 
 export const eodLearningCandidateOutputSchema = z.object({
@@ -32,6 +44,7 @@ export const eodLearningApplyOutputSchema = z.object({
 })
 
 export type EodLearningCandidate = z.infer<typeof eodLearningCandidateSchema>
+export type EodLearningFollowUpActionProposal = EodLearningCandidate["followUpActions"][number]
 export type EodLearningCandidateOutput = z.infer<typeof eodLearningCandidateOutputSchema>
 export type EodLearningApplyOutput = z.infer<typeof eodLearningApplyOutputSchema>
 
@@ -62,12 +75,15 @@ export const buildEodLearningCandidatePrompt = (input: {
     "You are running Otto's nightly EOD learning candidate extraction.",
     "Read the evidence bundle and propose compact learning candidates.",
     "Return ONLY valid JSON with this exact shape:",
-    '{"candidates":[{"title":"...","confidence":0.0,"contradiction":false,"expectedValue":0.0,"evidenceIds":["..."],"rationale":"..."}]}',
+    '{"candidates":[{"title":"...","confidence":0.0,"contradiction":false,"expectedValue":0.0,"evidenceIds":["..."],"rationale":"...","followUpActions":[{"title":"...","rationale":"...","reversible":true,"expectedValue":0.0,"runAt":null}]}]}',
     "Rules:",
     `- Maximum ${EOD_MAX_CANDIDATES} candidates.`,
     "- confidence must be between 0 and 1.",
     "- contradiction must be true when signals materially conflict.",
     "- evidenceIds must reference only ids from the provided evidence list.",
+    "- followUpActions must include only reversible, concrete tasks when proposing autonomous follow-up work.",
+    "- Every follow-up action must include reversible and expectedValue fields.",
+    "- followUpActions.runAt must be Unix epoch milliseconds when provided (not seconds).",
     "- No markdown, prose, or extra keys outside the schema.",
     "",
     "Run context:",

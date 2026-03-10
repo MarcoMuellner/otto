@@ -485,6 +485,26 @@ describe("task execution engine", () => {
     })
 
     jobsRepository.createTask({
+      id: "seed-task",
+      type: "general-reminder",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 20_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({ message: "seed" }),
+      lastRunAt: null,
+      nextRunAt: 20_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    jobsRepository.createTask({
       id: "task-alpha",
       type: "general-reminder",
       status: "idle",
@@ -726,6 +746,198 @@ describe("task execution engine", () => {
     )
     expect(lowConfidenceItem?.item.applyStatus).toBe("candidate_only")
     expect(promptSession).toHaveBeenCalledTimes(2)
+
+    db.close()
+  })
+
+  it("dedupes autonomous follow-up scheduling across adjacent EOD runs", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    const taskAuditRepository = createTaskAuditRepository(db)
+    const commandAuditRepository = createCommandAuditRepository(db)
+    const interactiveContextEventsRepository = createInteractiveContextEventsRepository(db)
+    const eodLearningRepository = createEodLearningRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
+
+    jobsRepository.createTask({
+      id: EOD_LEARNING_TASK_ID,
+      type: EOD_LEARNING_TASK_TYPE,
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: EOD_LEARNING_PROFILE_ID,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 24 * 60,
+      payload: JSON.stringify({ timezone: "Europe/Vienna" }),
+      lastRunAt: null,
+      nextRunAt: 10_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    taskAuditRepository.insert({
+      id: "ta-follow-up-1",
+      taskId: EOD_LEARNING_TASK_ID,
+      action: "update",
+      lane: "scheduled",
+      actor: "scheduler",
+      beforeJson: null,
+      afterJson: null,
+      metadataJson: null,
+      createdAt: 9_200,
+    })
+    commandAuditRepository.insert({
+      id: "ca-follow-up-1",
+      command: "list_tasks",
+      lane: "scheduled",
+      status: "success",
+      errorMessage: null,
+      metadataJson: null,
+      createdAt: 9_250,
+    })
+
+    const promptSession = vi
+      .fn()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          candidates: [
+            {
+              title: "Reminder clarity",
+              confidence: 0.9,
+              contradiction: false,
+              expectedValue: 0.7,
+              evidenceIds: ["task_audit:ta-follow-up-1", "command_audit:ca-follow-up-1"],
+              rationale: "Strong signals",
+              followUpActions: [
+                {
+                  title: "Run reminder phrasing check",
+                  rationale: "Validate tone next cycle",
+                  reversible: true,
+                  expectedValue: 0.5,
+                  runAt: null,
+                },
+              ],
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          status: "success",
+          summary: "Applied",
+          actions: [],
+        })
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          candidates: [
+            {
+              title: "Reminder clarity",
+              confidence: 0.9,
+              contradiction: false,
+              expectedValue: 0.7,
+              evidenceIds: ["task_audit:ta-follow-up-1", "command_audit:ca-follow-up-1"],
+              rationale: "Strong signals",
+              followUpActions: [
+                {
+                  title: "Run reminder phrasing check",
+                  rationale: "Validate tone next cycle",
+                  reversible: true,
+                  expectedValue: 0.5,
+                  runAt: null,
+                },
+              ],
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          status: "success",
+          summary: "Applied",
+          actions: [],
+        })
+      )
+
+    let nowValue = 10_500
+    const engine = createTaskExecutionEngine({
+      logger: createLoggerStub(),
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      taskAuditRepository,
+      commandAuditRepository,
+      interactiveContextEventsRepository,
+      eodLearningRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-eod-follow-up",
+        promptSession,
+      },
+      defaultWatchdogChatId: null,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => nowValue,
+    })
+
+    const firstClaim = jobsRepository.claimDue(
+      10_000,
+      10,
+      "lock-eod-follow-up-1",
+      60_000,
+      10_000
+    )[0]
+    if (!firstClaim) {
+      throw new Error("Expected first due EOD task claim")
+    }
+    await engine.executeClaimedJob(firstClaim)
+
+    nowValue = nowValue + 24 * 60 * 60 * 1000 + 1
+    const secondClaim = jobsRepository.claimById(
+      EOD_LEARNING_TASK_ID,
+      nowValue,
+      "lock-eod-follow-up-2",
+      60_000,
+      nowValue
+    )
+    if (!secondClaim) {
+      throw new Error("Expected second due EOD task claim")
+    }
+
+    // Act
+    await engine.executeClaimedJob(secondClaim)
+
+    // Assert
+    const followUpTasks = jobsRepository
+      .listTasks()
+      .filter((task) => task.type === "general-reminder" && task.id !== EOD_LEARNING_TASK_ID)
+    expect(followUpTasks).toHaveLength(1)
+
+    const latestRun = eodLearningRepository.listRecentRuns(1)[0]
+    const latestDetails = eodLearningRepository.getRunDetails(latestRun?.id ?? "")
+    const latestFollowUpAction = latestDetails?.items[0]?.actions.find(
+      (action) => action.actionType === "follow_up_schedule"
+    )
+    expect(latestFollowUpAction?.status).toBe("skipped")
+
+    const metadata = latestFollowUpAction?.metadataJson
+      ? JSON.parse(latestFollowUpAction.metadataJson)
+      : null
+    expect(metadata?.reasonCode).toBe("duplicate_fingerprint")
 
     db.close()
   })
