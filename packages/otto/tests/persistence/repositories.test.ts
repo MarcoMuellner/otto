@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   createApprovalsRepository,
   createCommandAuditRepository,
+  createEodLearningRepository,
   createInteractiveContextEventsRepository,
   createJobRunSessionsRepository,
   createJobsRepository,
@@ -1191,6 +1192,383 @@ describe("persistence repositories", () => {
     expect(taskAudit[0]?.id).toBe("task-audit-1")
     expect(taskAuditForJob[0]?.id).toBe("task-audit-1")
     expect(commandAudit[0]?.id).toBe("cmd-audit-1")
+
+    db.close()
+  })
+
+  it("stores one EOD run with nested items, evidence, and actions", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createEodLearningRepository(db)
+
+    // Act
+    repository.insertRunWithArtifacts({
+      run: {
+        id: "eod-run-1",
+        profileId: "profile-default",
+        lane: "scheduled",
+        windowStartedAt: 10,
+        windowEndedAt: 20,
+        startedAt: 21,
+        finishedAt: 30,
+        status: "completed",
+        summaryJson: '{"items":2}',
+        createdAt: 30,
+      },
+      items: [
+        {
+          item: {
+            id: "eod-item-2",
+            runId: "eod-run-1",
+            ordinal: 2,
+            title: "Second item",
+            decision: "candidate_only",
+            confidence: 0.51,
+            contradictionFlag: 0,
+            expectedValue: 0.2,
+            applyStatus: "not_applied",
+            applyError: null,
+            metadataJson: null,
+            createdAt: 32,
+          },
+          evidence: [
+            {
+              id: "eod-ev-3",
+              runId: "eod-run-1",
+              itemId: "eod-item-2",
+              ordinal: 1,
+              signalGroup: "tasks",
+              sourceKind: "task_audit",
+              sourceId: "task-audit-3",
+              occurredAt: 17,
+              excerpt: "task evidence",
+              contradictionFlag: 0,
+              metadataJson: null,
+              createdAt: 32,
+            },
+          ],
+          actions: [],
+        },
+        {
+          item: {
+            id: "eod-item-1",
+            runId: "eod-run-1",
+            ordinal: 1,
+            title: "First item",
+            decision: "auto_apply",
+            confidence: 0.91,
+            contradictionFlag: 0,
+            expectedValue: 0.93,
+            applyStatus: "applied",
+            applyError: null,
+            metadataJson: '{"why":"consistent"}',
+            createdAt: 31,
+          },
+          evidence: [
+            {
+              id: "eod-ev-2",
+              runId: "eod-run-1",
+              itemId: "eod-item-1",
+              ordinal: 2,
+              signalGroup: "commands",
+              sourceKind: "command_audit",
+              sourceId: "cmd-2",
+              occurredAt: 15,
+              excerpt: "second evidence",
+              contradictionFlag: 0,
+              metadataJson: null,
+              createdAt: 33,
+            },
+            {
+              id: "eod-ev-1",
+              runId: "eod-run-1",
+              itemId: "eod-item-1",
+              ordinal: 1,
+              signalGroup: "commands",
+              sourceKind: "command_audit",
+              sourceId: "cmd-1",
+              occurredAt: 14,
+              excerpt: "first evidence",
+              contradictionFlag: 0,
+              metadataJson: null,
+              createdAt: 32,
+            },
+          ],
+          actions: [
+            {
+              id: "eod-act-1",
+              runId: "eod-run-1",
+              itemId: "eod-item-1",
+              ordinal: 1,
+              actionType: "memory_update",
+              status: "applied",
+              expectedValue: 0.93,
+              detail: "updated memory",
+              errorMessage: null,
+              metadataJson: null,
+              createdAt: 35,
+            },
+          ],
+        },
+      ],
+    })
+
+    const runs = repository.listRecentRuns(5)
+    const details = repository.getRunDetails("eod-run-1")
+
+    // Assert
+    expect(runs).toHaveLength(1)
+    expect(runs[0]?.id).toBe("eod-run-1")
+    expect(details?.items.map((entry) => entry.item.id)).toEqual(["eod-item-1", "eod-item-2"])
+    expect(details?.items[0]?.evidence.map((entry) => entry.id)).toEqual(["eod-ev-1", "eod-ev-2"])
+    expect(details?.items[0]?.actions.map((entry) => entry.id)).toEqual(["eod-act-1"])
+
+    db.close()
+  })
+
+  it("rolls back EOD run writes when nested artifact insert fails", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createEodLearningRepository(db)
+
+    // Act
+    expect(() => {
+      repository.insertRunWithArtifacts({
+        run: {
+          id: "eod-run-fail",
+          profileId: null,
+          lane: "scheduled",
+          windowStartedAt: 100,
+          windowEndedAt: 200,
+          startedAt: 201,
+          finishedAt: 202,
+          status: "completed",
+          summaryJson: null,
+          createdAt: 202,
+        },
+        items: [
+          {
+            item: {
+              id: "eod-item-fail",
+              runId: "eod-run-fail",
+              ordinal: 1,
+              title: "Should rollback",
+              decision: "candidate_only",
+              confidence: 0.5,
+              contradictionFlag: 0,
+              expectedValue: null,
+              applyStatus: "not_applied",
+              applyError: null,
+              metadataJson: null,
+              createdAt: 203,
+            },
+            evidence: [
+              {
+                id: "duplicate-evidence-id",
+                runId: "eod-run-fail",
+                itemId: "eod-item-fail",
+                ordinal: 1,
+                signalGroup: null,
+                sourceKind: "command_audit",
+                sourceId: "cmd-a",
+                occurredAt: 110,
+                excerpt: null,
+                contradictionFlag: 0,
+                metadataJson: null,
+                createdAt: 203,
+              },
+              {
+                id: "duplicate-evidence-id",
+                runId: "eod-run-fail",
+                itemId: "eod-item-fail",
+                ordinal: 2,
+                signalGroup: null,
+                sourceKind: "command_audit",
+                sourceId: "cmd-b",
+                occurredAt: 111,
+                excerpt: null,
+                contradictionFlag: 0,
+                metadataJson: null,
+                createdAt: 204,
+              },
+            ],
+            actions: [],
+          },
+        ],
+      })
+    }).toThrowError()
+
+    // Assert
+    const runCount = db.prepare("SELECT COUNT(1) as count FROM eod_learning_runs").get() as {
+      count: number
+    }
+    expect(runCount.count).toBe(0)
+    expect(repository.listRecentRuns()).toHaveLength(0)
+
+    db.close()
+  })
+
+  it("rejects EOD artifacts when nested references point to a different run/item", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createEodLearningRepository(db)
+
+    // Act
+    expect(() => {
+      repository.insertRunWithArtifacts({
+        run: {
+          id: "eod-run-link-1",
+          profileId: null,
+          lane: "scheduled",
+          windowStartedAt: 1,
+          windowEndedAt: 2,
+          startedAt: 3,
+          finishedAt: 4,
+          status: "completed",
+          summaryJson: null,
+          createdAt: 4,
+        },
+        items: [
+          {
+            item: {
+              id: "eod-item-link-1",
+              runId: "eod-run-link-1",
+              ordinal: 1,
+              title: "item",
+              decision: "candidate_only",
+              confidence: 0.7,
+              contradictionFlag: 0,
+              expectedValue: null,
+              applyStatus: "not_applied",
+              applyError: null,
+              metadataJson: null,
+              createdAt: 4,
+            },
+            evidence: [
+              {
+                id: "eod-ev-link-1",
+                runId: "different-run",
+                itemId: "eod-item-link-1",
+                ordinal: 1,
+                signalGroup: null,
+                sourceKind: "job_run",
+                sourceId: "run-1",
+                occurredAt: 2,
+                excerpt: null,
+                contradictionFlag: 0,
+                metadataJson: null,
+                createdAt: 4,
+              },
+            ],
+            actions: [],
+          },
+        ],
+      })
+    }).toThrow("EOD evidence linkage mismatch")
+
+    // Assert
+    expect(repository.listRecentRuns()).toHaveLength(0)
+
+    db.close()
+  })
+
+  it("lists EOD evidence references for a specific 24h window", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const repository = createEodLearningRepository(db)
+
+    repository.insertRunWithArtifacts({
+      run: {
+        id: "eod-run-window",
+        profileId: null,
+        lane: "scheduled",
+        windowStartedAt: 1_000,
+        windowEndedAt: 2_000,
+        startedAt: 2_001,
+        finishedAt: 2_050,
+        status: "completed",
+        summaryJson: null,
+        createdAt: 2_050,
+      },
+      items: [
+        {
+          item: {
+            id: "eod-item-window",
+            runId: "eod-run-window",
+            ordinal: 1,
+            title: "Window item",
+            decision: "candidate_only",
+            confidence: 0.7,
+            contradictionFlag: 0,
+            expectedValue: 0.4,
+            applyStatus: "not_applied",
+            applyError: null,
+            metadataJson: null,
+            createdAt: 2_010,
+          },
+          evidence: [
+            {
+              id: "window-ev-in-1",
+              runId: "eod-run-window",
+              itemId: "eod-item-window",
+              ordinal: 1,
+              signalGroup: "jobs",
+              sourceKind: "job_run",
+              sourceId: "run-1",
+              occurredAt: 1_250,
+              excerpt: null,
+              contradictionFlag: 0,
+              metadataJson: null,
+              createdAt: 2_011,
+            },
+            {
+              id: "window-ev-in-2",
+              runId: "eod-run-window",
+              itemId: "eod-item-window",
+              ordinal: 2,
+              signalGroup: "jobs",
+              sourceKind: "job_run",
+              sourceId: "run-2",
+              occurredAt: 1_350,
+              excerpt: null,
+              contradictionFlag: 0,
+              metadataJson: null,
+              createdAt: 2_012,
+            },
+            {
+              id: "window-ev-out",
+              runId: "eod-run-window",
+              itemId: "eod-item-window",
+              ordinal: 3,
+              signalGroup: "jobs",
+              sourceKind: "job_run",
+              sourceId: "run-3",
+              occurredAt: 2_500,
+              excerpt: null,
+              contradictionFlag: 0,
+              metadataJson: null,
+              createdAt: 2_013,
+            },
+          ],
+          actions: [],
+        },
+      ],
+    })
+
+    // Act
+    const refs = repository.listWindowEvidenceReferences(1_200, 2_000, 10)
+
+    // Assert
+    expect(refs.map((entry) => entry.evidenceId)).toEqual(["window-ev-in-2", "window-ev-in-1"])
+    expect(refs[0]?.itemDecision).toBe("candidate_only")
 
     db.close()
   })

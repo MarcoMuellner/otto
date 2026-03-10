@@ -338,7 +338,82 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
     ],
   },
   {
-    id: "020_user_profile_watchdog_alert_controls",
+    id: "020_eod_learning_persistence",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS eod_learning_runs (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT,
+        lane TEXT NOT NULL,
+        window_started_at INTEGER NOT NULL,
+        window_ended_at INTEGER NOT NULL,
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER,
+        status TEXT NOT NULL,
+        summary_json TEXT,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_eod_learning_runs_recent
+       ON eod_learning_runs (created_at DESC, id DESC)`,
+      `CREATE TABLE IF NOT EXISTS eod_learning_items (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        contradiction_flag INTEGER NOT NULL,
+        expected_value REAL,
+        apply_status TEXT NOT NULL,
+        apply_error TEXT,
+        metadata_json TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (run_id) REFERENCES eod_learning_runs(id) ON DELETE CASCADE
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_eod_learning_items_run_item
+       ON eod_learning_items (run_id, id)`,
+      `CREATE INDEX IF NOT EXISTS idx_eod_learning_items_run_order
+       ON eod_learning_items (run_id, ordinal ASC, created_at ASC, id ASC)`,
+      `CREATE TABLE IF NOT EXISTS eod_learning_evidence (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        signal_group TEXT,
+        source_kind TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        occurred_at INTEGER,
+        excerpt TEXT,
+        contradiction_flag INTEGER NOT NULL DEFAULT 0,
+        metadata_json TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (run_id) REFERENCES eod_learning_runs(id) ON DELETE CASCADE,
+        FOREIGN KEY (run_id, item_id) REFERENCES eod_learning_items(run_id, id) ON DELETE CASCADE
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_eod_learning_evidence_item_order
+       ON eod_learning_evidence (item_id, ordinal ASC, created_at ASC, id ASC)`,
+      `CREATE INDEX IF NOT EXISTS idx_eod_learning_evidence_window
+       ON eod_learning_evidence (occurred_at DESC, id DESC)`,
+      `CREATE TABLE IF NOT EXISTS eod_learning_actions (
+        id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL,
+        action_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        expected_value REAL,
+        detail TEXT,
+        error_message TEXT,
+        metadata_json TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (run_id) REFERENCES eod_learning_runs(id) ON DELETE CASCADE,
+        FOREIGN KEY (run_id, item_id) REFERENCES eod_learning_items(run_id, id) ON DELETE CASCADE
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_eod_learning_actions_item_order
+       ON eod_learning_actions (item_id, ordinal ASC, created_at ASC, id ASC)`,
+    ],
+  },
+  {
+    id: "021_user_profile_watchdog_alert_controls",
     statements: [
       `ALTER TABLE user_profile ADD COLUMN watchdog_alerts_enabled INTEGER`,
       `ALTER TABLE user_profile ADD COLUMN watchdog_mute_until INTEGER`,
