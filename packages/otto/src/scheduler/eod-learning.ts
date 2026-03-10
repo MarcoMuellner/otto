@@ -5,6 +5,7 @@ import { isValidIanaTimezone } from "./notification-policy.js"
 
 export const EOD_LEARNING_TASK_ID = "system-daily-eod-learning"
 export const EOD_LEARNING_TASK_TYPE = "eod_learning_daily"
+export const EOD_LEARNING_PROFILE_ID = "eod-learning"
 export const EOD_LEARNING_DEFAULT_CADENCE_MINUTES = 24 * 60
 export const EOD_LEARNING_DEFAULT_TIMEZONE = "Europe/Vienna"
 
@@ -27,6 +28,7 @@ type EnsureEodLearningTaskInput = z.input<typeof ensureEodLearningTaskInputSchem
 type EodLearningJobsRepository = {
   getById: (jobId: string) => JobRecord | null
   createTask: (record: JobRecord) => void
+  setProfile?: (jobId: string, profileId: string | null, updatedAt?: number) => void
 }
 
 const eodLearningTaskPayloadSchema = z
@@ -137,6 +139,10 @@ export const ensureEodLearningTask = (
   const nextRunAt = resolveNextLocalMidnightTimestamp(timezone, nowTimestamp)
 
   if (existing) {
+    if (existing.profileId !== EOD_LEARNING_PROFILE_ID && jobsRepository.setProfile) {
+      jobsRepository.setProfile(EOD_LEARNING_TASK_ID, EOD_LEARNING_PROFILE_ID, nowTimestamp)
+    }
+
     const persistedTimezone = resolvePersistedEodLearningTimezone(existing.payload)
     const effectiveTimezone = persistedTimezone ?? timezone
 
@@ -158,7 +164,7 @@ export const ensureEodLearningTask = (
     type: EOD_LEARNING_TASK_TYPE,
     status: "idle",
     scheduleType: "recurring",
-    profileId: null,
+    profileId: EOD_LEARNING_PROFILE_ID,
     modelRef: null,
     runAt: nextRunAt,
     cadenceMinutes: parsedInput.cadenceMinutes,

@@ -7,6 +7,9 @@ description: Manage task profiles, task state, audit visibility, and immediate t
 Task commands operate on Otto state in `~/.otto/data/otto-state.db` and task
 profile files in `~/.otto/task-config/profiles`.
 
+Built-in profiles include `general-reminder`, `email-triage`, and `eod-learning`
+for nightly End-of-Day learning runs.
+
 ## Profiles
 
 - `ottoctl task profiles list`

@@ -22,6 +22,7 @@ import type {
 import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
+import { EOD_LEARNING_PROFILE_ID, EOD_LEARNING_TASK_ID } from "./eod-learning.js"
 import { resolveScheduleTransition } from "./schedule.js"
 import {
   buildEffectiveTaskExecutionConfig,
@@ -260,6 +261,14 @@ const resolveTools = (value: unknown): Record<string, boolean> | undefined => {
   }
 
   return Object.fromEntries(toolEntries)
+}
+
+const hasErrnoCode = (error: unknown, code: string): boolean => {
+  if (typeof error !== "object" || error === null) {
+    return false
+  }
+
+  return (error as { code?: unknown }).code === code
 }
 
 const serializePromptProvenance = (provenance: PromptProvenance | null): string | null => {
@@ -1138,9 +1147,28 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
             result = toFailureResult("invalid_task_payload", payloadParsed.error)
           } else {
             const baseConfig = await loadTaskRuntimeBaseConfig(dependencies.ottoHome)
-            const profile = job.profileId
-              ? await loadTaskProfile(dependencies.ottoHome, job.profileId)
-              : undefined
+            let profile = undefined
+            if (job.profileId) {
+              try {
+                profile = await loadTaskProfile(dependencies.ottoHome, job.profileId)
+              } catch (error) {
+                if (
+                  job.id === EOD_LEARNING_TASK_ID &&
+                  job.profileId === EOD_LEARNING_PROFILE_ID &&
+                  hasErrnoCode(error, "ENOENT")
+                ) {
+                  dependencies.logger.warn(
+                    {
+                      jobId: job.id,
+                      profileId: job.profileId,
+                    },
+                    "EOD profile config is missing; falling back to base scheduled task config. Run 'otto setup' to refresh workspace assets."
+                  )
+                } else {
+                  throw error
+                }
+              }
+            }
             const effectiveConfig = buildEffectiveTaskExecutionConfig(
               baseConfig,
               "scheduled",
