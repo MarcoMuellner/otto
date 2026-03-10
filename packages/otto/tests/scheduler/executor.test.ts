@@ -14,6 +14,11 @@ import {
   openPersistenceDatabase,
 } from "../../src/persistence/index.js"
 import { createNonInteractiveContextCaptureService } from "../../src/runtime/non-interactive-context-capture.js"
+import {
+  EOD_LEARNING_PROFILE_ID,
+  EOD_LEARNING_TASK_ID,
+  EOD_LEARNING_TASK_TYPE,
+} from "../../src/scheduler/eod-learning.js"
 import { createTaskExecutionEngine } from "../../src/scheduler/executor.js"
 
 const TEMP_PREFIX = path.join(tmpdir(), "otto-scheduler-executor-")
@@ -439,6 +444,95 @@ describe("task execution engine", () => {
       expect.objectContaining({
         systemPrompt: expect.stringContaining("## Task Profile\nUser general reminder profile"),
       })
+    )
+
+    db.close()
+  })
+
+  it("falls back to base scheduled config when EOD profile file is missing", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
+
+    jobsRepository.createTask({
+      id: EOD_LEARNING_TASK_ID,
+      type: EOD_LEARNING_TASK_TYPE,
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: EOD_LEARNING_PROFILE_ID,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 24 * 60,
+      payload: JSON.stringify({ timezone: "Europe/Vienna" }),
+      lastRunAt: null,
+      nextRunAt: 1_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const claimed = jobsRepository.claimDue(1_000, 10, "lock-eod-1", 60_000, 1_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due task claim")
+    }
+
+    const promptSession = vi.fn(async () =>
+      JSON.stringify({
+        status: "success",
+        summary: "EOD handled",
+        errors: [],
+      })
+    )
+
+    const logger = createLoggerStub()
+    const engine = createTaskExecutionEngine({
+      logger,
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-eod-1",
+        promptSession,
+      },
+      defaultWatchdogChatId: null,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => 2_000,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const runs = jobsRepository.listRunsByJobId(EOD_LEARNING_TASK_ID)
+    expect(runs[0]?.status).toBe("success")
+    expect(promptSession).toHaveBeenCalledWith(
+      "session-eod-1",
+      expect.any(String),
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining("## Surface\nScheduled surface"),
+      })
+    )
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: EOD_LEARNING_TASK_ID,
+        profileId: EOD_LEARNING_PROFILE_ID,
+      }),
+      expect.stringContaining("falling back to base scheduled task config")
     )
 
     db.close()

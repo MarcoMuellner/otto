@@ -5,7 +5,7 @@ import path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { createJobsRepository, openPersistenceDatabase } from "../../src/persistence/index.js"
-import { EOD_LEARNING_TASK_ID } from "../../src/scheduler/eod-learning.js"
+import { EOD_LEARNING_PROFILE_ID, EOD_LEARNING_TASK_ID } from "../../src/scheduler/eod-learning.js"
 import { WATCHDOG_TASK_ID } from "../../src/scheduler/watchdog.js"
 import { ensureSystemBootstrapTasks } from "../../src/runtime/serve.js"
 
@@ -41,6 +41,7 @@ describe("serve bootstrap task wiring", () => {
     // Assert
     expect(jobsRepository.getById(WATCHDOG_TASK_ID)).not.toBeNull()
     expect(jobsRepository.getById(EOD_LEARNING_TASK_ID)).not.toBeNull()
+    expect(jobsRepository.getById(EOD_LEARNING_TASK_ID)?.profileId).toBe(EOD_LEARNING_PROFILE_ID)
 
     expect(logger.info).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "id": "eod-learning",
+  "description": "Nightly EOD learning profile with strict least-privilege automation tools.",
+  "laneOverrides": {
+    "scheduled": {
+      "opencode": {
+        "agent": {
+          "assistant": {
+            "tools": {
+              "skill": true,
+              "create_task": true,
+              "update_task": true,
+              "delete_task": false,
+              "list_tasks": true,
+              "check_task_failures": true,
+              "queue_telegram_message": true,
+              "queue_telegram_file": false,
+              "report_background_milestone": false,
+              "get_notification_policy": false,
+              "set_notification_policy": false,
+              "list_task_audit": true,
+              "get_journal_config": true,
+              "set_journal_tags": true,
+              "memory_list": true,
+              "memory_set": true,
+              "memory_replace": true
+            },
+            "prompt": "You are Otto in scheduled EOD learning mode. Execute only the assigned due task. Use only the available tools to aggregate evidence, apply qualified memory/journal updates, schedule reversible follow-up tasks, and queue a concise Telegram digest. Return strict JSON with exactly these keys: status, summary, errors. Never ask clarifying questions. Never output markdown."
+          }
+        },
+        "permission": {
+          "skill": {
+            "*": "allow"
+          }
+        }
+      }
+    }
+  }
+}
