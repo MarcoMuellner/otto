@@ -250,6 +250,88 @@ export type InteractiveContextEventRecord = {
   updatedAt: number
 }
 
+export type EodLearningRunRecord = {
+  id: string
+  profileId: string | null
+  lane: string
+  windowStartedAt: number
+  windowEndedAt: number
+  startedAt: number
+  finishedAt: number | null
+  status: string
+  summaryJson: string | null
+  createdAt: number
+}
+
+export type EodLearningItemRecord = {
+  id: string
+  runId: string
+  ordinal: number
+  title: string
+  decision: string
+  confidence: number
+  contradictionFlag: number
+  expectedValue: number | null
+  applyStatus: string
+  applyError: string | null
+  metadataJson: string | null
+  createdAt: number
+}
+
+export type EodLearningEvidenceRecord = {
+  id: string
+  runId: string
+  itemId: string
+  ordinal: number
+  signalGroup: string | null
+  sourceKind: string
+  sourceId: string
+  occurredAt: number | null
+  excerpt: string | null
+  contradictionFlag: number
+  metadataJson: string | null
+  createdAt: number
+}
+
+export type EodLearningActionRecord = {
+  id: string
+  runId: string
+  itemId: string
+  ordinal: number
+  actionType: string
+  status: string
+  expectedValue: number | null
+  detail: string | null
+  errorMessage: string | null
+  metadataJson: string | null
+  createdAt: number
+}
+
+export type EodLearningItemArtifacts = {
+  item: EodLearningItemRecord
+  evidence: EodLearningEvidenceRecord[]
+  actions: EodLearningActionRecord[]
+}
+
+export type EodLearningRunArtifacts = {
+  run: EodLearningRunRecord
+  items: EodLearningItemArtifacts[]
+}
+
+export type EodLearningEvidenceReferenceRecord = {
+  evidenceId: string
+  runId: string
+  itemId: string
+  itemDecision: string
+  itemConfidence: number
+  itemContradictionFlag: number
+  sourceKind: string
+  sourceId: string
+  signalGroup: string | null
+  occurredAt: number
+  excerpt: string | null
+}
+
 const isUniqueConstraintForColumn = (error: unknown, columnName: string): boolean => {
   if (!(error instanceof Error)) {
     return false
@@ -1776,6 +1858,270 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
     },
     setLastDigestAt: (lastDigestAt: number, updatedAt = Date.now()): void => {
       setLastDigestAtStatement.run(lastDigestAt, updatedAt)
+    },
+  }
+}
+
+/**
+ * Persists EOD learning artifacts in a normalized schema so nightly decisions remain
+ * fully auditable and queryable by runtime services.
+ *
+ * @param database Open SQLite database instance.
+ * @returns Repository for EOD run/item/evidence/action writes and reads.
+ */
+export const createEodLearningRepository = (database: DatabaseSync) => {
+  const insertRunStatement = database.prepare(
+    `INSERT INTO eod_learning_runs
+      (id, profile_id, lane, window_started_at, window_ended_at, started_at, finished_at, status, summary_json, created_at)
+     VALUES
+      (@id, @profileId, @lane, @windowStartedAt, @windowEndedAt, @startedAt, @finishedAt, @status, @summaryJson, @createdAt)`
+  )
+
+  const insertItemStatement = database.prepare(
+    `INSERT INTO eod_learning_items
+      (id, run_id, ordinal, title, decision, confidence, contradiction_flag, expected_value, apply_status, apply_error, metadata_json, created_at)
+     VALUES
+      (@id, @runId, @ordinal, @title, @decision, @confidence, @contradictionFlag, @expectedValue, @applyStatus, @applyError, @metadataJson, @createdAt)`
+  )
+
+  const insertEvidenceStatement = database.prepare(
+    `INSERT INTO eod_learning_evidence
+      (id, run_id, item_id, ordinal, signal_group, source_kind, source_id, occurred_at, excerpt, contradiction_flag, metadata_json, created_at)
+     VALUES
+      (@id, @runId, @itemId, @ordinal, @signalGroup, @sourceKind, @sourceId, @occurredAt, @excerpt, @contradictionFlag, @metadataJson, @createdAt)`
+  )
+
+  const insertActionStatement = database.prepare(
+    `INSERT INTO eod_learning_actions
+      (id, run_id, item_id, ordinal, action_type, status, expected_value, detail, error_message, metadata_json, created_at)
+     VALUES
+      (@id, @runId, @itemId, @ordinal, @actionType, @status, @expectedValue, @detail, @errorMessage, @metadataJson, @createdAt)`
+  )
+
+  const listRecentRunsStatement = database.prepare(
+    `SELECT
+      id,
+      profile_id as profileId,
+      lane,
+      window_started_at as windowStartedAt,
+      window_ended_at as windowEndedAt,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      summary_json as summaryJson,
+      created_at as createdAt
+     FROM eod_learning_runs
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
+  )
+
+  const getRunByIdStatement = database.prepare(
+    `SELECT
+      id,
+      profile_id as profileId,
+      lane,
+      window_started_at as windowStartedAt,
+      window_ended_at as windowEndedAt,
+      started_at as startedAt,
+      finished_at as finishedAt,
+      status,
+      summary_json as summaryJson,
+      created_at as createdAt
+     FROM eod_learning_runs
+     WHERE id = ?`
+  )
+
+  const listItemsByRunIdStatement = database.prepare(
+    `SELECT
+      id,
+      run_id as runId,
+      ordinal,
+      title,
+      decision,
+      confidence,
+      contradiction_flag as contradictionFlag,
+      expected_value as expectedValue,
+      apply_status as applyStatus,
+      apply_error as applyError,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM eod_learning_items
+     WHERE run_id = ?
+     ORDER BY ordinal ASC, created_at ASC, id ASC`
+  )
+
+  const listEvidenceByRunIdStatement = database.prepare(
+    `SELECT
+      id,
+      run_id as runId,
+      item_id as itemId,
+      ordinal,
+      signal_group as signalGroup,
+      source_kind as sourceKind,
+      source_id as sourceId,
+      occurred_at as occurredAt,
+      excerpt,
+      contradiction_flag as contradictionFlag,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM eod_learning_evidence
+     WHERE run_id = ?
+     ORDER BY item_id ASC, ordinal ASC, created_at ASC, id ASC`
+  )
+
+  const listActionsByRunIdStatement = database.prepare(
+    `SELECT
+      id,
+      run_id as runId,
+      item_id as itemId,
+      ordinal,
+      action_type as actionType,
+      status,
+      expected_value as expectedValue,
+      detail,
+      error_message as errorMessage,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM eod_learning_actions
+     WHERE run_id = ?
+     ORDER BY item_id ASC, ordinal ASC, created_at ASC, id ASC`
+  )
+
+  const listWindowEvidenceReferencesStatement = database.prepare(
+    `SELECT
+      e.id as evidenceId,
+      e.run_id as runId,
+      e.item_id as itemId,
+      i.decision as itemDecision,
+      i.confidence as itemConfidence,
+      i.contradiction_flag as itemContradictionFlag,
+      e.source_kind as sourceKind,
+      e.source_id as sourceId,
+     e.signal_group as signalGroup,
+      e.occurred_at as occurredAt,
+      e.excerpt as excerpt
+     FROM eod_learning_evidence e
+     JOIN eod_learning_items i
+       ON i.id = e.item_id
+      AND i.run_id = e.run_id
+     WHERE e.occurred_at IS NOT NULL
+       AND e.occurred_at >= ?
+       AND e.occurred_at < ?
+     ORDER BY e.occurred_at DESC, e.id DESC
+     LIMIT ?`
+  )
+
+  const beginImmediate = (): void => {
+    database.exec("BEGIN IMMEDIATE")
+  }
+
+  const commit = (): void => {
+    database.exec("COMMIT")
+  }
+
+  const rollback = (): void => {
+    database.exec("ROLLBACK")
+  }
+
+  return {
+    insertRunWithArtifacts: (record: EodLearningRunArtifacts): void => {
+      beginImmediate()
+
+      try {
+        insertRunStatement.run(record.run)
+
+        for (const itemArtifacts of record.items) {
+          if (itemArtifacts.item.runId !== record.run.id) {
+            throw new Error(
+              `EOD item run mismatch: item ${itemArtifacts.item.id} belongs to ${itemArtifacts.item.runId} but run is ${record.run.id}`
+            )
+          }
+
+          insertItemStatement.run(itemArtifacts.item)
+
+          for (const evidence of itemArtifacts.evidence) {
+            if (evidence.runId !== record.run.id || evidence.itemId !== itemArtifacts.item.id) {
+              throw new Error(
+                `EOD evidence linkage mismatch: evidence ${evidence.id} must reference run ${record.run.id} and item ${itemArtifacts.item.id}`
+              )
+            }
+
+            insertEvidenceStatement.run(evidence)
+          }
+
+          for (const action of itemArtifacts.actions) {
+            if (action.runId !== record.run.id || action.itemId !== itemArtifacts.item.id) {
+              throw new Error(
+                `EOD action linkage mismatch: action ${action.id} must reference run ${record.run.id} and item ${itemArtifacts.item.id}`
+              )
+            }
+
+            insertActionStatement.run(action)
+          }
+        }
+
+        commit()
+      } catch (error) {
+        rollback()
+        throw error
+      }
+    },
+    listRecentRuns: (limit = 20): EodLearningRunRecord[] => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 20
+      return listRecentRunsStatement.all(normalizedLimit) as EodLearningRunRecord[]
+    },
+    getRunDetails: (runId: string): EodLearningRunArtifacts | null => {
+      const run = getRunByIdStatement.get(runId) as EodLearningRunRecord | undefined
+      if (!run) {
+        return null
+      }
+
+      const items = listItemsByRunIdStatement.all(runId) as EodLearningItemRecord[]
+      const evidenceRows = listEvidenceByRunIdStatement.all(runId) as EodLearningEvidenceRecord[]
+      const actionRows = listActionsByRunIdStatement.all(runId) as EodLearningActionRecord[]
+
+      const evidenceByItemId = new Map<string, EodLearningEvidenceRecord[]>()
+      for (const evidence of evidenceRows) {
+        const existing = evidenceByItemId.get(evidence.itemId)
+        if (existing) {
+          existing.push(evidence)
+          continue
+        }
+
+        evidenceByItemId.set(evidence.itemId, [evidence])
+      }
+
+      const actionsByItemId = new Map<string, EodLearningActionRecord[]>()
+      for (const action of actionRows) {
+        const existing = actionsByItemId.get(action.itemId)
+        if (existing) {
+          existing.push(action)
+          continue
+        }
+
+        actionsByItemId.set(action.itemId, [action])
+      }
+
+      return {
+        run,
+        items: items.map((item) => ({
+          item,
+          evidence: evidenceByItemId.get(item.id) ?? [],
+          actions: actionsByItemId.get(item.id) ?? [],
+        })),
+      }
+    },
+    listWindowEvidenceReferences: (
+      windowStart: number,
+      windowEnd: number,
+      limit = 200
+    ): EodLearningEvidenceReferenceRecord[] => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 200
+      return listWindowEvidenceReferencesStatement.all(
+        windowStart,
+        windowEnd,
+        normalizedLimit
+      ) as EodLearningEvidenceReferenceRecord[]
     },
   }
 }

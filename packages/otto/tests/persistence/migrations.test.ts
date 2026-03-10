@@ -57,6 +57,10 @@ describe("openPersistenceDatabase", () => {
     expect(tableNames).toEqual(
       expect.arrayContaining([
         "approvals",
+        "eod_learning_actions",
+        "eod_learning_evidence",
+        "eod_learning_items",
+        "eod_learning_runs",
         "interactive_context_events",
         "jobs",
         "job_run_sessions",
@@ -155,5 +159,48 @@ describe("openPersistenceDatabase", () => {
         "idx_interactive_context_events_session_recent",
       ])
     )
+  })
+
+  it("adds EOD learning tables with recent and window lookup indexes", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const dbPath = path.join(tempRoot, "state.db")
+
+    // Act
+    const db = openPersistenceDatabase({ dbPath })
+    const runColumns = db.prepare("PRAGMA table_info(eod_learning_runs)").all() as Array<{
+      name: string
+    }>
+    const itemColumns = db.prepare("PRAGMA table_info(eod_learning_items)").all() as Array<{
+      name: string
+    }>
+    const itemIndexes = db.prepare("PRAGMA index_list(eod_learning_items)").all() as Array<{
+      name: string
+    }>
+    const runIndexes = db.prepare("PRAGMA index_list(eod_learning_runs)").all() as Array<{
+      name: string
+    }>
+    const evidenceIndexes = db.prepare("PRAGMA index_list(eod_learning_evidence)").all() as Array<{
+      name: string
+    }>
+    db.close()
+
+    // Assert
+    expect(runColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["window_started_at", "window_ended_at", "status"])
+    )
+    expect(itemColumns.map((column) => column.name)).toEqual(
+      expect.arrayContaining([
+        "decision",
+        "confidence",
+        "contradiction_flag",
+        "expected_value",
+        "apply_status",
+      ])
+    )
+    expect(itemIndexes.map((index) => index.name)).toContain("idx_eod_learning_items_run_item")
+    expect(runIndexes.map((index) => index.name)).toContain("idx_eod_learning_runs_recent")
+    expect(evidenceIndexes.map((index) => index.name)).toContain("idx_eod_learning_evidence_window")
   })
 })
