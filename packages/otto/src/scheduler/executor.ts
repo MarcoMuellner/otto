@@ -14,15 +14,32 @@ import {
   type PromptRouteMedia,
 } from "../prompt-management/index.js"
 import type {
+  CommandAuditRecord,
+  EodLearningRunArtifacts,
+  InteractiveContextEventRecord,
   JobRecord,
   JobRunStatus,
   JobTerminalState,
+  TaskAuditRecord,
   UserProfileRecord,
 } from "../persistence/repositories.js"
 import type { NonInteractiveContextCaptureService } from "../runtime/non-interactive-context-capture.js"
 import type { OpencodeSessionGateway } from "../telegram-worker/opencode.js"
 import { enqueueTelegramMessage } from "../telegram-worker/outbound-enqueue.js"
-import { EOD_LEARNING_PROFILE_ID, EOD_LEARNING_TASK_ID } from "./eod-learning.js"
+import {
+  EOD_LEARNING_PROFILE_ID,
+  EOD_LEARNING_TASK_ID,
+  EOD_LEARNING_TASK_TYPE,
+} from "./eod-learning.js"
+import { evaluateEodLearningDecisions } from "./eod-learning/decision-engine.js"
+import { aggregateEodEvidenceBundle } from "./eod-learning/evidence-aggregation.js"
+import {
+  buildEodLearningApplyPrompt,
+  buildEodLearningCandidatePrompt,
+  eodLearningApplyOutputSchema,
+  eodLearningCandidateOutputSchema,
+  type EodLearningApplyOutput,
+} from "./eod-learning/prompt.js"
 import { resolveScheduleTransition } from "./schedule.js"
 import {
   buildEffectiveTaskExecutionConfig,
@@ -152,6 +169,20 @@ type TaskExecutionEngineDependencies = {
       errorMessage: string | null
       resultJson: string | null
     }>
+    listRunsByWindow?: (
+      windowStart: number,
+      windowEnd: number
+    ) => Array<{
+      runId: string
+      jobId: string
+      jobType: string
+      startedAt: number
+      finishedAt: number | null
+      status: JobRunStatus
+      errorCode: string | null
+      errorMessage: string | null
+      resultJson: string | null
+    }>
   }
   jobRunSessionsRepository: {
     insert: (record: {
@@ -196,6 +227,24 @@ type TaskExecutionEngineDependencies = {
   userProfileRepository: {
     get: () => UserProfileRecord | null
     setLastDigestAt: (lastDigestAt: number, updatedAt?: number) => void
+  }
+  taskAuditRepository?: {
+    listRecent: (limit?: number) => TaskAuditRecord[]
+    listByCreatedWindow?: (windowStart: number, windowEnd: number) => TaskAuditRecord[]
+  }
+  commandAuditRepository?: {
+    listRecent: (limit?: number) => CommandAuditRecord[]
+    listByCreatedWindow?: (windowStart: number, windowEnd: number) => CommandAuditRecord[]
+  }
+  interactiveContextEventsRepository?: {
+    listByCreatedWindow: (
+      windowStart: number,
+      windowEnd: number,
+      limit?: number
+    ) => InteractiveContextEventRecord[]
+  }
+  eodLearningRepository?: {
+    insertRunWithArtifacts: (record: EodLearningRunArtifacts) => void
   }
   nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
   now?: () => number
@@ -599,6 +648,516 @@ const parseWatchdogAlertMessage = (assistantText: string): WatchdogAlertMessageP
         parseErrorMessage: "Watchdog alert output must be valid JSON",
       }
     }
+  }
+}
+
+const parseJsonObject = (assistantText: string): unknown => {
+  const trimmed = assistantText.trim()
+  if (trimmed.length === 0) {
+    throw new Error("empty_output")
+  }
+
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    const fencedMatch = trimmed.match(/```json\s*([\s\S]*?)\s*```/i)
+    if (!fencedMatch?.[1]) {
+      throw new Error("invalid_json")
+    }
+
+    return JSON.parse(fencedMatch[1])
+  }
+}
+
+const parseEodCandidateOutput = (assistantText: string) => {
+  const parsed = parseJsonObject(assistantText)
+  return eodLearningCandidateOutputSchema.parse(parsed)
+}
+
+const parseEodApplyOutput = (assistantText: string): EodLearningApplyOutput => {
+  const parsed = parseJsonObject(assistantText)
+  return eodLearningApplyOutputSchema.parse(parsed)
+}
+
+const limitTools = (
+  tools: Record<string, boolean> | undefined,
+  allowedToolKeys: string[]
+): Record<string, boolean> | undefined => {
+  if (!tools) {
+    return undefined
+  }
+
+  const allowed = new Set(allowedToolKeys)
+  const entries = Object.entries(tools)
+    .filter(([toolName, enabled]) => allowed.has(toolName) && enabled)
+    .map(([toolName]) => [toolName, true] as const)
+
+  if (entries.length === 0) {
+    return {}
+  }
+
+  return Object.fromEntries(entries)
+}
+
+const toEodPolicyApplyStatus = (
+  decision: string
+): "applied" | "candidate_only" | "skipped" | "failed" => {
+  if (
+    decision === "auto_apply_memory_journal" ||
+    decision === "auto_apply_memory_journal_high_confidence"
+  ) {
+    return "applied"
+  }
+
+  if (decision === "candidate_only_low_confidence") {
+    return "candidate_only"
+  }
+
+  return "skipped"
+}
+
+const buildEodRunArtifacts = (input: {
+  runId: string
+  profileId: string | null
+  windowStartedAt: number
+  windowEndedAt: number
+  startedAt: number
+  finishedAt: number
+  status: string
+  summary: Record<string, unknown>
+  items: Array<{
+    id: string
+    ordinal: number
+    title: string
+    decision: string
+    confidence: number
+    contradictionFlag: number
+    expectedValue: number | null
+    applyStatus: string
+    applyError: string | null
+    metadataJson: string | null
+    evidenceRows: Array<{
+      id: string
+      ordinal: number
+      signalGroup: string | null
+      sourceKind: string
+      sourceId: string
+      occurredAt: number | null
+      excerpt: string | null
+      contradictionFlag: number
+      metadataJson: string | null
+    }>
+    actionRows: Array<{
+      id: string
+      ordinal: number
+      actionType: string
+      status: string
+      expectedValue: number | null
+      detail: string | null
+      errorMessage: string | null
+      metadataJson: string | null
+    }>
+  }>
+}): EodLearningRunArtifacts => {
+  return {
+    run: {
+      id: input.runId,
+      profileId: input.profileId,
+      lane: "scheduled",
+      windowStartedAt: input.windowStartedAt,
+      windowEndedAt: input.windowEndedAt,
+      startedAt: input.startedAt,
+      finishedAt: input.finishedAt,
+      status: input.status,
+      summaryJson: JSON.stringify(input.summary),
+      createdAt: input.startedAt,
+    },
+    items: input.items.map((item) => ({
+      item: {
+        id: item.id,
+        runId: input.runId,
+        ordinal: item.ordinal,
+        title: item.title,
+        decision: item.decision,
+        confidence: item.confidence,
+        contradictionFlag: item.contradictionFlag,
+        expectedValue: item.expectedValue,
+        applyStatus: item.applyStatus,
+        applyError: item.applyError,
+        metadataJson: item.metadataJson,
+        createdAt: input.finishedAt,
+      },
+      evidence: item.evidenceRows.map((evidence) => ({
+        id: evidence.id,
+        runId: input.runId,
+        itemId: item.id,
+        ordinal: evidence.ordinal,
+        signalGroup: evidence.signalGroup,
+        sourceKind: evidence.sourceKind,
+        sourceId: evidence.sourceId,
+        occurredAt: evidence.occurredAt,
+        excerpt: evidence.excerpt,
+        contradictionFlag: evidence.contradictionFlag,
+        metadataJson: evidence.metadataJson,
+        createdAt: input.finishedAt,
+      })),
+      actions: item.actionRows.map((action) => ({
+        id: action.id,
+        runId: input.runId,
+        itemId: item.id,
+        ordinal: action.ordinal,
+        actionType: action.actionType,
+        status: action.status,
+        expectedValue: action.expectedValue,
+        detail: action.detail,
+        errorMessage: action.errorMessage,
+        metadataJson: action.metadataJson,
+        createdAt: input.finishedAt,
+      })),
+    })),
+  }
+}
+
+const executeEodLearningTask = async (input: {
+  dependencies: TaskExecutionEngineDependencies
+  job: ClaimedJobRecord
+  runId: string
+  startedAt: number
+}): Promise<TaskExecutionResult> => {
+  const windowEndedAt = input.startedAt
+  const windowStartedAt = windowEndedAt - 24 * 60 * 60 * 1000
+
+  try {
+    const taskAudit =
+      input.dependencies.taskAuditRepository?.listByCreatedWindow?.(
+        windowStartedAt,
+        windowEndedAt
+      ) ??
+      input.dependencies.taskAuditRepository?.listRecent(500) ??
+      []
+    const commandAudit =
+      input.dependencies.commandAuditRepository?.listByCreatedWindow?.(
+        windowStartedAt,
+        windowEndedAt
+      ) ??
+      input.dependencies.commandAuditRepository?.listRecent(500) ??
+      []
+    const jobRuns =
+      input.dependencies.jobsRepository.listRunsByWindow?.(windowStartedAt, windowEndedAt) ??
+      input.dependencies.jobsRepository.listRecentRuns(windowStartedAt, 500)
+    const interactiveContextEvents =
+      input.dependencies.interactiveContextEventsRepository?.listByCreatedWindow(
+        windowStartedAt,
+        windowEndedAt
+      ) ?? []
+
+    const evidenceBundle = aggregateEodEvidenceBundle({
+      windowStartedAt,
+      windowEndedAt,
+      taskAudit,
+      commandAudit,
+      jobRuns,
+      interactiveContextEvents,
+    })
+
+    const baseConfig = await loadTaskRuntimeBaseConfig(input.dependencies.ottoHome)
+    let profile = undefined
+    if (input.job.profileId) {
+      try {
+        profile = await loadTaskProfile(input.dependencies.ottoHome, input.job.profileId)
+      } catch (error) {
+        if (
+          input.job.id === EOD_LEARNING_TASK_ID &&
+          input.job.profileId === EOD_LEARNING_PROFILE_ID &&
+          hasErrnoCode(error, "ENOENT")
+        ) {
+          input.dependencies.logger.warn(
+            {
+              jobId: input.job.id,
+              profileId: input.job.profileId,
+            },
+            "EOD profile config is missing; falling back to base scheduled task config. Run 'otto setup' to refresh workspace assets."
+          )
+        } else {
+          throw error
+        }
+      }
+    }
+
+    const effectiveConfig = buildEffectiveTaskExecutionConfig(baseConfig, "scheduled", profile)
+    const assistant = asRecord(asRecord(effectiveConfig.opencodeConfig.agent)?.assistant)
+    const fallbackSystemPrompt =
+      typeof assistant?.prompt === "string" ? assistant.prompt : undefined
+    const promptResolution = await resolveJobExecutionSystemPrompt({
+      dependencies: input.dependencies,
+      jobId: input.job.id,
+      flow: "scheduled",
+      payload: {
+        mode: "eod_learning",
+        windowStartedAt,
+        windowEndedAt,
+      },
+      profileId: input.job.profileId,
+      fallbackSystemPrompt,
+    })
+    const runPromptProvenance = promptResolution.provenance
+    input.dependencies.jobsRepository.setRunPromptProvenance?.(
+      input.runId,
+      serializePromptProvenance(runPromptProvenance)
+    )
+
+    const allTools = resolveTools(assistant?.tools)
+    const applyTools = limitTools(allTools, ["memory_set", "memory_replace", "set_journal_tags"])
+
+    const bindingKey = `scheduler:task:${input.job.id}:assistant`
+    const existingBinding = input.dependencies.sessionBindingsRepository.getByBindingKey(bindingKey)
+    const sessionId = await input.dependencies.sessionGateway.ensureSession(
+      existingBinding?.sessionId ?? null
+    )
+    if (existingBinding?.sessionId !== sessionId) {
+      input.dependencies.sessionBindingsRepository.upsert(bindingKey, sessionId, input.startedAt)
+    }
+
+    const candidateOutput = await input.dependencies.sessionGateway.promptSession(
+      sessionId,
+      buildEodLearningCandidatePrompt({
+        runId: input.runId,
+        windowStartedAt,
+        windowEndedAt,
+        evidenceBundle,
+      }),
+      {
+        systemPrompt: promptResolution.systemPrompt,
+        systemPromptProvenance: runPromptProvenance,
+        tools: {},
+        agent: "assistant",
+        modelContext: {
+          flow: "scheduledTasks",
+          jobModelRef: input.job.modelRef,
+        },
+      }
+    )
+
+    const parsedCandidates = parseEodCandidateOutput(candidateOutput)
+    const decisions = evaluateEodLearningDecisions({
+      candidates: parsedCandidates.candidates,
+      evidenceBundle,
+    })
+    const evidenceById = new Map(evidenceBundle.evidence.map((entry) => [entry.id, entry]))
+    const persistedItems: Array<{
+      id: string
+      ordinal: number
+      title: string
+      decision: string
+      confidence: number
+      contradictionFlag: number
+      expectedValue: number | null
+      applyStatus: string
+      applyError: string | null
+      metadataJson: string | null
+      evidenceRows: Array<{
+        id: string
+        ordinal: number
+        signalGroup: string | null
+        sourceKind: string
+        sourceId: string
+        occurredAt: number | null
+        excerpt: string | null
+        contradictionFlag: number
+        metadataJson: string | null
+      }>
+      actionRows: Array<{
+        id: string
+        ordinal: number
+        actionType: string
+        status: string
+        expectedValue: number | null
+        detail: string | null
+        errorMessage: string | null
+        metadataJson: string | null
+      }>
+    }> = []
+
+    for (const decision of decisions) {
+      const itemId = randomUUID()
+      const candidate = parsedCandidates.candidates[decision.ordinal]
+      const referencedEvidenceEntries = decision.referencedEvidenceIds
+        .map((evidenceId) => evidenceById.get(evidenceId))
+        .filter((entry): entry is NonNullable<typeof entry> => entry != null)
+      const evidenceRows = referencedEvidenceEntries.map((entry, index) => ({
+        id: randomUUID(),
+        ordinal: index,
+        signalGroup: entry.signalGroup,
+        sourceKind: entry.sourceKind,
+        sourceId: entry.sourceId,
+        occurredAt: entry.occurredAt,
+        excerpt: entry.excerpt,
+        contradictionFlag: decision.contradiction ? 1 : 0,
+        metadataJson: JSON.stringify({
+          evidenceId: entry.id,
+          trace: entry.trace,
+        }),
+      }))
+
+      const actionRows: Array<{
+        id: string
+        ordinal: number
+        actionType: string
+        status: string
+        expectedValue: number | null
+        detail: string | null
+        errorMessage: string | null
+        metadataJson: string | null
+      }> = []
+
+      let applyStatus = toEodPolicyApplyStatus(decision.decision)
+      let applyError: string | null = null
+
+      if (decision.applyEligible) {
+        try {
+          const applyOutput = await input.dependencies.sessionGateway.promptSession(
+            sessionId,
+            buildEodLearningApplyPrompt({
+              runId: input.runId,
+              itemId,
+              candidate,
+              evidence: referencedEvidenceEntries,
+            }),
+            {
+              systemPrompt: promptResolution.systemPrompt,
+              systemPromptProvenance: runPromptProvenance,
+              tools: applyTools,
+              agent: "assistant",
+              modelContext: {
+                flow: "scheduledTasks",
+                jobModelRef: input.job.modelRef,
+              },
+            }
+          )
+
+          const parsedApply = parseEodApplyOutput(applyOutput)
+          applyStatus = parsedApply.status === "success" ? "applied" : parsedApply.status
+          applyError = parsedApply.status === "failed" ? parsedApply.summary : null
+          const normalizedActions = parsedApply.actions.length
+            ? parsedApply.actions
+            : [
+                {
+                  actionType: "memory_journal_apply",
+                  status: parsedApply.status,
+                  detail: parsedApply.summary,
+                  errorMessage: parsedApply.status === "failed" ? parsedApply.summary : null,
+                  metadata: {},
+                },
+              ]
+
+          actionRows.push(
+            ...normalizedActions.map((action, actionIndex) => ({
+              id: randomUUID(),
+              ordinal: actionIndex,
+              actionType: action.actionType,
+              status: action.status,
+              expectedValue: candidate.expectedValue,
+              detail: action.detail,
+              errorMessage: action.errorMessage,
+              metadataJson: JSON.stringify(action.metadata),
+            }))
+          )
+        } catch (error) {
+          const err = error as Error
+          applyStatus = "failed"
+          applyError = err.message
+          actionRows.push({
+            id: randomUUID(),
+            ordinal: 0,
+            actionType: "memory_journal_apply",
+            status: "failed",
+            expectedValue: candidate.expectedValue,
+            detail: null,
+            errorMessage: err.message,
+            metadataJson: null,
+          })
+        }
+      } else {
+        actionRows.push({
+          id: randomUUID(),
+          ordinal: 0,
+          actionType: "policy_gate",
+          status: "skipped",
+          expectedValue: candidate.expectedValue,
+          detail: decision.policyReason,
+          errorMessage: null,
+          metadataJson: JSON.stringify({
+            decision: decision.decision,
+            independentSignals: decision.independentSignals,
+          }),
+        })
+      }
+
+      persistedItems.push({
+        id: itemId,
+        ordinal: decision.ordinal,
+        title: decision.title,
+        decision: decision.decision,
+        confidence: decision.confidence,
+        contradictionFlag: decision.contradiction ? 1 : 0,
+        expectedValue: decision.expectedValue,
+        applyStatus,
+        applyError,
+        metadataJson: JSON.stringify({
+          policyReason: decision.policyReason,
+          followUpEligible: decision.followUpEligible,
+          rationale: candidate.rationale,
+        }),
+        evidenceRows,
+        actionRows,
+      })
+    }
+
+    const finishedAt = input.dependencies.now ? input.dependencies.now() : Date.now()
+    input.dependencies.eodLearningRepository?.insertRunWithArtifacts(
+      buildEodRunArtifacts({
+        runId: input.runId,
+        profileId: input.job.profileId,
+        windowStartedAt,
+        windowEndedAt,
+        startedAt: input.startedAt,
+        finishedAt,
+        status: "success",
+        summary: {
+          candidateCount: parsedCandidates.candidates.length,
+          autoApplyCount: persistedItems.filter((item) => item.applyStatus === "applied").length,
+          failedApplyCount: persistedItems.filter((item) => item.applyStatus === "failed").length,
+          skippedCount: persistedItems.filter((item) => item.applyStatus === "skipped").length,
+        },
+        items: persistedItems,
+      })
+    )
+
+    return {
+      status: "success",
+      summary: `EOD processed ${parsedCandidates.candidates.length} candidates (${persistedItems.filter((item) => item.applyStatus === "applied").length} auto-applied, ${persistedItems.filter((item) => item.applyStatus === "failed").length} failed)`,
+      errors: [],
+    }
+  } catch (error) {
+    const err = error as Error
+    const finishedAt = input.dependencies.now ? input.dependencies.now() : Date.now()
+    input.dependencies.eodLearningRepository?.insertRunWithArtifacts(
+      buildEodRunArtifacts({
+        runId: input.runId,
+        profileId: input.job.profileId,
+        windowStartedAt,
+        windowEndedAt,
+        startedAt: input.startedAt,
+        finishedAt,
+        status: "failed",
+        summary: {
+          error: err.message,
+        },
+        items: [],
+      })
+    )
+
+    return toFailureResult("eod_learning_failed", err.message)
   }
 }
 
@@ -1155,6 +1714,13 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               })
             }
           }
+        } else if (job.type === EOD_LEARNING_TASK_TYPE) {
+          result = await executeEodLearningTask({
+            dependencies,
+            job,
+            runId,
+            startedAt,
+          })
         } else {
           const payloadParsed = parseTaskPayload(job.payload)
           if (payloadParsed.error) {

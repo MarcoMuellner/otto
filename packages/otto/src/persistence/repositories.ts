@@ -779,6 +779,47 @@ export const createInteractiveContextEventsRepository = (database: DatabaseSync)
      LIMIT ?`
   )
 
+  const listByCreatedWindowStatement = database.prepare(
+    `SELECT
+      id,
+      source_session_id as sourceSessionId,
+      outbound_message_id as outboundMessageId,
+      source_lane as sourceLane,
+      source_kind as sourceKind,
+      source_ref as sourceRef,
+      content,
+      delivery_status as deliveryStatus,
+      delivery_status_detail as deliveryStatusDetail,
+      error_message as errorMessage,
+      created_at as createdAt,
+      updated_at as updatedAt
+     FROM interactive_context_events
+     WHERE created_at >= ?
+       AND created_at < ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
+  )
+
+  const listByCreatedWindowUnboundedStatement = database.prepare(
+    `SELECT
+      id,
+      source_session_id as sourceSessionId,
+      outbound_message_id as outboundMessageId,
+      source_lane as sourceLane,
+      source_kind as sourceKind,
+      source_ref as sourceRef,
+      content,
+      delivery_status as deliveryStatus,
+      delivery_status_detail as deliveryStatusDetail,
+      error_message as errorMessage,
+      created_at as createdAt,
+      updated_at as updatedAt
+     FROM interactive_context_events
+     WHERE created_at >= ?
+       AND created_at < ?
+     ORDER BY created_at DESC, id DESC`
+  )
+
   const updateDeliveryStatusStatement = database.prepare(
     `UPDATE interactive_context_events
      SET delivery_status = ?,
@@ -817,6 +858,25 @@ export const createInteractiveContextEventsRepository = (database: DatabaseSync)
       const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 20
       return listRecentBySessionIdStatement.all(
         sourceSessionId,
+        normalizedLimit
+      ) as InteractiveContextEventRecord[]
+    },
+    listByCreatedWindow: (
+      windowStart: number,
+      windowEnd: number,
+      limit?: number
+    ): InteractiveContextEventRecord[] => {
+      if (limit == null) {
+        return listByCreatedWindowUnboundedStatement.all(
+          windowStart,
+          windowEnd
+        ) as InteractiveContextEventRecord[]
+      }
+
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 200
+      return listByCreatedWindowStatement.all(
+        windowStart,
+        windowEnd,
         normalizedLimit
       ) as InteractiveContextEventRecord[]
     },
@@ -1259,6 +1319,25 @@ export const createJobsRepository = (database: DatabaseSync) => {
      LIMIT ?`
   )
 
+  const listRunsByWindowStatement = database.prepare(
+    `SELECT
+      r.id as runId,
+      r.job_id as jobId,
+      j.type as jobType,
+      r.started_at as startedAt,
+      r.finished_at as finishedAt,
+       r.status,
+       r.error_code as errorCode,
+       r.error_message as errorMessage,
+       r.result_json as resultJson,
+       r.prompt_provenance_json as promptProvenanceJson
+      FROM job_runs r
+     JOIN jobs j ON j.id = r.job_id
+     WHERE r.started_at >= ?
+       AND r.started_at < ?
+     ORDER BY r.started_at DESC`
+  )
+
   const beginImmediate = (): void => {
     database.exec("BEGIN IMMEDIATE")
   }
@@ -1431,6 +1510,9 @@ export const createJobsRepository = (database: DatabaseSync) => {
     },
     listRecentRuns: (sinceTimestamp: number, limit = 200): JobRunSummaryRecord[] => {
       return listRecentRunsStatement.all(sinceTimestamp, limit) as JobRunSummaryRecord[]
+    },
+    listRunsByWindow: (windowStart: number, windowEnd: number): JobRunSummaryRecord[] => {
+      return listRunsByWindowStatement.all(windowStart, windowEnd) as JobRunSummaryRecord[]
     },
     getById: (jobId: string): JobRecord | null => {
       const row = getByIdStatement.get(jobId) as JobRecord | undefined
@@ -1648,6 +1730,23 @@ export const createTaskAuditRepository = (database: DatabaseSync) => {
      LIMIT ?`
   )
 
+  const listByCreatedWindowStatement = database.prepare(
+    `SELECT
+      id,
+      task_id as taskId,
+      action,
+      lane,
+      actor,
+      before_json as beforeJson,
+      after_json as afterJson,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM task_audit_log
+     WHERE created_at >= ?
+       AND created_at < ?
+     ORDER BY created_at DESC, id DESC`
+  )
+
   return {
     insert: (record: TaskAuditRecord): void => {
       insertStatement.run(record)
@@ -1657,6 +1756,9 @@ export const createTaskAuditRepository = (database: DatabaseSync) => {
     },
     listByTaskId: (taskId: string, limit = 50): TaskAuditRecord[] => {
       return listByTaskIdStatement.all(taskId, limit) as TaskAuditRecord[]
+    },
+    listByCreatedWindow: (windowStart: number, windowEnd: number): TaskAuditRecord[] => {
+      return listByCreatedWindowStatement.all(windowStart, windowEnd) as TaskAuditRecord[]
     },
   }
 }
@@ -1689,12 +1791,30 @@ export const createCommandAuditRepository = (database: DatabaseSync) => {
      LIMIT ?`
   )
 
+  const listByCreatedWindowStatement = database.prepare(
+    `SELECT
+      id,
+      command,
+      lane,
+      status,
+      error_message as errorMessage,
+      metadata_json as metadataJson,
+      created_at as createdAt
+     FROM command_audit_log
+     WHERE created_at >= ?
+       AND created_at < ?
+     ORDER BY created_at DESC, id DESC`
+  )
+
   return {
     insert: (record: CommandAuditRecord): void => {
       insertStatement.run(record)
     },
     listRecent: (limit = 100): CommandAuditRecord[] => {
       return listRecentStatement.all(limit) as CommandAuditRecord[]
+    },
+    listByCreatedWindow: (windowStart: number, windowEnd: number): CommandAuditRecord[] => {
+      return listByCreatedWindowStatement.all(windowStart, windowEnd) as CommandAuditRecord[]
     },
   }
 }

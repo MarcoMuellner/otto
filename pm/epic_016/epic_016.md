@@ -41,7 +41,7 @@ Otto currently learns implicitly across sessions but has no durable, auditable d
 2. `ticket_002`: system nightly task bootstrap and timezone-midnight scheduler semantics. (`done`)
 3. `ticket_003`: EOD scheduled profile and tool permission policy. (`done`)
 4. `ticket_004`: 24h evidence aggregation service. (`done`)
-5. `ticket_005`: EOD decision engine and memory/journal auto-apply pipeline.
+5. `ticket_005`: EOD decision engine and memory/journal auto-apply pipeline. (`done`)
 6. `ticket_006`: autonomous follow-up scheduling with reversible guardrails.
 7. `ticket_007`: Telegram transparency digest delivery.
 8. `ticket_008`: internal EOD history read API and OpenCode tools for self-reference.

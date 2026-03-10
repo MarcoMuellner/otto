@@ -6,11 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE } from "../../src/api-services/interactive-background-jobs.js"
 import {
+  createCommandAuditRepository,
+  createEodLearningRepository,
   createInteractiveContextEventsRepository,
   createJobsRepository,
   createJobRunSessionsRepository,
   createOutboundMessagesRepository,
   createSessionBindingsRepository,
+  createTaskAuditRepository,
   openPersistenceDatabase,
 } from "../../src/persistence/index.js"
 import { createNonInteractiveContextCaptureService } from "../../src/runtime/non-interactive-context-capture.js"
@@ -481,6 +484,26 @@ describe("task execution engine", () => {
       updatedAt: 100,
     })
 
+    jobsRepository.createTask({
+      id: "task-alpha",
+      type: "general-reminder",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 20_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({ message: "stub" }),
+      lastRunAt: null,
+      nextRunAt: 20_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
     const claimed = jobsRepository.claimDue(1_000, 10, "lock-eod-1", 60_000, 1_000)[0]
     if (!claimed) {
       throw new Error("Expected due task claim")
@@ -534,6 +557,175 @@ describe("task execution engine", () => {
       }),
       expect.stringContaining("falling back to base scheduled task config")
     )
+
+    db.close()
+  })
+
+  it("persists EOD run artifacts and captures per-item apply failures", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    const taskAuditRepository = createTaskAuditRepository(db)
+    const commandAuditRepository = createCommandAuditRepository(db)
+    const interactiveContextEventsRepository = createInteractiveContextEventsRepository(db)
+    const eodLearningRepository = createEodLearningRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
+
+    jobsRepository.createTask({
+      id: EOD_LEARNING_TASK_ID,
+      type: EOD_LEARNING_TASK_TYPE,
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: EOD_LEARNING_PROFILE_ID,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 24 * 60,
+      payload: JSON.stringify({ timezone: "Europe/Vienna" }),
+      lastRunAt: null,
+      nextRunAt: 10_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    jobsRepository.createTask({
+      id: "task-alpha",
+      type: "general-reminder",
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 20_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({ message: "stub" }),
+      lastRunAt: null,
+      nextRunAt: 20_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    taskAuditRepository.insert({
+      id: "ta-1",
+      taskId: "task-alpha",
+      action: "update",
+      lane: "scheduled",
+      actor: "scheduler",
+      beforeJson: null,
+      afterJson: null,
+      metadataJson: null,
+      createdAt: 9_100,
+    })
+    commandAuditRepository.insert({
+      id: "ca-1",
+      command: "list_tasks",
+      lane: "scheduled",
+      status: "success",
+      errorMessage: null,
+      metadataJson: null,
+      createdAt: 9_150,
+    })
+
+    const claimed = jobsRepository.claimDue(10_000, 10, "lock-eod-artifacts", 60_000, 10_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due EOD task claim")
+    }
+
+    const promptSession = vi
+      .fn()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          candidates: [
+            {
+              title: "Conflicting candidate",
+              confidence: 0.92,
+              contradiction: true,
+              expectedValue: 0.5,
+              evidenceIds: ["task_audit:ta-1", "command_audit:ca-1"],
+              rationale: "Signals conflict",
+            },
+            {
+              title: "Apply candidate",
+              confidence: 0.7,
+              contradiction: false,
+              expectedValue: 0.4,
+              evidenceIds: ["task_audit:ta-1", "command_audit:ca-1"],
+              rationale: "Stable medium confidence",
+            },
+            {
+              title: "Low confidence candidate",
+              confidence: 0.4,
+              contradiction: false,
+              expectedValue: 0.1,
+              evidenceIds: ["task_audit:ta-1", "command_audit:ca-1"],
+              rationale: "Weak signal",
+            },
+          ],
+        })
+      )
+      .mockRejectedValueOnce(new Error("apply step failed"))
+
+    const engine = createTaskExecutionEngine({
+      logger: createLoggerStub(),
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      taskAuditRepository,
+      commandAuditRepository,
+      interactiveContextEventsRepository,
+      eodLearningRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-eod-artifacts",
+        promptSession,
+      },
+      defaultWatchdogChatId: null,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => 10_500,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const runs = jobsRepository.listRunsByJobId(EOD_LEARNING_TASK_ID)
+    expect(runs[0]?.status).toBe("success")
+
+    const eodRun = eodLearningRepository.listRecentRuns(1)[0]
+    expect(eodRun?.status).toBe("success")
+    const details = eodLearningRepository.getRunDetails(eodRun?.id ?? "")
+    expect(details?.items).toHaveLength(3)
+
+    const contradictionItem = details?.items.find(
+      (entry) => entry.item.title === "Conflicting candidate"
+    )
+    expect(contradictionItem?.item.applyStatus).toBe("skipped")
+
+    const failedApplyItem = details?.items.find((entry) => entry.item.title === "Apply candidate")
+    expect(failedApplyItem?.item.applyStatus).toBe("failed")
+    expect(failedApplyItem?.item.applyError).toContain("apply step failed")
+
+    const lowConfidenceItem = details?.items.find(
+      (entry) => entry.item.title === "Low confidence candidate"
+    )
+    expect(lowConfidenceItem?.item.applyStatus).toBe("candidate_only")
+    expect(promptSession).toHaveBeenCalledTimes(2)
 
     db.close()
   })

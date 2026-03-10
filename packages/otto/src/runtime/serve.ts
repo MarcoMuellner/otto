@@ -31,6 +31,7 @@ import { createOutboundMessagesRepository } from "../persistence/repositories.js
 import { createSessionBindingsRepository } from "../persistence/repositories.js"
 import { createTaskAuditRepository } from "../persistence/repositories.js"
 import { createCommandAuditRepository } from "../persistence/repositories.js"
+import { createEodLearningRepository } from "../persistence/repositories.js"
 import { createInteractiveContextEventsRepository } from "../persistence/repositories.js"
 import { createUserProfileRepository } from "../persistence/repositories.js"
 import {
@@ -121,6 +122,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
   const jobRunSessionsRepository = createJobRunSessionsRepository(persistenceDatabase)
   const taskAuditRepository = createTaskAuditRepository(persistenceDatabase)
   const commandAuditRepository = createCommandAuditRepository(persistenceDatabase)
+  const eodLearningRepository = createEodLearningRepository(persistenceDatabase)
   const outboundMessagesRepository = createOutboundMessagesRepository(persistenceDatabase)
   const interactiveContextEventsRepository =
     createInteractiveContextEventsRepository(persistenceDatabase)
@@ -459,6 +461,10 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       sessionBindingsRepository,
       outboundMessagesRepository,
       userProfileRepository,
+      taskAuditRepository,
+      commandAuditRepository,
+      interactiveContextEventsRepository,
+      eodLearningRepository,
       sessionGateway: schedulerSessionGateway,
       defaultWatchdogChatId: watchdogChatId,
       nonInteractiveContextCaptureService,
