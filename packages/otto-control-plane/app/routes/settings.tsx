@@ -35,6 +35,10 @@ type SettingsFormState = {
   interactiveContextWindowSize: string
   contextRetentionCap: string
   quietMode: "critical_only" | "off"
+  watchdogAlertsEnabled: boolean
+  watchdogMuteUntil: number | null
+  watchdogMuteForMinutes: string
+  watchdogUnmute: boolean
 }
 
 type Feedback = {
@@ -77,6 +81,10 @@ const defaultSettingsFormState: SettingsFormState = {
   interactiveContextWindowSize: "20",
   contextRetentionCap: "100",
   quietMode: "critical_only",
+  watchdogAlertsEnabled: true,
+  watchdogMuteUntil: null,
+  watchdogMuteForMinutes: "",
+  watchdogUnmute: false,
 }
 
 const toFormState = (profile: NotificationProfile): SettingsFormState => {
@@ -87,6 +95,10 @@ const toFormState = (profile: NotificationProfile): SettingsFormState => {
     interactiveContextWindowSize: String(profile.interactiveContextWindowSize),
     contextRetentionCap: String(profile.contextRetentionCap),
     quietMode: profile.quietMode === "off" ? "off" : "critical_only",
+    watchdogAlertsEnabled: profile.watchdogAlertsEnabled,
+    watchdogMuteUntil: profile.watchdogMuteUntil,
+    watchdogMuteForMinutes: "",
+    watchdogUnmute: false,
   }
 }
 
@@ -344,6 +356,29 @@ export default function SettingsRoute() {
       interactiveContextWindowSize: parsedInteractiveContextWindowSize,
       contextRetentionCap: parsedContextRetentionCap,
       quietMode: formState.quietMode,
+      watchdogAlertsEnabled: formState.watchdogAlertsEnabled,
+    }
+
+    const watchdogMuteForMinutesRaw = formState.watchdogMuteForMinutes.trim()
+    if (formState.watchdogUnmute) {
+      Object.assign(payload, { watchdogUnmute: true })
+    } else if (watchdogMuteForMinutesRaw.length > 0) {
+      const parsedWatchdogMuteForMinutes = Number(watchdogMuteForMinutesRaw)
+      if (
+        !Number.isInteger(parsedWatchdogMuteForMinutes) ||
+        parsedWatchdogMuteForMinutes < 1 ||
+        parsedWatchdogMuteForMinutes > 7 * 24 * 60
+      ) {
+        setFeedback({
+          kind: "error",
+          message: "Watchdog mute must be a whole number between 1 and 10080 minutes.",
+        })
+        return
+      }
+
+      Object.assign(payload, {
+        watchdogMuteForMinutes: parsedWatchdogMuteForMinutes,
+      })
     }
 
     setIsSaving(true)
@@ -621,6 +656,78 @@ export default function SettingsRoute() {
                   <option value="critical_only">Critical only</option>
                   <option value="off">Off</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="grid gap-3 rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(248,248,248,0.8)] p-3">
+              <div className="grid gap-1">
+                <label htmlFor="settings-watchdog-enabled" className={settingsLabelClassName}>
+                  Watchdog Alerts
+                </label>
+                <select
+                  id="settings-watchdog-enabled"
+                  value={formState.watchdogAlertsEnabled ? "enabled" : "disabled"}
+                  onChange={(event) =>
+                    setFormState((current) => ({
+                      ...current,
+                      watchdogAlertsEnabled: event.target.value === "enabled",
+                    }))
+                  }
+                  className={settingsFieldClassName}
+                >
+                  <option value="enabled">Enabled</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </div>
+
+              <p className="m-0 text-sm text-[#666666]">
+                {formState.watchdogMuteUntil && formState.watchdogMuteUntil > Date.now()
+                  ? `Muted until ${formatDateTime(formState.watchdogMuteUntil)}`
+                  : "Not currently muted"}
+              </p>
+
+              <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+                <div className="grid gap-1">
+                  <label
+                    htmlFor="settings-watchdog-mute-minutes"
+                    className={settingsLabelClassName}
+                  >
+                    Temporary Mute (minutes)
+                  </label>
+                  <input
+                    id="settings-watchdog-mute-minutes"
+                    type="number"
+                    min={1}
+                    max={7 * 24 * 60}
+                    value={formState.watchdogMuteForMinutes}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        watchdogMuteForMinutes: event.target.value,
+                        watchdogUnmute: false,
+                      }))
+                    }
+                    className={settingsFieldClassName}
+                    placeholder="e.g. 480"
+                  />
+                </div>
+
+                <label className="inline-flex items-center gap-2 text-sm text-[#333333]">
+                  <input
+                    type="checkbox"
+                    checked={formState.watchdogUnmute}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        watchdogUnmute: event.target.checked,
+                        watchdogMuteForMinutes: event.target.checked
+                          ? ""
+                          : current.watchdogMuteForMinutes,
+                      }))
+                    }
+                  />
+                  Clear current mute
+                </label>
               </div>
             </div>
 

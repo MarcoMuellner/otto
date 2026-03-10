@@ -555,6 +555,8 @@ const notificationProfileSchema = z.object({
   quietHoursEnd: z.string().nullable(),
   quietMode: z.enum(["critical_only", "off"]).nullable(),
   muteUntil: z.number().int().nullable(),
+  watchdogAlertsEnabled: z.boolean(),
+  watchdogMuteUntil: z.number().int().nullable(),
   interactiveContextWindowSize: z.number().int().min(5).max(200),
   contextRetentionCap: z.number().int().min(5).max(200),
   onboardingCompletedAt: z.number().int().nullable(),

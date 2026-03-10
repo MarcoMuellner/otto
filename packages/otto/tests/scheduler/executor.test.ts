@@ -333,7 +333,7 @@ describe("task execution engine", () => {
         ensureSession: async () => "session-1",
         promptSession,
       },
-      defaultWatchdogChatId: 777,
+      defaultWatchdogChatId: null,
       userProfileRepository: {
         get: () => null,
         setLastDigestAt: () => {},
@@ -1220,6 +1220,132 @@ describe("task execution engine", () => {
       }),
       "Watchdog alert generation returned invalid output; using fallback formatter"
     )
+
+    db.close()
+  })
+
+  it("skips watchdog notification enqueue when watchdog alerts are disabled", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+    await writeMinimalPromptWorkspace(tempRoot)
+
+    jobsRepository.createTask({
+      id: "task-failed-disabled",
+      type: "email-triage",
+      status: "paused",
+      scheduleType: "recurring",
+      profileId: null,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+    jobsRepository.insertRun({
+      id: "run-failed-disabled",
+      jobId: "task-failed-disabled",
+      scheduledFor: 1_000,
+      startedAt: 1_100,
+      finishedAt: null,
+      status: "skipped",
+      errorCode: null,
+      errorMessage: null,
+      resultJson: null,
+      createdAt: 1_100,
+    })
+    jobsRepository.markRunFinished(
+      "run-failed-disabled",
+      "failed",
+      1_150,
+      "tool_failure",
+      "Tool call failed",
+      null
+    )
+
+    jobsRepository.createTask({
+      id: "watchdog-task-disabled",
+      type: "watchdog_failures",
+      status: "idle",
+      scheduleType: "recurring",
+      profileId: null,
+      modelRef: null,
+      runAt: null,
+      cadenceMinutes: 30,
+      payload: JSON.stringify({
+        lookbackMinutes: 120,
+        maxFailures: 20,
+        threshold: 1,
+        notify: true,
+      }),
+      lastRunAt: null,
+      nextRunAt: 2_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 100,
+      updatedAt: 100,
+    })
+
+    const claimed = jobsRepository.claimDue(2_000, 10, "lock-disabled", 60_000, 2_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due watchdog claim")
+    }
+
+    const engine = createTaskExecutionEngine({
+      logger: createLoggerStub(),
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-watchdog-disabled",
+        promptSession: async () => "not used",
+      },
+      defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => ({
+          timezone: "Europe/Vienna",
+          quietHoursStart: "20:00",
+          quietHoursEnd: "08:00",
+          quietMode: "critical_only",
+          muteUntil: null,
+          watchdogAlertsEnabled: false,
+          watchdogMuteUntil: null,
+          interactiveContextWindowSize: 20,
+          contextRetentionCap: 100,
+          onboardingCompletedAt: null,
+          lastDigestAt: null,
+          updatedAt: 2_000,
+        }),
+        setLastDigestAt: () => {},
+      },
+      now: () => 2_500,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const runs = jobsRepository.listRunsByJobId("watchdog-task-disabled")
+    expect(runs[0]?.status).toBe("success")
+    expect(runs[0]?.resultJson).toContain("notification skipped: disabled")
+    expect(outboundMessagesRepository.listDue(10_000)).toHaveLength(0)
 
     db.close()
   })

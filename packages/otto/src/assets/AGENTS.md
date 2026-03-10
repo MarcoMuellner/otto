@@ -44,3 +44,10 @@ This is the Otto personal assistant workspace.
 - To inspect the editable watchdog prompt layer, call `get_watchdog_prompt`.
 - To update watchdog alert writing behavior, call `set_watchdog_prompt` with full markdown content.
 - These tools target `prompts/layers/surface-watchdog.md` (user-owned override), not system-owned files.
+
+## Watchdog Alert Mute Controls
+
+- Use `set_notification_policy` to manage watchdog alerts from any interactive lane.
+- For persistent behavior, set `watchdogAlertsEnabled` to `true` or `false`.
+- For temporary behavior, set one of `watchdogMuteForMinutes` or `watchdogMuteUntil`.
+- If a user asks to "mute watchdog alerts" without saying whether it should be temporary or persistent, ask a short clarifying question before calling the tool.

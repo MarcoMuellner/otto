@@ -54,7 +54,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
   - Read: `GET /external/jobs?lane=<scheduled|interactive>&type=<optional-task-type>`, `GET /external/jobs/:id`, `GET /external/jobs/:id/audit`, `GET /external/jobs/:id/runs`, `GET /external/jobs/:id/runs/:runId`
   - Mutations: `POST /external/jobs`, `PATCH /external/jobs/:id`, `DELETE /external/jobs/:id`, `POST /external/jobs/:id/run-now`, `POST /external/background-jobs/:id/cancel`
   - Guardrail: system-managed jobs are read-only; mutation attempts return `403 forbidden_mutation`
-  - Settings safety boundary: only non-secret notification profile fields are returned/editable; secret-bearing environment variables are never returned by settings endpoints
+  - Settings safety boundary: only non-secret notification profile fields are returned/editable (quiet-hours policy, global mute, watchdog alert enable/mute controls, context settings); secret-bearing environment variables are never returned by settings endpoints
   - Restart caveat: `/external/system/restart` requests runtime process recycle only; control-plane stays online as a separate service.
 - Otto orchestration state database: `~/.otto/data/otto-state.db`
 - Extension store root: `~/.otto/extensions/store/<id>/<version>`

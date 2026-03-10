@@ -20,6 +20,8 @@ describe("settings-notification-profile service", () => {
       quietHoursStart: "20:00",
       quietHoursEnd: "08:00",
       quietMode: "critical_only",
+      watchdogAlertsEnabled: true,
+      watchdogMuteUntil: null,
       interactiveContextWindowSize: 20,
       contextRetentionCap: 100,
     })
@@ -80,5 +82,27 @@ describe("settings-notification-profile service", () => {
         contextRetentionCap: 201,
       })
     ).toThrow()
+  })
+
+  it("supports watchdog alert toggle and temporary mute controls", () => {
+    // Arrange
+    const existing = resolveNotificationProfile({
+      get: () => null,
+    })
+    const now = 1_700_000_000_000
+
+    // Act
+    const merged = applyNotificationProfileUpdate(
+      existing,
+      {
+        watchdogAlertsEnabled: false,
+        watchdogMuteForMinutes: 15,
+      },
+      now
+    )
+
+    // Assert
+    expect(merged.watchdogAlertsEnabled).toBe(false)
+    expect(merged.watchdogMuteUntil).toBe(now + 15 * 60_000)
   })
 })

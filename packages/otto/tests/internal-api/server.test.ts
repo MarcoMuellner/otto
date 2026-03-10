@@ -180,6 +180,8 @@ const createUserProfileRepositoryStub = () => {
     quietHoursEnd: string | null
     quietMode: "critical_only" | "off" | null
     muteUntil: number | null
+    watchdogAlertsEnabled: boolean
+    watchdogMuteUntil: number | null
     interactiveContextWindowSize: number
     contextRetentionCap: number
     onboardingCompletedAt: number | null
@@ -200,6 +202,8 @@ const createUserProfileRepositoryStub = () => {
           quietHoursEnd: null,
           quietMode: "critical_only",
           muteUntil,
+          watchdogAlertsEnabled: true,
+          watchdogMuteUntil: null,
           interactiveContextWindowSize: 20,
           contextRetentionCap: 100,
           onboardingCompletedAt: null,

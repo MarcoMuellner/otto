@@ -802,7 +802,18 @@ const executeWatchdogTask = async (
     () => nowTimestamp
   )
 
-  if (evaluation.shouldAlert && validatedPayload.data.notify && !evaluation.resolvedChatId) {
+  const profile = dependencies.userProfileRepository.get()
+  const watchdogAlertsEnabled = profile?.watchdogAlertsEnabled ?? true
+  const watchdogMuted =
+    profile?.watchdogMuteUntil != null && profile.watchdogMuteUntil > nowTimestamp
+
+  if (
+    evaluation.shouldAlert &&
+    validatedPayload.data.notify &&
+    watchdogAlertsEnabled &&
+    !watchdogMuted &&
+    !evaluation.resolvedChatId
+  ) {
     return toFailureResult(
       "watchdog_notification_unavailable",
       "Watchdog detected failures but no Telegram chat id is configured for alerts"
@@ -814,6 +825,15 @@ const executeWatchdogTask = async (
   let watchdogMessageSource: "llm" | "fallback" | "none" = "none"
 
   if (evaluation.notifyRequested && evaluation.shouldAlert) {
+    if (!watchdogAlertsEnabled || watchdogMuted) {
+      const disabledReason = !watchdogAlertsEnabled ? "disabled" : "muted"
+      return {
+        status: "success",
+        summary: `Watchdog checked ${evaluation.failedCount} failed runs (notification skipped: ${disabledReason})`,
+        errors: [],
+      }
+    }
+
     let messageContent = buildWatchdogFallbackMessage(
       evaluation.failures,
       evaluation.lookbackMinutes,

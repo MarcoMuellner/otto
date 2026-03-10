@@ -662,6 +662,8 @@ describe("buildExternalApiServer", () => {
       quietHoursEnd: "07:30",
       quietMode: "critical_only",
       muteUntil: null,
+      watchdogAlertsEnabled: true,
+      watchdogMuteUntil: null,
       interactiveContextWindowSize: 20,
       contextRetentionCap: 100,
       onboardingCompletedAt: null,

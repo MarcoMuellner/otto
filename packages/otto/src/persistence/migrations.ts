@@ -337,4 +337,14 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
            context_retention_cap = COALESCE(context_retention_cap, 100)`,
     ],
   },
+  {
+    id: "020_user_profile_watchdog_alert_controls",
+    statements: [
+      `ALTER TABLE user_profile ADD COLUMN watchdog_alerts_enabled INTEGER`,
+      `ALTER TABLE user_profile ADD COLUMN watchdog_mute_until INTEGER`,
+      `UPDATE user_profile
+       SET watchdog_alerts_enabled = COALESCE(watchdog_alerts_enabled, 1),
+           watchdog_mute_until = COALESCE(watchdog_mute_until, NULL)`,
+    ],
+  },
 ]

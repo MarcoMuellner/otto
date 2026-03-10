@@ -15,6 +15,8 @@ export const notificationProfileSchema = z.object({
   quietHoursEnd: z.string().nullable(),
   quietMode: z.enum(["critical_only", "off"]).nullable(),
   muteUntil: z.number().int().nullable(),
+  watchdogAlertsEnabled: z.boolean(),
+  watchdogMuteUntil: z.number().int().nullable(),
   interactiveContextWindowSize: z.number().int().min(5).max(200),
   contextRetentionCap: z.number().int().min(5).max(200),
   onboardingCompletedAt: z.number().int().nullable(),
@@ -45,6 +47,15 @@ export const updateNotificationProfileRequestSchema = z.object({
     .min(1)
     .max(7 * 24 * 60)
     .optional(),
+  watchdogAlertsEnabled: z.boolean().optional(),
+  watchdogMuteUntil: z.number().int().nullable().optional(),
+  watchdogMuteForMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(7 * 24 * 60)
+    .optional(),
+  watchdogUnmute: z.boolean().optional(),
   markOnboardingComplete: z.boolean().optional(),
 })
 

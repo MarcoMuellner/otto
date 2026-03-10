@@ -15,6 +15,9 @@ System operations are incomplete without configurable behavior in the same contr
 ## Scope
 
 - Add external API settings read/write contracts for notification profile.
+- Include watchdog alert controls in notification profile:
+  - persistent toggle (`watchdogAlertsEnabled`)
+  - temporary mute window (`watchdogMuteUntil`, `watchdogMuteForMinutes`, `watchdogUnmute`)
 - Optionally add a minimal safe subset of runtime configuration fields (non-secret, non-destructive).
 - Implement Settings page forms with validation and save feedback.
 - Add audit metadata for settings changes.
@@ -25,6 +28,7 @@ System operations are incomplete without configurable behavior in the same contr
 - Runtime external endpoints:
   - `GET /external/settings/notification-profile`
   - `PUT /external/settings/notification-profile`
+  - notification-profile contract includes watchdog alert controls and validation for mutually exclusive mute inputs
   - optional safe settings endpoints as explicitly defined in implementation
 - Control-plane endpoints:
   - `GET /api/settings/notification-profile`
@@ -52,6 +56,7 @@ System operations are incomplete without configurable behavior in the same contr
 ## Acceptance Criteria
 
 - Operator can view and update notification profile in UI.
+- Operator can disable watchdog alerts persistently and can set/clear temporary watchdog mute windows.
 - Invalid settings are rejected with clear validation feedback.
 - Settings updates are persisted and auditable.
 - No secrets are returned in settings responses.

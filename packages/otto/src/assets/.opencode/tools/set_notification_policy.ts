@@ -17,7 +17,7 @@ const resolveInternalApiConfiguration = (): { baseUrl: string; token: string } =
 
 export default tool({
   description:
-    "Update notification policy settings (quiet hours, temporary mute, interactive context window size, and context retention cap).",
+    "Update notification policy settings (quiet hours, temporary mute, watchdog alert toggle and temporary mute, interactive context window size, and context retention cap).",
   args: {
     timezone: tool.schema.string().optional().describe("IANA timezone, e.g. Europe/Vienna"),
     quietHoursStart: tool.schema
@@ -49,6 +49,27 @@ export default tool({
       .nullable()
       .optional()
       .describe("Absolute mute-until epoch millis, or null to unmute"),
+    watchdogAlertsEnabled: tool.schema
+      .boolean()
+      .optional()
+      .describe("Persistent watchdog alert toggle (true enables alerts, false disables)"),
+    watchdogMuteForMinutes: tool.schema
+      .number()
+      .int()
+      .min(1)
+      .max(7 * 24 * 60)
+      .optional()
+      .describe("Temporary mute watchdog alerts for this many minutes"),
+    watchdogMuteUntil: tool.schema
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .describe("Absolute watchdog mute-until epoch millis, or null to clear"),
+    watchdogUnmute: tool.schema
+      .boolean()
+      .optional()
+      .describe("Clear watchdog alert mute window immediately"),
     interactiveContextWindowSize: tool.schema
       .number()
       .int()

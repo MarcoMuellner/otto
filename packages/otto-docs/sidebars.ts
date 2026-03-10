@@ -19,6 +19,7 @@ const sidebars: SidebarsConfig = {
       items: [
         "operator-guide/overview",
         "operator-guide/setup-and-first-start",
+        "operator-guide/notification-policy-and-watchdog-alerts",
         "operator-guide/service-lifecycle-and-health-checks",
         "operator-guide/update-workflow",
         "operator-guide/docs-platform-rollout-and-rollback",

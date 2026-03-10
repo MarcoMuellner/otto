@@ -226,6 +226,8 @@ export type UserProfileRecord = {
   quietHoursEnd: string | null
   quietMode: "critical_only" | "off" | null
   muteUntil: number | null
+  watchdogAlertsEnabled?: boolean | null
+  watchdogMuteUntil?: number | null
   interactiveContextWindowSize: number
   contextRetentionCap: number
   onboardingCompletedAt: number | null
@@ -1701,6 +1703,8 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
       quiet_hours_end as quietHoursEnd,
       quiet_mode as quietMode,
       mute_until as muteUntil,
+      watchdog_alerts_enabled as watchdogAlertsEnabled,
+      watchdog_mute_until as watchdogMuteUntil,
       interactive_context_window_size as interactiveContextWindowSize,
       context_retention_cap as contextRetentionCap,
       onboarding_completed_at as onboardingCompletedAt,
@@ -1712,15 +1716,17 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
 
   const upsertStatement = database.prepare(
     `INSERT INTO user_profile
-      (id, timezone, quiet_hours_start, quiet_hours_end, quiet_mode, mute_until, interactive_context_window_size, context_retention_cap, onboarding_completed_at, last_digest_at, updated_at)
+      (id, timezone, quiet_hours_start, quiet_hours_end, quiet_mode, mute_until, watchdog_alerts_enabled, watchdog_mute_until, interactive_context_window_size, context_retention_cap, onboarding_completed_at, last_digest_at, updated_at)
      VALUES
-      (1, @timezone, @quietHoursStart, @quietHoursEnd, @quietMode, @muteUntil, @interactiveContextWindowSize, @contextRetentionCap, @onboardingCompletedAt, @lastDigestAt, @updatedAt)
+      (1, @timezone, @quietHoursStart, @quietHoursEnd, @quietMode, @muteUntil, @watchdogAlertsEnabled, @watchdogMuteUntil, @interactiveContextWindowSize, @contextRetentionCap, @onboardingCompletedAt, @lastDigestAt, @updatedAt)
      ON CONFLICT(id) DO UPDATE SET
       timezone = excluded.timezone,
       quiet_hours_start = excluded.quiet_hours_start,
       quiet_hours_end = excluded.quiet_hours_end,
       quiet_mode = excluded.quiet_mode,
       mute_until = excluded.mute_until,
+      watchdog_alerts_enabled = excluded.watchdog_alerts_enabled,
+      watchdog_mute_until = excluded.watchdog_mute_until,
       interactive_context_window_size = excluded.interactive_context_window_size,
       context_retention_cap = excluded.context_retention_cap,
       onboarding_completed_at = excluded.onboarding_completed_at,
@@ -1760,6 +1766,11 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
           row.quietMode === "off" || row.quietMode === "critical_only"
             ? row.quietMode
             : "critical_only",
+        watchdogAlertsEnabled:
+          typeof row.watchdogAlertsEnabled === "number"
+            ? row.watchdogAlertsEnabled !== 0
+            : (row.watchdogAlertsEnabled ?? true),
+        watchdogMuteUntil: row.watchdogMuteUntil ?? null,
         interactiveContextWindowSize:
           row.interactiveContextWindowSize != null ? row.interactiveContextWindowSize : 20,
         contextRetentionCap: row.contextRetentionCap != null ? row.contextRetentionCap : 100,
@@ -1769,6 +1780,8 @@ export const createUserProfileRepository = (database: DatabaseSync) => {
       upsertStatement.run({
         ...record,
         quietMode: record.quietMode ?? "critical_only",
+        watchdogAlertsEnabled: (record.watchdogAlertsEnabled ?? true) ? 1 : 0,
+        watchdogMuteUntil: record.watchdogMuteUntil ?? null,
       })
     },
     setMuteUntil: (muteUntil: number | null, updatedAt = Date.now()): void => {
