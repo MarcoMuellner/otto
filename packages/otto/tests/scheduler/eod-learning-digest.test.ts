@@ -231,7 +231,8 @@ describe("eod-learning digest formatter", () => {
               actionType: "memory_replace",
               status: "skipped",
               expectedValue: 0.82,
-              detail: "Skipped as duplicate: existing project memory already encodes this failure mode.",
+              detail:
+                "Skipped as duplicate: existing project memory already encodes this failure mode.",
               errorMessage: null,
               metadataJson: "{}",
               createdAt: 2_100,
@@ -260,7 +261,9 @@ describe("eod-learning digest formatter", () => {
     const digest = buildEodLearningDigestMessage(artifacts)
 
     // Assert
-    expect(digest).toContain("Skipped breakdown: 0 conflicting evidence, 1 not durable/duplicate, 0 other policy gates.")
+    expect(digest).toContain(
+      "Skipped breakdown: 0 conflicting evidence, 1 not durable/duplicate, 0 other policy gates."
+    )
     expect(digest).toContain("Scheduled follow-ups:")
     expect(digest).toContain("Add strict final-output validator with fallback envelope")
     expect(digest).toContain("not persisted: Skipped as duplicate")
@@ -288,7 +291,7 @@ describe("eod-learning digest formatter", () => {
     const prompt = buildEodLearningDigestInterpretationPrompt(artifacts)
 
     // Assert
-    expect(prompt).toContain('Return ONLY valid JSON with this exact shape:')
+    expect(prompt).toContain("Return ONLY valid JSON with this exact shape:")
     expect(prompt).toContain('"message"')
     expect(prompt).toContain('"run"')
     expect(prompt).toContain('"run-1"')

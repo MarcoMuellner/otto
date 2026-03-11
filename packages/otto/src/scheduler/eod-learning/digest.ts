@@ -167,7 +167,9 @@ const extractScheduledFollowUps = (items: EodLearningItemArtifacts[]): string[] 
   return proposals.slice(0, MAX_SCHEDULED_FOLLOW_UPS).map((proposal) => `  - ${proposal}`)
 }
 
-const countSkippedReasons = (items: EodLearningItemArtifacts[]): {
+const countSkippedReasons = (
+  items: EodLearningItemArtifacts[]
+): {
   contradiction: number
   noDurableUpdate: number
   other: number
@@ -295,7 +297,9 @@ export const buildEodLearningDigestInterpretationPrompt = (
  * Parses the model-produced EOD digest payload and returns a structured parse result so callers
  * can safely fall back to deterministic formatting when the model output is invalid.
  */
-export const parseEodLearningDigestMessage = (assistantText: string): EodDigestMessageParseOutcome => {
+export const parseEodLearningDigestMessage = (
+  assistantText: string
+): EodDigestMessageParseOutcome => {
   const trimmed = assistantText.trim()
   if (trimmed.length === 0) {
     return {
@@ -393,6 +397,8 @@ export const buildEodLearningDigestMessage = (artifacts: EodLearningRunArtifacts
       : []),
     `Follow-ups: ${followUpScheduledCount} scheduled, ${followUpSkippedCount} skipped, ${followUpFailedCount} failed.`,
     ...(followUpTitles.length > 0 ? ["Scheduled follow-ups:", ...followUpTitles] : []),
-    ...(highlights.length > 0 ? ["Key findings:", ...highlights] : ["Key findings: none in this window."]),
+    ...(highlights.length > 0
+      ? ["Key findings:", ...highlights]
+      : ["Key findings: none in this window."]),
   ].join("\n")
 }
