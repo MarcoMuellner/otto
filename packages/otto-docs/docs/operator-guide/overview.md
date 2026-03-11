@@ -10,6 +10,7 @@ Otto services and diagnosing incidents.
 ## Runbooks
 
 - [Setup and First Start](./setup-and-first-start.md)
+- [Daily Self-Learning (EOD)](./daily-self-learning-eod.md)
 - [Notification Policy and Watchdog Alerts](./notification-policy-and-watchdog-alerts.md)
 - [Service Lifecycle and Health Checks](./service-lifecycle-and-health-checks.md)
 - [Update Workflow](./update-workflow.md)

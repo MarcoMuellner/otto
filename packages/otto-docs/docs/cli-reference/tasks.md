@@ -10,6 +10,8 @@ profile files in `~/.otto/task-config/profiles`.
 Built-in profiles include `general-reminder`, `email-triage`, and `eod-learning`
 for nightly End-of-Day learning runs.
 
+Built-in system task id for self-learning: `system-daily-eod-learning`.
+
 ## Profiles
 
 - `ottoctl task profiles list`
@@ -35,6 +37,12 @@ for nightly End-of-Day learning runs.
 - `task audit [limit]` accepts integer limits between `1` and `200`.
 - `task run-now` fails for paused tasks.
 - Task/profile identifiers must exist; missing resources fail with non-zero exit.
+
+For immediate self-learning execution (without waiting for midnight):
+
+```bash
+ottoctl task run-now system-daily-eod-learning
+```
 
 ## Examples
 
