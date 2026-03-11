@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "opencode-terminal",
+  "name": "OpenCode Terminal Skill",
+  "version": "0.1.0",
+  "description": "Terminal-first OpenCode usage skill for install, config, TUI, CLI, and troubleshooting workflows.",
+  "tags": ["skills", "opencode", "terminal", "cli", "tui"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22"
+  },
+  "payload": {
+    "skills": {
+      "path": "skills"
+    }
+  },
+  "requirements": {
+    "env": [],
+    "files": [],
+    "binaries": ["opencode"]
+  },
+  "dependencies": []
+}

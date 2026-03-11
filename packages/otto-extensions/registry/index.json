@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-03-05T10:22:48.220Z",
+  "generatedAt": "2026-03-11T20:43:26.121Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -127,6 +127,24 @@
             "node": ">=22"
           },
           "description": "Use 1Password CLI safely for sign-in, secret reads, and env injection workflows.",
+          "payloadTypes": [
+            "skills"
+          ]
+        }
+      }
+    },
+    "opencode-terminal": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/opencode-terminal-0.1.0.tgz",
+          "sha256": "f85440056af9ff2b776de0c87bdaa0f22bd5ec500c83f3c55414dd93f8c4f452",
+          "sizeBytes": 7212,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "Terminal-first OpenCode usage skill for install, config, TUI, CLI, and troubleshooting workflows.",
           "payloadTypes": [
             "skills"
           ]

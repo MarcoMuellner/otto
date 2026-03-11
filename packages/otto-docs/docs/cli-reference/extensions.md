@@ -25,13 +25,19 @@ Extension commands manage extension lifecycle in local Otto extension storage.
 
 ```bash
 ottoctl extension list
-ottoctl extension install weather
-ottoctl extension install weather@1.2.0
-ottoctl extension update weather
+ottoctl extension install opencode-terminal
+ottoctl extension install opencode-terminal@0.1.0
+ottoctl extension update opencode-terminal
 ottoctl extension update --all
-ottoctl extension disable weather
-ottoctl extension remove weather@1.2.0
+ottoctl extension disable opencode-terminal
+ottoctl extension remove opencode-terminal@0.1.0
 ```
+
+## Example Extension
+
+- `opencode-terminal` installs a terminal-operations skill for OpenCode itself.
+- After install, verify `~/.otto/.opencode/skills/opencode-terminal/SKILL.md` exists.
+- If Otto is already running, restart it so skill discovery refreshes.
 
 ## Failure Modes
 
