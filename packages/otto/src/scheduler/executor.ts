@@ -94,6 +94,21 @@ type WatchdogAlertMessageParseOutcome = {
   parseErrorMessage: string | null
 }
 
+type JsonContractParseOutcome<T> = {
+  value: T | null
+  rawOutput: string | null
+  parseErrorCode: string | null
+  parseErrorMessage: string | null
+}
+
+type JsonContractRecoveryOutcome<T> = {
+  value: T | null
+  rawOutput: string | null
+  parseErrorCode: string | null
+  parseErrorMessage: string | null
+  attempts: number
+}
+
 type SchedulerLogger = Pick<Logger, "info" | "warn" | "error">
 
 type ClaimedJobRecord = Pick<
@@ -708,6 +723,170 @@ const parseEodApplyOutput = (assistantText: string): EodLearningApplyOutput => {
   return eodLearningApplyOutputSchema.parse(parsed)
 }
 
+const toJsonContractParseOutcome = <T>(
+  parse: (assistantText: string) => T,
+  assistantText: string,
+  errorCodePrefix: string
+): JsonContractParseOutcome<T> => {
+  try {
+    return {
+      value: parse(assistantText),
+      rawOutput: null,
+      parseErrorCode: null,
+      parseErrorMessage: null,
+    }
+  } catch (error) {
+    const err = error as Error
+    const message = err.message || "parse_failed"
+    const parseErrorCode =
+      message === "empty_output" || message === "invalid_json"
+        ? `invalid_${errorCodePrefix}_json`
+        : `invalid_${errorCodePrefix}_schema`
+
+    return {
+      value: null,
+      rawOutput: assistantText.trim().length > 0 ? assistantText : null,
+      parseErrorCode,
+      parseErrorMessage: message,
+    }
+  }
+}
+
+const buildJsonRepairPrompt = (input: {
+  basePrompt: string
+  parseErrorCode: string
+  parseErrorMessage: string
+  rawOutput: string | null
+  allowToolCalls: boolean
+}): string => {
+  return [
+    "Your previous response failed strict JSON validation.",
+    `Failure code: ${input.parseErrorCode}`,
+    `Failure detail: ${input.parseErrorMessage}`,
+    "Return ONLY valid JSON that satisfies the required schema from the task below.",
+    "Do not include markdown, prose, or code fences.",
+    input.allowToolCalls
+      ? "If tool calls are needed to produce a correct result, execute them."
+      : "Do not call tools. Only provide the corrected JSON output.",
+    "",
+    "Previous invalid response:",
+    input.rawOutput ?? "<empty>",
+    "",
+    "Original task and schema:",
+    input.basePrompt,
+  ].join("\n")
+}
+
+const promptJsonWithRecovery = async <T>(input: {
+  dependencies: TaskExecutionEngineDependencies
+  sessionId: string
+  basePrompt: string
+  parse: (assistantText: string) => JsonContractParseOutcome<T>
+  options: {
+    systemPrompt?: string
+    systemPromptProvenance?: PromptProvenance | null
+    tools?: Record<string, boolean>
+    agent?: string
+    modelContext?: {
+      flow: "scheduledTasks" | "watchdogFailures" | "interactiveAssistant"
+      jobModelRef?: string | null
+    }
+  }
+  maxAttempts?: number
+  retryToolsMode?: "disabled" | "preserve"
+  logContext: {
+    phase:
+      | "scheduled_task_result"
+      | "background_task_result"
+      | "watchdog_alert"
+      | "eod_candidate"
+      | "eod_apply"
+      | "eod_digest"
+    jobId: string
+    runId?: string
+  }
+}): Promise<JsonContractRecoveryOutcome<T>> => {
+  const attemptsLimit = Math.max(1, input.maxAttempts ?? 3)
+  const retryToolsMode = input.retryToolsMode ?? "disabled"
+  let attempt = 1
+  let promptText = input.basePrompt
+
+  while (attempt <= attemptsLimit) {
+    const assistantOutput = await input.dependencies.sessionGateway.promptSession(
+      input.sessionId,
+      promptText,
+      {
+        ...input.options,
+        tools:
+          attempt === 1
+            ? input.options.tools
+            : retryToolsMode === "preserve"
+              ? input.options.tools
+              : {},
+      }
+    )
+
+    const parsed = input.parse(assistantOutput)
+    if (parsed.value !== null) {
+      return {
+        ...parsed,
+        attempts: attempt,
+      }
+    }
+
+    if (attempt < attemptsLimit) {
+      input.dependencies.logger.warn(
+        {
+          ...input.logContext,
+          sessionId: input.sessionId,
+          attempt,
+          maxAttempts: attemptsLimit,
+          parseErrorCode: parsed.parseErrorCode,
+          parseErrorMessage: parsed.parseErrorMessage,
+          rawOutput: parsed.rawOutput,
+        },
+        "JSON contract parsing failed; retrying with repair prompt"
+      )
+
+      promptText = buildJsonRepairPrompt({
+        basePrompt: input.basePrompt,
+        parseErrorCode: parsed.parseErrorCode ?? "invalid_json_contract",
+        parseErrorMessage: parsed.parseErrorMessage ?? "unknown parse failure",
+        rawOutput: parsed.rawOutput,
+        allowToolCalls: retryToolsMode === "preserve",
+      })
+      attempt += 1
+      continue
+    }
+
+    input.dependencies.logger.error(
+      {
+        ...input.logContext,
+        sessionId: input.sessionId,
+        attempt,
+        maxAttempts: attemptsLimit,
+        parseErrorCode: parsed.parseErrorCode,
+        parseErrorMessage: parsed.parseErrorMessage,
+        rawOutput: parsed.rawOutput,
+      },
+      "JSON contract parsing failed after max attempts"
+    )
+
+    return {
+      ...parsed,
+      attempts: attempt,
+    }
+  }
+
+  return {
+    value: null,
+    rawOutput: null,
+    parseErrorCode: "invalid_json_contract",
+    parseErrorMessage: "JSON contract parsing retry loop exhausted",
+    attempts: attemptsLimit,
+  }
+}
+
 const limitTools = (
   tools: Record<string, boolean> | undefined,
   allowedToolKeys: string[]
@@ -1018,15 +1197,19 @@ const executeEodLearningTask = async (input: {
       input.dependencies.sessionBindingsRepository.upsert(bindingKey, sessionId, input.startedAt)
     }
 
-    const candidateOutput = await input.dependencies.sessionGateway.promptSession(
+    const candidatePrompt = buildEodLearningCandidatePrompt({
+      runId: input.runId,
+      windowStartedAt,
+      windowEndedAt,
+      evidenceBundle,
+    })
+    const candidateRecovery = await promptJsonWithRecovery({
+      dependencies: input.dependencies,
       sessionId,
-      buildEodLearningCandidatePrompt({
-        runId: input.runId,
-        windowStartedAt,
-        windowEndedAt,
-        evidenceBundle,
-      }),
-      {
+      basePrompt: candidatePrompt,
+      parse: (assistantText) =>
+        toJsonContractParseOutcome(parseEodCandidateOutput, assistantText, "eod_candidate"),
+      options: {
         systemPrompt: promptResolution.systemPrompt,
         systemPromptProvenance: runPromptProvenance,
         tools: {},
@@ -1035,10 +1218,23 @@ const executeEodLearningTask = async (input: {
           flow: "scheduledTasks",
           jobModelRef: input.job.modelRef,
         },
-      }
-    )
+      },
+      maxAttempts: 3,
+      logContext: {
+        phase: "eod_candidate",
+        jobId: input.job.id,
+        runId: input.runId,
+      },
+    })
+    if (!candidateRecovery.value) {
+      throw new Error(
+        candidateRecovery.parseErrorCode && candidateRecovery.parseErrorMessage
+          ? `${candidateRecovery.parseErrorCode}: ${candidateRecovery.parseErrorMessage}`
+          : "invalid_eod_candidate_json"
+      )
+    }
 
-    const parsedCandidates = parseEodCandidateOutput(candidateOutput)
+    const parsedCandidates = candidateRecovery.value
     const decisions = evaluateEodLearningDecisions({
       candidates: parsedCandidates.candidates,
       evidenceBundle,
@@ -1169,15 +1365,19 @@ const executeEodLearningTask = async (input: {
 
       if (decision.applyEligible) {
         try {
-          const applyOutput = await input.dependencies.sessionGateway.promptSession(
+          const applyPrompt = buildEodLearningApplyPrompt({
+            runId: input.runId,
+            itemId,
+            candidate,
+            evidence: referencedEvidenceEntries,
+          })
+          const applyRecovery = await promptJsonWithRecovery({
+            dependencies: input.dependencies,
             sessionId,
-            buildEodLearningApplyPrompt({
-              runId: input.runId,
-              itemId,
-              candidate,
-              evidence: referencedEvidenceEntries,
-            }),
-            {
+            basePrompt: applyPrompt,
+            parse: (assistantText) =>
+              toJsonContractParseOutcome(parseEodApplyOutput, assistantText, "eod_apply"),
+            options: {
               systemPrompt: promptResolution.systemPrompt,
               systemPromptProvenance: runPromptProvenance,
               tools: applyTools,
@@ -1186,10 +1386,24 @@ const executeEodLearningTask = async (input: {
                 flow: "scheduledTasks",
                 jobModelRef: input.job.modelRef,
               },
-            }
-          )
+            },
+            maxAttempts: 3,
+            retryToolsMode: "preserve",
+            logContext: {
+              phase: "eod_apply",
+              jobId: input.job.id,
+              runId: input.runId,
+            },
+          })
+          if (!applyRecovery.value) {
+            throw new Error(
+              applyRecovery.parseErrorCode && applyRecovery.parseErrorMessage
+                ? `${applyRecovery.parseErrorCode}: ${applyRecovery.parseErrorMessage}`
+                : "invalid_eod_apply_json"
+            )
+          }
 
-          const parsedApply = parseEodApplyOutput(applyOutput)
+          const parsedApply = applyRecovery.value
           applyStatus = parsedApply.status === "success" ? "applied" : parsedApply.status
           applyError = parsedApply.status === "failed" ? parsedApply.summary : null
           const normalizedActions = parsedApply.actions.length
@@ -1337,10 +1551,20 @@ const executeEodLearningTask = async (input: {
     let digestMessageSource: "llm" | "fallback" = "fallback"
 
     try {
-      const digestOutput = await input.dependencies.sessionGateway.promptSession(
+      const digestRecovery = await promptJsonWithRecovery({
+        dependencies: input.dependencies,
         sessionId,
-        buildEodLearningDigestInterpretationPrompt(persistedArtifacts),
-        {
+        basePrompt: buildEodLearningDigestInterpretationPrompt(persistedArtifacts),
+        parse: (assistantText) => {
+          const parsed = parseEodLearningDigestMessage(assistantText)
+          return {
+            value: parsed.message,
+            rawOutput: parsed.rawOutput,
+            parseErrorCode: parsed.parseErrorCode,
+            parseErrorMessage: parsed.parseErrorMessage,
+          }
+        },
+        options: {
           systemPrompt: promptResolution.systemPrompt,
           systemPromptProvenance: runPromptProvenance,
           tools: {},
@@ -1349,10 +1573,21 @@ const executeEodLearningTask = async (input: {
             flow: "scheduledTasks",
             jobModelRef: input.job.modelRef,
           },
-        }
-      )
+        },
+        maxAttempts: 3,
+        logContext: {
+          phase: "eod_digest",
+          jobId: input.job.id,
+          runId: input.runId,
+        },
+      })
 
-      const parsedDigest = parseEodLearningDigestMessage(digestOutput)
+      const parsedDigest = {
+        message: digestRecovery.value,
+        rawOutput: digestRecovery.rawOutput,
+        parseErrorCode: digestRecovery.parseErrorCode,
+        parseErrorMessage: digestRecovery.parseErrorMessage,
+      }
       if (parsedDigest.message) {
         digestMessageContent = parsedDigest.message
         digestMessageSource = "llm"
@@ -1760,15 +1995,25 @@ const executeWatchdogTask = async (
           dependencies.sessionBindingsRepository.upsert(bindingKey, sessionId, nowTimestamp)
         }
 
-        const assistantOutput = await dependencies.sessionGateway.promptSession(
+        const parsedAlertRecovery = await promptJsonWithRecovery({
+          dependencies,
           sessionId,
-          buildWatchdogAlertInterpretationPrompt({
+          basePrompt: buildWatchdogAlertInterpretationPrompt({
             lookbackMinutes: evaluation.lookbackMinutes,
             threshold: evaluation.threshold,
             failedCount: evaluation.failedCount,
             failures: evaluation.failures,
           }),
-          {
+          parse: (assistantText) => {
+            const parsed = parseWatchdogAlertMessage(assistantText)
+            return {
+              value: parsed.message,
+              rawOutput: parsed.rawOutput,
+              parseErrorCode: parsed.parseErrorCode,
+              parseErrorMessage: parsed.parseErrorMessage,
+            }
+          },
+          options: {
             systemPrompt: watchdogSystemPrompt,
             systemPromptProvenance: watchdogPromptProvenance,
             agent: "assistant",
@@ -1776,10 +2021,20 @@ const executeWatchdogTask = async (
               flow: "watchdogFailures",
               jobModelRef: job.modelRef,
             },
-          }
-        )
+          },
+          maxAttempts: 3,
+          logContext: {
+            phase: "watchdog_alert",
+            jobId: job.id,
+          },
+        })
 
-        const parsedAlert = parseWatchdogAlertMessage(assistantOutput)
+        const parsedAlert = {
+          message: parsedAlertRecovery.value,
+          rawOutput: parsedAlertRecovery.rawOutput,
+          parseErrorCode: parsedAlertRecovery.parseErrorCode,
+          parseErrorMessage: parsedAlertRecovery.parseErrorMessage,
+        }
         if (parsedAlert.message) {
           messageContent = parsedAlert.message
           watchdogMessageSource = "llm"
@@ -1963,10 +2218,20 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               let closeErrorMessage: string | null = null
 
               try {
-                const assistantOutput = await dependencies.sessionGateway.promptSession(
+                const parsedResultRecovery = await promptJsonWithRecovery({
+                  dependencies,
                   sessionId,
-                  buildInteractiveBackgroundPrompt(validatedPayload.data),
-                  {
+                  basePrompt: buildInteractiveBackgroundPrompt(validatedPayload.data),
+                  parse: (assistantText) => {
+                    const parsed = parseStructuredResult(assistantText)
+                    return {
+                      value: parsed.parseErrorCode ? null : parsed.result,
+                      rawOutput: parsed.rawOutput,
+                      parseErrorCode: parsed.parseErrorCode,
+                      parseErrorMessage: parsed.parseErrorMessage,
+                    }
+                  },
+                  options: {
                     systemPrompt,
                     systemPromptProvenance: runPromptProvenance,
                     tools,
@@ -1975,10 +2240,33 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                       flow: "interactiveAssistant",
                       jobModelRef: job.modelRef,
                     },
-                  }
-                )
+                  },
+                  maxAttempts: 3,
+                  retryToolsMode: "preserve",
+                  logContext: {
+                    phase: "background_task_result",
+                    jobId: job.id,
+                    runId,
+                  },
+                })
 
-                const parsedResult = parseStructuredResult(assistantOutput)
+                const parsedResult: TaskExecutionParseOutcome = parsedResultRecovery.value
+                  ? {
+                      result: parsedResultRecovery.value,
+                      rawOutput: null,
+                      parseErrorCode: null,
+                      parseErrorMessage: null,
+                    }
+                  : {
+                      result: toFailureResult(
+                        parsedResultRecovery.parseErrorCode ?? "invalid_result_json",
+                        parsedResultRecovery.parseErrorMessage ??
+                          "Task execution output must be valid JSON"
+                      ),
+                      rawOutput: parsedResultRecovery.rawOutput,
+                      parseErrorCode: parsedResultRecovery.parseErrorCode,
+                      parseErrorMessage: parsedResultRecovery.parseErrorMessage,
+                    }
                 if (parsedResult.parseErrorCode) {
                   dependencies.logger.warn(
                     {
@@ -2108,10 +2396,20 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               dependencies.sessionBindingsRepository.upsert(bindingKey, sessionId, now())
             }
 
-            const assistantOutput = await dependencies.sessionGateway.promptSession(
+            const parsedResultRecovery = await promptJsonWithRecovery({
+              dependencies,
               sessionId,
-              buildExecutionPrompt(job, payloadParsed.parsed, startedAt),
-              {
+              basePrompt: buildExecutionPrompt(job, payloadParsed.parsed, startedAt),
+              parse: (assistantText) => {
+                const parsed = parseStructuredResult(assistantText)
+                return {
+                  value: parsed.parseErrorCode ? null : parsed.result,
+                  rawOutput: parsed.rawOutput,
+                  parseErrorCode: parsed.parseErrorCode,
+                  parseErrorMessage: parsed.parseErrorMessage,
+                }
+              },
+              options: {
                 systemPrompt,
                 systemPromptProvenance: runPromptProvenance,
                 tools,
@@ -2120,10 +2418,33 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                   flow: "scheduledTasks",
                   jobModelRef: job.modelRef,
                 },
-              }
-            )
+              },
+              maxAttempts: 3,
+              retryToolsMode: "preserve",
+              logContext: {
+                phase: "scheduled_task_result",
+                jobId: job.id,
+                runId,
+              },
+            })
 
-            const parsedResult = parseStructuredResult(assistantOutput)
+            const parsedResult: TaskExecutionParseOutcome = parsedResultRecovery.value
+              ? {
+                  result: parsedResultRecovery.value,
+                  rawOutput: null,
+                  parseErrorCode: null,
+                  parseErrorMessage: null,
+                }
+              : {
+                  result: toFailureResult(
+                    parsedResultRecovery.parseErrorCode ?? "invalid_result_json",
+                    parsedResultRecovery.parseErrorMessage ??
+                      "Task execution output must be valid JSON"
+                  ),
+                  rawOutput: parsedResultRecovery.rawOutput,
+                  parseErrorCode: parsedResultRecovery.parseErrorCode,
+                  parseErrorMessage: parsedResultRecovery.parseErrorMessage,
+                }
             if (parsedResult.parseErrorCode) {
               dependencies.logger.warn(
                 {

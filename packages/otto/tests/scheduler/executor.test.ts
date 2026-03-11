@@ -1260,6 +1260,7 @@ describe("task execution engine", () => {
       throw new Error("Expected due task claim")
     }
 
+    const promptSession = vi.fn(async () => "this is not valid json")
     const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
       logger,
@@ -1270,7 +1271,7 @@ describe("task execution engine", () => {
       outboundMessagesRepository,
       sessionGateway: {
         ensureSession: async () => "session-2",
-        promptSession: async () => "this is not valid json",
+        promptSession,
       },
       defaultWatchdogChatId: 777,
       userProfileRepository: {
@@ -1292,6 +1293,7 @@ describe("task execution engine", () => {
     const task = jobsRepository.getById("job-oneshot-1")
     expect(task?.terminalState).toBe("completed")
     expect(task?.nextRunAt).toBeNull()
+    expect(promptSession).toHaveBeenCalledTimes(3)
 
     db.close()
   })
@@ -1702,6 +1704,7 @@ describe("task execution engine", () => {
       throw new Error("Expected due background task claim")
     }
 
+    const promptSession = vi.fn(async () => "I could not complete this request.")
     const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
       logger,
@@ -1713,7 +1716,7 @@ describe("task execution engine", () => {
       sessionGateway: {
         ensureSession: async () => "session-background-run-3",
         closeSession: async () => {},
-        promptSession: async () => "I could not complete this request.",
+        promptSession,
       },
       defaultWatchdogChatId: 777,
       userProfileRepository: {
@@ -1730,6 +1733,12 @@ describe("task execution engine", () => {
     const run = jobsRepository.listRunsByJobId("job-background-3")[0]
     expect(run?.status).toBe("failed")
     expect(run?.errorCode).toBe("invalid_result_json")
+    expect(promptSession).toHaveBeenCalledTimes(3)
+    expect(promptSession.mock.calls[1]?.[2]).toMatchObject({
+      tools: {
+        spawn_background_job: false,
+      },
+    })
 
     db.close()
   })
@@ -1975,6 +1984,7 @@ describe("task execution engine", () => {
       throw new Error("Expected due watchdog claim")
     }
 
+    const promptSession = vi.fn(async () => "not valid json")
     const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
       logger,
@@ -1985,7 +1995,7 @@ describe("task execution engine", () => {
       outboundMessagesRepository,
       sessionGateway: {
         ensureSession: async () => "session-watchdog-fallback",
-        promptSession: async () => "not valid json",
+        promptSession,
       },
       defaultWatchdogChatId: 777,
       userProfileRepository: {
@@ -2008,6 +2018,7 @@ describe("task execution engine", () => {
       }),
       "Watchdog alert generation returned invalid output; using fallback formatter"
     )
+    expect(promptSession).toHaveBeenCalledTimes(3)
 
     db.close()
   })

@@ -28,6 +28,8 @@ System task id: `system-daily-eod-learning`
 - The model is prompted to produce a concise human-readable summary and to use
   the operator language when inferable from run context.
 - Output is validated as strict JSON (`{"message":"..."}`) before enqueue.
+- If JSON validation fails, Otto retries up to 3 attempts using a repair prompt
+  that includes the parse failure reason and invalid output.
 - If model output is invalid or unavailable, Otto falls back to deterministic
   formatter text so delivery remains reliable.
 
