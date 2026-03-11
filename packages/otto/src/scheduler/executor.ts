@@ -1037,10 +1037,7 @@ const waitWithSignal = async (ms: number, signal?: AbortSignal): Promise<void> =
   })
 }
 
-const computeRetryDelayMs = (
-  policy: BackgroundExecutionPolicy,
-  retryAttempt: number
-): number => {
+const computeRetryDelayMs = (policy: BackgroundExecutionPolicy, retryAttempt: number): number => {
   const exponential = policy.retryBaseMs * Math.pow(2, Math.max(0, retryAttempt - 1))
   const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(policy.retryBaseMs / 3)))
   return Math.min(policy.retryMaxMs, exponential + jitter)
@@ -2385,7 +2382,8 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
 
               try {
                 const basePrompt = buildInteractiveBackgroundPrompt(validatedPayload.data)
-                let parsedResultRecovery: JsonContractRecoveryOutcome<TaskExecutionResult> | null = null
+                let parsedResultRecovery: JsonContractRecoveryOutcome<TaskExecutionResult> | null =
+                  null
 
                 for (
                   let transientRetryAttempt = 0;
