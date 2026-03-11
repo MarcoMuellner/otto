@@ -291,7 +291,46 @@ type TaskExecutionEngineDependencies = {
     getRunDetails?: (runId: string) => EodLearningRunArtifacts | null
   }
   nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
+  backgroundExecution?: {
+    requestTimeoutMs: number | null
+    stallTimeoutMs: number
+    transientRetryCount: number
+    retryBaseMs: number
+    retryMaxMs: number
+  }
   now?: () => number
+}
+
+type BackgroundExecutionPolicy = {
+  requestTimeoutMs: number | null
+  stallTimeoutMs: number
+  transientRetryCount: number
+  retryBaseMs: number
+  retryMaxMs: number
+}
+
+type ClassifiedExecutionError = {
+  code: string
+  message: string
+  retriable: boolean
+}
+
+class ClassifiedExecutionFailure extends Error {
+  public readonly code: string
+
+  public constructor(code: string, message: string) {
+    super(message)
+    this.name = "ClassifiedExecutionFailure"
+    this.code = code
+  }
+}
+
+const DEFAULT_BACKGROUND_EXECUTION_POLICY: BackgroundExecutionPolicy = {
+  requestTimeoutMs: null,
+  stallTimeoutMs: 1_800_000,
+  transientRetryCount: 2,
+  retryBaseMs: 1_000,
+  retryMaxMs: 30_000,
 }
 
 type BackgroundLifecycleContext = {
@@ -787,6 +826,8 @@ const promptJsonWithRecovery = async <T>(input: {
     systemPromptProvenance?: PromptProvenance | null
     tools?: Record<string, boolean>
     agent?: string
+    signal?: AbortSignal
+    requestTimeoutMs?: number | null
     modelContext?: {
       flow: "scheduledTasks" | "watchdogFailures" | "interactiveAssistant"
       jobModelRef?: string | null
@@ -885,6 +926,124 @@ const promptJsonWithRecovery = async <T>(input: {
     parseErrorMessage: "JSON contract parsing retry loop exhausted",
     attempts: attemptsLimit,
   }
+}
+
+const resolveBackgroundExecutionPolicy = (
+  policy: TaskExecutionEngineDependencies["backgroundExecution"]
+): BackgroundExecutionPolicy => {
+  if (!policy) {
+    return { ...DEFAULT_BACKGROUND_EXECUTION_POLICY }
+  }
+
+  return {
+    requestTimeoutMs: policy.requestTimeoutMs,
+    stallTimeoutMs: policy.stallTimeoutMs,
+    transientRetryCount: policy.transientRetryCount,
+    retryBaseMs: policy.retryBaseMs,
+    retryMaxMs: policy.retryMaxMs,
+  }
+}
+
+const toErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error)
+}
+
+const isAbortError = (error: unknown): boolean => {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return true
+  }
+
+  if (error instanceof Error) {
+    return error.name === "AbortError"
+  }
+
+  return false
+}
+
+const classifyExecutionError = (
+  error: unknown,
+  input: { stallSignalAborted: boolean }
+): ClassifiedExecutionError => {
+  const message = toErrorMessage(error).trim()
+  const normalizedMessage = message.toLowerCase()
+
+  if (input.stallSignalAborted) {
+    return {
+      code: "task_stalled",
+      message: "Background run exceeded no-progress watchdog window",
+      retriable: false,
+    }
+  }
+
+  if (isAbortError(error)) {
+    return {
+      code: "task_cancelled",
+      message: message || "Task execution was cancelled",
+      retriable: false,
+    }
+  }
+
+  if (
+    normalizedMessage.includes("fetch failed") ||
+    normalizedMessage.includes("econn") ||
+    normalizedMessage.includes("enotfound") ||
+    normalizedMessage.includes("network") ||
+    normalizedMessage.includes("socket") ||
+    normalizedMessage.includes("etimedout") ||
+    normalizedMessage.includes("timed out") ||
+    normalizedMessage.includes("429") ||
+    normalizedMessage.includes("rate limit")
+  ) {
+    return {
+      code: "task_network_error",
+      message: message || "Network/provider request failed while executing task",
+      retriable: true,
+    }
+  }
+
+  return {
+    code: "task_execution_error",
+    message: message || "Task execution failed",
+    retriable: false,
+  }
+}
+
+const waitWithSignal = async (ms: number, signal?: AbortSignal): Promise<void> => {
+  if (ms <= 0) {
+    return
+  }
+
+  if (signal?.aborted) {
+    throw new Error("aborted")
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort)
+      resolve()
+    }, ms)
+
+    const onAbort = () => {
+      clearTimeout(timeout)
+      signal?.removeEventListener("abort", onAbort)
+      reject(new Error("aborted"))
+    }
+
+    signal?.addEventListener("abort", onAbort, { once: true })
+  })
+}
+
+const computeRetryDelayMs = (
+  policy: BackgroundExecutionPolicy,
+  retryAttempt: number
+): number => {
+  const exponential = policy.retryBaseMs * Math.pow(2, Math.max(0, retryAttempt - 1))
+  const jitter = Math.floor(Math.random() * Math.max(1, Math.floor(policy.retryBaseMs / 3)))
+  return Math.min(policy.retryMaxMs, exponential + jitter)
 }
 
 const limitTools = (
@@ -2216,39 +2375,99 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               })
 
               let closeErrorMessage: string | null = null
+              const backgroundPolicy = resolveBackgroundExecutionPolicy(
+                dependencies.backgroundExecution
+              )
+              const stallAbortController = new AbortController()
+              const stallTimer = setTimeout(() => {
+                stallAbortController.abort()
+              }, backgroundPolicy.stallTimeoutMs)
 
               try {
-                const parsedResultRecovery = await promptJsonWithRecovery({
-                  dependencies,
-                  sessionId,
-                  basePrompt: buildInteractiveBackgroundPrompt(validatedPayload.data),
-                  parse: (assistantText) => {
-                    const parsed = parseStructuredResult(assistantText)
-                    return {
-                      value: parsed.parseErrorCode ? null : parsed.result,
-                      rawOutput: parsed.rawOutput,
-                      parseErrorCode: parsed.parseErrorCode,
-                      parseErrorMessage: parsed.parseErrorMessage,
+                const basePrompt = buildInteractiveBackgroundPrompt(validatedPayload.data)
+                let parsedResultRecovery: JsonContractRecoveryOutcome<TaskExecutionResult> | null = null
+
+                for (
+                  let transientRetryAttempt = 0;
+                  transientRetryAttempt <= backgroundPolicy.transientRetryCount;
+                  transientRetryAttempt += 1
+                ) {
+                  try {
+                    parsedResultRecovery = await promptJsonWithRecovery({
+                      dependencies,
+                      sessionId,
+                      basePrompt,
+                      parse: (assistantText) => {
+                        const parsed = parseStructuredResult(assistantText)
+                        return {
+                          value: parsed.parseErrorCode ? null : parsed.result,
+                          rawOutput: parsed.rawOutput,
+                          parseErrorCode: parsed.parseErrorCode,
+                          parseErrorMessage: parsed.parseErrorMessage,
+                        }
+                      },
+                      options: {
+                        systemPrompt,
+                        systemPromptProvenance: runPromptProvenance,
+                        tools,
+                        agent: "assistant",
+                        signal: stallAbortController.signal,
+                        requestTimeoutMs: backgroundPolicy.requestTimeoutMs,
+                        modelContext: {
+                          flow: "interactiveAssistant",
+                          jobModelRef: job.modelRef,
+                        },
+                      },
+                      maxAttempts: 3,
+                      retryToolsMode: "preserve",
+                      logContext: {
+                        phase: "background_task_result",
+                        jobId: job.id,
+                        runId,
+                      },
+                    })
+                    break
+                  } catch (error) {
+                    const classifiedError = classifyExecutionError(error, {
+                      stallSignalAborted: stallAbortController.signal.aborted,
+                    })
+                    if (
+                      !classifiedError.retriable ||
+                      transientRetryAttempt >= backgroundPolicy.transientRetryCount
+                    ) {
+                      throw new ClassifiedExecutionFailure(
+                        classifiedError.code,
+                        classifiedError.message
+                      )
                     }
-                  },
-                  options: {
-                    systemPrompt,
-                    systemPromptProvenance: runPromptProvenance,
-                    tools,
-                    agent: "assistant",
-                    modelContext: {
-                      flow: "interactiveAssistant",
-                      jobModelRef: job.modelRef,
-                    },
-                  },
-                  maxAttempts: 3,
-                  retryToolsMode: "preserve",
-                  logContext: {
-                    phase: "background_task_result",
-                    jobId: job.id,
-                    runId,
-                  },
-                })
+
+                    const retryDelayMs = computeRetryDelayMs(
+                      backgroundPolicy,
+                      transientRetryAttempt + 1
+                    )
+                    dependencies.logger.warn(
+                      {
+                        jobId: job.id,
+                        runId,
+                        retryAttempt: transientRetryAttempt + 1,
+                        maxRetries: backgroundPolicy.transientRetryCount,
+                        retryDelayMs,
+                        errorCode: classifiedError.code,
+                        error: classifiedError.message,
+                      },
+                      "Interactive background execution failed with transient error; retrying"
+                    )
+
+                    await waitWithSignal(retryDelayMs, stallAbortController.signal)
+                  }
+                }
+
+                if (!parsedResultRecovery) {
+                  throw new ClassifiedExecutionFailure(
+                    "task_execution_error",
+                    "Background execution retry loop exhausted"
+                  )
+                }
 
                 const parsedResult: TaskExecutionParseOutcome = parsedResultRecovery.value
                   ? {
@@ -2282,9 +2501,16 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
                 result = parsedResult.result
                 persistedRawOutput = parsedResult.rawOutput
               } catch (error) {
-                const err = error as Error
-                result = toFailureResult("task_execution_error", err.message)
+                if (error instanceof ClassifiedExecutionFailure) {
+                  result = toFailureResult(error.code, error.message)
+                } else {
+                  const classifiedError = classifyExecutionError(error, {
+                    stallSignalAborted: stallAbortController.signal.aborted,
+                  })
+                  result = toFailureResult(classifiedError.code, classifiedError.message)
+                }
               } finally {
+                clearTimeout(stallTimer)
                 try {
                   if (dependencies.sessionGateway.closeSession) {
                     await dependencies.sessionGateway.closeSession(sessionId)
@@ -2462,9 +2688,14 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
           }
         }
       } catch (error) {
-        const err = error as Error
-        dependencies.logger.error({ jobId: job.id, error: err.message }, "Task execution failed")
-        result = toFailureResult("task_execution_error", err.message)
+        const classifiedError = classifyExecutionError(error, {
+          stallSignalAborted: false,
+        })
+        dependencies.logger.error(
+          { jobId: job.id, error: classifiedError.message, errorCode: classifiedError.code },
+          "Task execution failed"
+        )
+        result = toFailureResult(classifiedError.code, classifiedError.message)
       }
 
       const finishedAt = now()

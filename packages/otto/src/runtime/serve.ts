@@ -467,6 +467,7 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       interactiveContextEventsRepository,
       eodLearningRepository,
       sessionGateway: schedulerSessionGateway,
+      backgroundExecution: schedulerConfig.background,
       defaultWatchdogChatId: watchdogChatId,
       nonInteractiveContextCaptureService,
     })

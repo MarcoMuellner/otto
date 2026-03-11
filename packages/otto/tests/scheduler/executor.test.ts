@@ -1743,6 +1743,300 @@ describe("task execution engine", () => {
     db.close()
   })
 
+  it("retries transient background transport errors before succeeding", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+
+    jobsRepository.createTask({
+      id: "job-background-retry-1",
+      type: INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 7_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: null,
+          sourceMessageId: null,
+          chatId: null,
+        },
+        request: {
+          text: "Run a background retry validation",
+          requestedAt: 6_900,
+          rationale: null,
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 7_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 6_900,
+      updatedAt: 6_900,
+    })
+
+    const claimed = jobsRepository.claimDue(7_000, 10, "lock-background-retry-1", 60_000, 7_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due background task claim")
+    }
+
+    const promptSession = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockResolvedValue(
+        JSON.stringify({
+          status: "success",
+          summary: "Retry recovered successfully.",
+          errors: [],
+        })
+      )
+
+    const logger = createLoggerStub()
+    const engine = createTaskExecutionEngine({
+      logger,
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-background-retry-1",
+        closeSession: async () => {},
+        promptSession,
+      },
+      backgroundExecution: {
+        requestTimeoutMs: null,
+        stallTimeoutMs: 60_000,
+        transientRetryCount: 1,
+        retryBaseMs: 1,
+        retryMaxMs: 1,
+      },
+      defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => 7_500,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const run = jobsRepository.listRunsByJobId("job-background-retry-1")[0]
+    expect(run?.status).toBe("success")
+    expect(promptSession).toHaveBeenCalledTimes(2)
+    expect(promptSession.mock.calls[0]?.[2]?.requestTimeoutMs).toBeNull()
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: "job-background-retry-1",
+        errorCode: "task_network_error",
+      }),
+      "Interactive background execution failed with transient error; retrying"
+    )
+
+    db.close()
+  })
+
+  it("maps repeated background fetch failures to task_network_error", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+
+    jobsRepository.createTask({
+      id: "job-background-retry-2",
+      type: INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 8_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: null,
+          sourceMessageId: null,
+          chatId: null,
+        },
+        request: {
+          text: "Run a background failure classification validation",
+          requestedAt: 7_900,
+          rationale: null,
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 8_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 7_900,
+      updatedAt: 7_900,
+    })
+
+    const claimed = jobsRepository.claimDue(8_000, 10, "lock-background-retry-2", 60_000, 8_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due background task claim")
+    }
+
+    const engine = createTaskExecutionEngine({
+      logger: createLoggerStub(),
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-background-retry-2",
+        closeSession: async () => {},
+        promptSession: async () => {
+          throw new Error("fetch failed")
+        },
+      },
+      backgroundExecution: {
+        requestTimeoutMs: null,
+        stallTimeoutMs: 60_000,
+        transientRetryCount: 0,
+        retryBaseMs: 1,
+        retryMaxMs: 1,
+      },
+      defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => 8_500,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const run = jobsRepository.listRunsByJobId("job-background-retry-2")[0]
+    expect(run?.status).toBe("failed")
+    expect(run?.errorCode).toBe("task_network_error")
+    expect(run?.errorMessage).toBe("fetch failed")
+
+    db.close()
+  })
+
+  it("maps stalled background runs to task_stalled", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const db = openPersistenceDatabase({ dbPath: path.join(tempRoot, "state.db") })
+    const jobsRepository = createJobsRepository(db)
+    const jobRunSessionsRepository = createJobRunSessionsRepository(db)
+    const sessionBindingsRepository = createSessionBindingsRepository(db)
+    const outboundMessagesRepository = createOutboundMessagesRepository(db)
+    await writeMinimalTaskConfig(tempRoot)
+
+    jobsRepository.createTask({
+      id: "job-background-stall-1",
+      type: INTERACTIVE_BACKGROUND_ONESHOT_JOB_TYPE,
+      status: "idle",
+      scheduleType: "oneshot",
+      profileId: null,
+      modelRef: null,
+      runAt: 9_000,
+      cadenceMinutes: null,
+      payload: JSON.stringify({
+        version: 1,
+        source: {
+          surface: "interactive",
+          sessionId: null,
+          sourceMessageId: null,
+          chatId: null,
+        },
+        request: {
+          text: "Run a stall watchdog validation",
+          requestedAt: 8_900,
+          rationale: null,
+        },
+      }),
+      lastRunAt: null,
+      nextRunAt: 9_000,
+      terminalState: null,
+      terminalReason: null,
+      lockToken: null,
+      lockExpiresAt: null,
+      createdAt: 8_900,
+      updatedAt: 8_900,
+    })
+
+    const claimed = jobsRepository.claimDue(9_000, 10, "lock-background-stall-1", 60_000, 9_000)[0]
+    if (!claimed) {
+      throw new Error("Expected due background task claim")
+    }
+
+    const engine = createTaskExecutionEngine({
+      logger: createLoggerStub(),
+      ottoHome: tempRoot,
+      jobsRepository,
+      jobRunSessionsRepository,
+      sessionBindingsRepository,
+      outboundMessagesRepository,
+      sessionGateway: {
+        ensureSession: async () => "session-background-stall-1",
+        closeSession: async () => {},
+        promptSession: async (_sessionId, _text, options) => {
+          await new Promise((_, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true }
+            )
+          })
+          return ""
+        },
+      },
+      backgroundExecution: {
+        requestTimeoutMs: null,
+        stallTimeoutMs: 5,
+        transientRetryCount: 0,
+        retryBaseMs: 1,
+        retryMaxMs: 1,
+      },
+      defaultWatchdogChatId: 777,
+      userProfileRepository: {
+        get: () => null,
+        setLastDigestAt: () => {},
+      },
+      now: () => 9_500,
+    })
+
+    // Act
+    await engine.executeClaimedJob(claimed)
+
+    // Assert
+    const run = jobsRepository.listRunsByJobId("job-background-stall-1")[0]
+    expect(run?.status).toBe("failed")
+    expect(run?.errorCode).toBe("task_stalled")
+    expect(run?.errorMessage).toBe("Background run exceeded no-progress watchdog window")
+
+    db.close()
+  })
+
   it("executes watchdog task and queues alert through existing outbound infrastructure", async () => {
     // Arrange
     const tempRoot = await mkdtemp(TEMP_PREFIX)

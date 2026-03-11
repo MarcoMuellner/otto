@@ -5,6 +5,13 @@ export type SchedulerConfig = {
   tickMs: number
   batchSize: number
   lockLeaseMs: number
+  background: {
+    requestTimeoutMs: number | null
+    stallTimeoutMs: number
+    transientRetryCount: number
+    retryBaseMs: number
+    retryMaxMs: number
+  }
 }
 
 const schedulerConfigSchema = z.object({
@@ -12,6 +19,11 @@ const schedulerConfigSchema = z.object({
   OTTO_SCHEDULER_TICK_MS: z.string().optional(),
   OTTO_SCHEDULER_BATCH_SIZE: z.string().optional(),
   OTTO_SCHEDULER_LOCK_LEASE_MS: z.string().optional(),
+  OTTO_BACKGROUND_REQUEST_TIMEOUT_MS: z.string().optional(),
+  OTTO_BACKGROUND_STALL_TIMEOUT_MS: z.string().optional(),
+  OTTO_BACKGROUND_TRANSIENT_RETRIES: z.string().optional(),
+  OTTO_BACKGROUND_RETRY_BASE_MS: z.string().optional(),
+  OTTO_BACKGROUND_RETRY_MAX_MS: z.string().optional(),
 })
 
 /**
@@ -56,10 +68,57 @@ export const resolveSchedulerConfig = (
     )
   }
 
+  const requestTimeoutRaw = parsed.data.OTTO_BACKGROUND_REQUEST_TIMEOUT_MS
+  const parsedRequestTimeout = requestTimeoutRaw == null ? 0 : Number(requestTimeoutRaw)
+  if (!Number.isInteger(parsedRequestTimeout) || parsedRequestTimeout < 0) {
+    throw new Error(
+      "Invalid scheduler config: OTTO_BACKGROUND_REQUEST_TIMEOUT_MS must be an integer >= 0"
+    )
+  }
+
+  const stallTimeoutRaw = parsed.data.OTTO_BACKGROUND_STALL_TIMEOUT_MS
+  const stallTimeoutMs = stallTimeoutRaw == null ? 1_800_000 : Number(stallTimeoutRaw)
+  if (!Number.isInteger(stallTimeoutMs) || stallTimeoutMs < 60_000) {
+    throw new Error(
+      "Invalid scheduler config: OTTO_BACKGROUND_STALL_TIMEOUT_MS must be an integer >= 60000"
+    )
+  }
+
+  const retryCountRaw = parsed.data.OTTO_BACKGROUND_TRANSIENT_RETRIES
+  const transientRetryCount = retryCountRaw == null ? 2 : Number(retryCountRaw)
+  if (!Number.isInteger(transientRetryCount) || transientRetryCount < 0) {
+    throw new Error(
+      "Invalid scheduler config: OTTO_BACKGROUND_TRANSIENT_RETRIES must be an integer >= 0"
+    )
+  }
+
+  const retryBaseRaw = parsed.data.OTTO_BACKGROUND_RETRY_BASE_MS
+  const retryBaseMs = retryBaseRaw == null ? 1_000 : Number(retryBaseRaw)
+  if (!Number.isInteger(retryBaseMs) || retryBaseMs < 100) {
+    throw new Error(
+      "Invalid scheduler config: OTTO_BACKGROUND_RETRY_BASE_MS must be an integer >= 100"
+    )
+  }
+
+  const retryMaxRaw = parsed.data.OTTO_BACKGROUND_RETRY_MAX_MS
+  const retryMaxMs = retryMaxRaw == null ? 30_000 : Number(retryMaxRaw)
+  if (!Number.isInteger(retryMaxMs) || retryMaxMs < retryBaseMs) {
+    throw new Error(
+      "Invalid scheduler config: OTTO_BACKGROUND_RETRY_MAX_MS must be an integer >= OTTO_BACKGROUND_RETRY_BASE_MS"
+    )
+  }
+
   return {
     enabled,
     tickMs,
     batchSize,
     lockLeaseMs,
+    background: {
+      requestTimeoutMs: parsedRequestTimeout === 0 ? null : parsedRequestTimeout,
+      stallTimeoutMs,
+      transientRetryCount,
+      retryBaseMs,
+      retryMaxMs,
+    },
   }
 }

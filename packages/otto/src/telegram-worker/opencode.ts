@@ -24,30 +24,28 @@ type SessionModelContext = {
   jobModelRef?: string | null
 }
 
+type SessionPromptOptions = {
+  systemPrompt?: string
+  systemPromptProvenance?: PromptProvenance | null
+  tools?: Record<string, boolean>
+  agent?: string
+  modelContext?: SessionModelContext
+  signal?: AbortSignal
+  requestTimeoutMs?: number | null
+}
+
 export type OpencodeSessionGateway = {
   ensureSession: (sessionId: string | null) => Promise<string>
   closeSession?: (sessionId: string) => Promise<void>
   promptSessionParts: (
     sessionId: string,
     parts: OpencodePromptPart[],
-    options?: {
-      systemPrompt?: string
-      systemPromptProvenance?: PromptProvenance | null
-      tools?: Record<string, boolean>
-      agent?: string
-      modelContext?: SessionModelContext
-    }
+    options?: SessionPromptOptions
   ) => Promise<string>
   promptSession: (
     sessionId: string,
     text: string,
-    options?: {
-      systemPrompt?: string
-      systemPromptProvenance?: PromptProvenance | null
-      tools?: Record<string, boolean>
-      agent?: string
-      modelContext?: SessionModelContext
-    }
+    options?: SessionPromptOptions
   ) => Promise<string>
 }
 
@@ -79,6 +77,19 @@ const extractAssistantText = (payload: SessionChatResponsePayload): string => {
     .filter((part) => part.type === "text")
     .map((part) => part.text ?? "")
     .join("\n")
+}
+
+const mergeSignals = (signals: Array<AbortSignal | undefined>): AbortSignal | undefined => {
+  const presentSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal))
+  if (presentSignals.length === 0) {
+    return undefined
+  }
+
+  if (presentSignals.length === 1) {
+    return presentSignals[0]
+  }
+
+  return AbortSignal.any(presentSignals)
 }
 
 const resolveModelSelection = async (
@@ -129,13 +140,7 @@ export const createOpencodeSessionGateway = (
   const promptSessionParts = async (
     sessionId: string,
     parts: OpencodePromptPart[],
-    options?: {
-      systemPrompt?: string
-      systemPromptProvenance?: PromptProvenance | null
-      tools?: Record<string, boolean>
-      agent?: string
-      modelContext?: SessionModelContext
-    }
+    options?: SessionPromptOptions
   ): Promise<string> => {
     let modelSelection: ModelSelection
 
@@ -164,6 +169,12 @@ export const createOpencodeSessionGateway = (
       "Sending Telegram prompt to OpenCode session chat API"
     )
 
+    const timeoutSignal =
+      typeof options?.requestTimeoutMs === "number" && options.requestTimeoutMs > 0
+        ? AbortSignal.timeout(options.requestTimeoutMs)
+        : undefined
+    const signal = mergeSignals([options?.signal, timeoutSignal])
+
     const response = await sessionApi.prompt({
       path: { id: sessionId },
       body: {
@@ -176,6 +187,7 @@ export const createOpencodeSessionGateway = (
         tools: options?.tools,
         parts,
       },
+      ...(signal ? { signal } : {}),
     })
 
     const payload = response.data
