@@ -51,6 +51,8 @@ should ask whether you want:
 - Nightly EOD transparency digests use the same outbound queue + notification
   policy gates (quiet-hours hold/release, mute behavior), so delivery behavior
   is consistent with other Telegram notifications.
+- EOD digest content is model-generated from structured run data with strict
+  JSON validation and deterministic fallback formatting when generation fails.
 
 ## Verification
 
