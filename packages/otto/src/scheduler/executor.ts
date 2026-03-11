@@ -33,7 +33,11 @@ import {
   EOD_LEARNING_TASK_TYPE,
 } from "./eod-learning.js"
 import { evaluateEodLearningDecisions } from "./eod-learning/decision-engine.js"
-import { buildEodLearningDigestMessage } from "./eod-learning/digest.js"
+import {
+  buildEodLearningDigestInterpretationPrompt,
+  buildEodLearningDigestMessage,
+  parseEodLearningDigestMessage,
+} from "./eod-learning/digest.js"
 import { aggregateEodEvidenceBundle } from "./eod-learning/evidence-aggregation.js"
 import { scheduleEodFollowUpActions } from "./eod-learning/follow-up-actions.js"
 import {
@@ -1329,12 +1333,64 @@ const executeEodLearningTask = async (input: {
     })
     input.dependencies.eodLearningRepository?.insertRunWithArtifacts(persistedArtifacts)
 
+    let digestMessageContent = buildEodLearningDigestMessage(persistedArtifacts)
+    let digestMessageSource: "llm" | "fallback" = "fallback"
+
+    try {
+      const digestOutput = await input.dependencies.sessionGateway.promptSession(
+        sessionId,
+        buildEodLearningDigestInterpretationPrompt(persistedArtifacts),
+        {
+          systemPrompt: promptResolution.systemPrompt,
+          systemPromptProvenance: runPromptProvenance,
+          tools: {},
+          agent: "assistant",
+          modelContext: {
+            flow: "scheduledTasks",
+            jobModelRef: input.job.modelRef,
+          },
+        }
+      )
+
+      const parsedDigest = parseEodLearningDigestMessage(digestOutput)
+      if (parsedDigest.message) {
+        digestMessageContent = parsedDigest.message
+        digestMessageSource = "llm"
+      } else {
+        input.dependencies.logger.warn(
+          {
+            runId: input.runId,
+            parseErrorCode: parsedDigest.parseErrorCode,
+            parseErrorMessage: parsedDigest.parseErrorMessage,
+            rawOutput: parsedDigest.rawOutput,
+          },
+          "EOD digest generation returned invalid output; using fallback formatter"
+        )
+      }
+    } catch (error) {
+      const err = error as Error
+      input.dependencies.logger.warn(
+        {
+          runId: input.runId,
+          error: err.message,
+        },
+        "EOD digest generation unavailable; using fallback formatter"
+      )
+    }
+
     try {
       enqueueEodLearningDigest(input.dependencies, {
         runId: input.runId,
-        messageContent: buildEodLearningDigestMessage(persistedArtifacts),
+        messageContent: digestMessageContent,
         timestamp: finishedAt,
       })
+      input.dependencies.logger.info(
+        {
+          runId: input.runId,
+          messageSource: digestMessageSource,
+        },
+        "Prepared EOD learning digest message"
+      )
     } catch (error) {
       const err = error as Error
       input.dependencies.logger.warn(

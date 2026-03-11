@@ -676,6 +676,11 @@ describe("task execution engine", () => {
         })
       )
       .mockRejectedValueOnce(new Error("apply step failed"))
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          message: "fallback-friendly digest",
+        })
+      )
 
     const engine = createTaskExecutionEngine({
       logger: createLoggerStub(),
@@ -725,7 +730,7 @@ describe("task execution engine", () => {
       (entry) => entry.item.title === "Low confidence candidate"
     )
     expect(lowConfidenceItem?.item.applyStatus).toBe("candidate_only")
-    expect(promptSession).toHaveBeenCalledTimes(2)
+    expect(promptSession).toHaveBeenCalledTimes(3)
 
     db.close()
   })
@@ -812,20 +817,27 @@ describe("task execution engine", () => {
       throw new Error("Expected due EOD task claim")
     }
 
-    const promptSession = vi.fn().mockResolvedValueOnce(
-      JSON.stringify({
-        candidates: [
-          {
-            title: "Digest candidate",
-            confidence: 0.4,
-            contradiction: false,
-            expectedValue: 0.2,
-            evidenceIds: ["task_audit:ta-digest-1", "command_audit:ca-digest-1"],
-            rationale: "Low confidence candidate",
-          },
-        ],
-      })
-    )
+    const promptSession = vi
+      .fn()
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          candidates: [
+            {
+              title: "Digest candidate",
+              confidence: 0.4,
+              contradiction: false,
+              expectedValue: 0.2,
+              evidenceIds: ["task_audit:ta-digest-1", "command_audit:ca-digest-1"],
+              rationale: "Low confidence candidate",
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          message: "LLM digest message",
+        })
+      )
 
     const engine = createTaskExecutionEngine({
       logger: createLoggerStub(),
@@ -861,8 +873,7 @@ describe("task execution engine", () => {
     expect(queued).toHaveLength(1)
     expect(queued[0]?.chatId).toBe(777)
     expect(queued[0]?.dedupeKey).toContain("eod-learning-digest:")
-    expect(queued[0]?.content).toContain("EOD digest (success)")
-    expect(queued[0]?.content).toContain("- run:")
+    expect(queued[0]?.content).toBe("LLM digest message")
 
     db.close()
   })
@@ -1101,6 +1112,11 @@ describe("task execution engine", () => {
       )
       .mockResolvedValueOnce(
         JSON.stringify({
+          message: "run-1 digest",
+        })
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
           candidates: [
             {
               title: "Reminder clarity",
@@ -1127,6 +1143,11 @@ describe("task execution engine", () => {
           status: "success",
           summary: "Applied",
           actions: [],
+        })
+      )
+      .mockResolvedValueOnce(
+        JSON.stringify({
+          message: "run-2 digest",
         })
       )
 

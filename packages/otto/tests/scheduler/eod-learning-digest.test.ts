@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest"
 
 import type { EodLearningRunArtifacts } from "../../src/persistence/repositories.js"
-import { buildEodLearningDigestMessage } from "../../src/scheduler/eod-learning/digest.js"
+import {
+  buildEodLearningDigestInterpretationPrompt,
+  buildEodLearningDigestMessage,
+  parseEodLearningDigestMessage,
+} from "../../src/scheduler/eod-learning/digest.js"
 
 const buildRunArtifacts = (
   overrides?: Partial<EodLearningRunArtifacts["run"]>,
@@ -76,12 +80,11 @@ describe("eod-learning digest formatter", () => {
     const digest = buildEodLearningDigestMessage(artifacts)
 
     // Assert
-    expect(digest).toContain("EOD digest (success)")
-    expect(digest).toContain("- run: run-1")
-    expect(digest).toContain("- candidates: 2")
-    expect(digest).toContain("applied 1")
-    expect(digest).toContain("candidate-only 1")
-    expect(digest).toContain("follow-ups: scheduled 1, skipped 0, failed 0")
+    expect(digest).toContain("EOD learning run run-1 (success)")
+    expect(digest).toContain("Reviewed 2 candidates")
+    expect(digest).toContain("1 applied")
+    expect(digest).toContain("1 candidate-only")
+    expect(digest).toContain("Follow-ups: 1 scheduled, 0 skipped, 0 failed")
     expect(digest).toContain("Improve reminder phrasing")
   })
 
@@ -159,9 +162,9 @@ describe("eod-learning digest formatter", () => {
     const digest = buildEodLearningDigestMessage(artifacts)
 
     // Assert
-    expect(digest).toContain("- run: run-partial")
-    expect(digest).toContain("applied 1, skipped 1, candidate-only 0, failed 1")
-    expect(digest).toContain("follow-ups: scheduled 1, skipped 1, failed 1")
+    expect(digest).toContain("EOD learning run run-partial (success)")
+    expect(digest).toContain("1 applied, 1 skipped, 0 candidate-only, 1 failed")
+    expect(digest).toContain("Follow-ups: 1 scheduled, 1 skipped, 1 failed")
   })
 
   it("formats empty-learning windows without leaking raw payloads", () => {
@@ -183,8 +186,111 @@ describe("eod-learning digest formatter", () => {
     const digest = buildEodLearningDigestMessage(artifacts)
 
     // Assert
-    expect(digest).toContain("- candidates: 0")
-    expect(digest).toContain("- highlights: none in this window")
+    expect(digest).toContain("Reviewed 0 candidates")
+    expect(digest).toContain("Key findings: none in this window.")
     expect(digest).not.toContain("metadataJson")
+  })
+
+  it("surfaces policy and scheduled follow-up context in readable wording", () => {
+    // Arrange
+    const artifacts = buildRunArtifacts(
+      {
+        id: "run-readable",
+        summaryJson: JSON.stringify({
+          candidateCount: 1,
+          followUpScheduledCount: 1,
+          followUpSkippedCount: 0,
+          followUpFailedCount: 0,
+        }),
+      },
+      [
+        {
+          item: {
+            id: "item-readable",
+            runId: "run-readable",
+            ordinal: 0,
+            title: "Interactive one-shot background jobs fail on output contract violations",
+            decision: "auto_apply_memory_journal_high_confidence",
+            confidence: 0.93,
+            contradictionFlag: 0,
+            expectedValue: 0.82,
+            applyStatus: "skipped",
+            applyError: null,
+            metadataJson: JSON.stringify({
+              policyReason: "high_confidence",
+            }),
+            createdAt: 2_100,
+          },
+          evidence: [],
+          actions: [
+            {
+              id: "action-memory",
+              runId: "run-readable",
+              itemId: "item-readable",
+              ordinal: 0,
+              actionType: "memory_replace",
+              status: "skipped",
+              expectedValue: 0.82,
+              detail: "Skipped as duplicate: existing project memory already encodes this failure mode.",
+              errorMessage: null,
+              metadataJson: "{}",
+              createdAt: 2_100,
+            },
+            {
+              id: "action-follow-up",
+              runId: "run-readable",
+              itemId: "item-readable",
+              ordinal: 1,
+              actionType: "follow_up_schedule",
+              status: "success",
+              expectedValue: 0.84,
+              detail: "Scheduled follow-up task task-1",
+              errorMessage: null,
+              metadataJson: JSON.stringify({
+                proposalTitle: "Add strict final-output validator with fallback envelope",
+              }),
+              createdAt: 2_100,
+            },
+          ],
+        },
+      ]
+    )
+
+    // Act
+    const digest = buildEodLearningDigestMessage(artifacts)
+
+    // Assert
+    expect(digest).toContain("Skipped breakdown: 0 conflicting evidence, 1 not durable/duplicate, 0 other policy gates.")
+    expect(digest).toContain("Scheduled follow-ups:")
+    expect(digest).toContain("Add strict final-output validator with fallback envelope")
+    expect(digest).toContain("not persisted: Skipped as duplicate")
+  })
+
+  it("parses structured LLM digest payload", () => {
+    // Arrange
+    const output = JSON.stringify({
+      message: "Short operator digest",
+    })
+
+    // Act
+    const parsed = parseEodLearningDigestMessage(output)
+
+    // Assert
+    expect(parsed.message).toBe("Short operator digest")
+    expect(parsed.parseErrorCode).toBeNull()
+  })
+
+  it("builds digest interpretation prompt with run context JSON", () => {
+    // Arrange
+    const artifacts = buildRunArtifacts()
+
+    // Act
+    const prompt = buildEodLearningDigestInterpretationPrompt(artifacts)
+
+    // Assert
+    expect(prompt).toContain('Return ONLY valid JSON with this exact shape:')
+    expect(prompt).toContain('"message"')
+    expect(prompt).toContain('"run"')
+    expect(prompt).toContain('"run-1"')
   })
 })
