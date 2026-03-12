@@ -29,6 +29,7 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - The file is auto-created with defaults if it does not exist
 - Runtime behavior is file-first: edit this config to customize host/port/workspace
 - Bundled OpenCode provider defaults in `~/.otto/opencode.jsonc` disable OpenAI request timeout (`provider.openai.options.timeout=false`) and extend streamed chunk timeout (`provider.openai.options.chunkTimeout=1800000`) to reduce premature aborts on long background runs
+- Interactive background jobs execute in isolated OpenCode session directories under `~/.otto/tmp/background-sessions/<job-id>/<run-id>` to reduce cross-session contention with foreground chat state
 - Pretty terminal logs are opt-in via `OTTO_PRETTY_LOGS=1` (default runtime logging is structured and deployment-safe)
 - Telegram worker credentials are stored in `~/.local/share/otto/secrets/telegram.env` and managed by `ottoctl configure-telegram`
 - Service runtime env vars are stored in `~/.local/share/otto/secrets/runtime.env` and loaded on boot (systemd `EnvironmentFile`, launchd plist environment)

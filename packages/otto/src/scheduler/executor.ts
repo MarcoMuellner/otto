@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto"
+import { mkdir } from "node:fs/promises"
+import path from "node:path"
 
 import type { Logger } from "pino"
 import { z } from "zod"
@@ -942,6 +944,14 @@ const resolveBackgroundExecutionPolicy = (
     retryBaseMs: policy.retryBaseMs,
     retryMaxMs: policy.retryMaxMs,
   }
+}
+
+const resolveBackgroundSessionDirectory = (
+  ottoHome: string,
+  jobId: string,
+  runId: string
+): string => {
+  return path.join(ottoHome, "tmp", "background-sessions", jobId, runId)
 }
 
 const toErrorMessage = (error: unknown): string => {
@@ -2349,7 +2359,17 @@ export const createTaskExecutionEngine = (dependencies: TaskExecutionEngineDepen
               )
               const tools = resolveBackgroundTools(assistant?.tools)
 
-              const sessionId = await dependencies.sessionGateway.ensureSession(null)
+              const sessionDirectory = resolveBackgroundSessionDirectory(
+                dependencies.ottoHome,
+                job.id,
+                runId
+              )
+              await mkdir(sessionDirectory, { recursive: true })
+
+              const sessionId = await dependencies.sessionGateway.ensureSession(null, {
+                title: `Background run ${job.id}`,
+                directory: sessionDirectory,
+              })
               dependencies.jobRunSessionsRepository.insert({
                 runId,
                 jobId: job.id,

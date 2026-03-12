@@ -1802,6 +1802,7 @@ describe("task execution engine", () => {
           errors: [],
         })
       )
+    const ensureSession = vi.fn(async () => "session-background-retry-1")
 
     const logger = createLoggerStub()
     const engine = createTaskExecutionEngine({
@@ -1812,7 +1813,7 @@ describe("task execution engine", () => {
       sessionBindingsRepository,
       outboundMessagesRepository,
       sessionGateway: {
-        ensureSession: async () => "session-background-retry-1",
+        ensureSession,
         closeSession: async () => {},
         promptSession,
       },
@@ -1839,6 +1840,15 @@ describe("task execution engine", () => {
     expect(run?.status).toBe("success")
     expect(promptSession).toHaveBeenCalledTimes(2)
     expect(promptSession.mock.calls[0]?.[2]?.requestTimeoutMs).toBeNull()
+    expect(ensureSession).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        title: "Background run job-background-retry-1",
+        directory: expect.stringContaining(
+          path.join("tmp", "background-sessions", "job-background-retry-1")
+        ),
+      })
+    )
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         jobId: "job-background-retry-1",

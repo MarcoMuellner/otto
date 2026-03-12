@@ -35,7 +35,14 @@ type SessionPromptOptions = {
 }
 
 export type OpencodeSessionGateway = {
-  ensureSession: (sessionId: string | null) => Promise<string>
+  ensureSession: (
+    sessionId: string | null,
+    options?: {
+      title?: string
+      directory?: string
+      parentSessionId?: string
+    }
+  ) => Promise<string>
   closeSession?: (sessionId: string) => Promise<void>
   promptSessionParts: (
     sessionId: string,
@@ -199,7 +206,7 @@ export const createOpencodeSessionGateway = (
   }
 
   return {
-    ensureSession: async (sessionId) => {
+    ensureSession: async (sessionId, options) => {
       if (sessionId) {
         try {
           await sessionApi.get({ path: { id: sessionId } })
@@ -213,8 +220,10 @@ export const createOpencodeSessionGateway = (
 
       const created = await sessionApi.create({
         body: {
-          title: "Telegram chat",
+          title: options?.title ?? "Telegram chat",
+          ...(options?.parentSessionId ? { parentID: options.parentSessionId } : {}),
         },
+        ...(options?.directory ? { query: { directory: options.directory } } : {}),
       })
       const createdId = created.data?.id
 
