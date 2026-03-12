@@ -17,7 +17,6 @@
       "mode": "primary",
       "color": "#4ECDC4",
       "temperature": 0.3,
-      "steps": 25,
       "permission": {
         "bash": "allow",
         "edit": "allow",
