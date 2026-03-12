@@ -533,4 +533,80 @@ describe("outbound queue processor", () => {
     expect(repository.markSent).not.toHaveBeenCalled()
     expect(repository.markRetry).toHaveBeenCalled()
   })
+
+  it("does not send empty quiet-period digest when no runs were recorded", async () => {
+    // Arrange
+    const logger = createLoggerStub()
+    const repository = {
+      listDue: vi.fn(() => [
+        {
+          id: "out-supp-empty-1",
+          chatId: 101,
+          kind: "text" as const,
+          content: "suppressed message",
+          mediaPath: null,
+          mediaMimeType: null,
+          mediaFilename: null,
+          priority: "normal" as const,
+          attemptCount: 1,
+          createdAt: 900,
+          errorMessage: "suppressed_by_policy:quiet_hours",
+        },
+      ]),
+      markSent: vi.fn(),
+      markRetry: vi.fn(),
+      markFailed: vi.fn(),
+    }
+    const sender = {
+      sendMessage: vi.fn(async () => {}),
+      sendDocument: vi.fn(async () => {}),
+      sendPhoto: vi.fn(async () => {}),
+    }
+    const setLastDigestAt = vi.fn()
+    const now = new Date("2026-02-21T08:00:10+01:00").getTime()
+    const processor = createOutboundQueueProcessor({
+      logger,
+      repository,
+      sender,
+      retryPolicy: {
+        maxAttempts: 5,
+        baseDelayMs: 1_000,
+        maxDelayMs: 60_000,
+      },
+      userProfileRepository: {
+        get: () => ({
+          timezone: "Europe/Vienna",
+          quietHoursStart: "20:00",
+          quietHoursEnd: "08:00",
+          quietMode: "critical_only",
+          muteUntil: null,
+          heartbeatMorning: "08:30",
+          heartbeatMidday: "12:30",
+          heartbeatEvening: "19:00",
+          heartbeatCadenceMinutes: 180,
+          heartbeatOnlyIfSignal: true,
+          interactiveContextWindowSize: 20,
+          contextRetentionCap: 100,
+          onboardingCompletedAt: Date.now(),
+          lastDigestAt: null,
+          updatedAt: Date.now(),
+        }),
+        setLastDigestAt,
+      },
+      jobsRepository: {
+        listRecentRuns: vi.fn(() => []),
+      },
+    })
+
+    // Act
+    await processor.drainDueMessages(now)
+
+    // Assert
+    expect(sender.sendMessage).not.toHaveBeenCalledWith(
+      101,
+      "No task activity happened while notifications were paused."
+    )
+    expect(repository.markSent).toHaveBeenCalledWith("out-supp-empty-1", 2, now)
+    expect(setLastDigestAt).toHaveBeenCalledWith(now, now)
+  })
 })

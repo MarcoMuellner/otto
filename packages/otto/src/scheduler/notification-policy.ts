@@ -112,7 +112,7 @@ const resolveQuietReleaseAt = (
     candidate += QUIET_RELEASE_STEP_MS
   ) {
     if (getLocalClockMinutes(candidate, profile.timezone) === targetMinutes) {
-      return candidate
+      return candidate - (candidate % QUIET_RELEASE_STEP_MS)
     }
   }
 

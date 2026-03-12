@@ -465,8 +465,12 @@ export const createOutboundQueueProcessor = (
             groupedByChatId.set(message.chatId, existing)
           }
 
+          const shouldSendDigestMessage = runs.length > 0
+
           for (const [chatId, records] of groupedByChatId.entries()) {
-            await dependencies.sender.sendMessage(chatId, summarizeSuppressedRuns(runs))
+            if (shouldSendDigestMessage) {
+              await dependencies.sender.sendMessage(chatId, summarizeSuppressedRuns(runs))
+            }
             for (const record of records) {
               dependencies.repository.markSent(record.id, record.attemptCount + 1, now)
               mirrorDeliveryStatus(

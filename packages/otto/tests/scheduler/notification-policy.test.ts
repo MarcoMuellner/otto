@@ -68,6 +68,36 @@ describe("notification policy", () => {
     })
   })
 
+  it("rounds quiet-hours release timestamp to the exact minute boundary", () => {
+    // Arrange
+    const profile = resolveEffectiveNotificationProfile({
+      timezone: "Europe/Vienna",
+      quietHoursStart: "20:00",
+      quietHoursEnd: "07:00",
+      quietMode: "critical_only",
+      muteUntil: null,
+      heartbeatMorning: "08:30",
+      heartbeatMidday: "12:30",
+      heartbeatEvening: "19:00",
+      heartbeatCadenceMinutes: 180,
+      heartbeatOnlyIfSignal: true,
+      interactiveContextWindowSize: 20,
+      contextRetentionCap: 100,
+      onboardingCompletedAt: null,
+      lastDigestAt: null,
+      updatedAt: Date.now(),
+    })
+    const now = new Date("2026-03-11T22:12:17+01:00").getTime()
+
+    // Act
+    const decision = resolveNotificationGateDecision(profile, "normal", now)
+
+    // Assert
+    expect(decision.action).toBe("hold")
+    expect(decision.releaseAt).not.toBeNull()
+    expect((decision.releaseAt ?? 1) % 60_000).toBe(0)
+  })
+
   it("falls back to default timezone when configured timezone is invalid", () => {
     // Arrange
     const profile = resolveEffectiveNotificationProfile({
