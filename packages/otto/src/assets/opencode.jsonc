@@ -5,7 +5,8 @@
   "provider": {
     "openai": {
       "options": {
-        "timeout": false
+        "timeout": false,
+        "chunkTimeout": 1800000
       }
     }
   },
