@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "emby-mcp",
+  "name": "Emby MCP",
+  "version": "0.1.0",
+  "description": "Emby media server MCP integration for library discovery, search, playlist management, and player control.",
+  "tags": ["mcp", "emby", "media", "music", "video"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22",
+  },
+  "payload": {
+    "mcp": {
+      "file": "mcp.jsonc",
+    },
+    "skills": {
+      "path": "skills",
+    },
+  },
+  "requirements": {
+    "binaries": ["bash", "uv"],
+    "env": [],
+    "files": [
+      "integrations/emby-mcp/Emby.MCP/emby_mcp_server.py",
+      "integrations/emby-mcp/Emby.MCP/.env",
+    ],
+  },
+  "dependencies": [],
+}

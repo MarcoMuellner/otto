@@ -1,0 +1,11 @@
+{
+  "emby": {
+    "type": "local",
+    "command": [
+      "bash",
+      "-lc",
+      "cd \"${HOME}/.otto/integrations/emby-mcp/Emby.MCP\" && uv run emby_mcp_server.py",
+    ],
+    "enabled": true,
+  },
+}

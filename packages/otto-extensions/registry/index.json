@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-03-11T20:43:26.121Z",
+  "generatedAt": "2026-03-14T11:07:21.518Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -33,6 +33,25 @@
             "node": ">=22"
           },
           "description": "Brave Search MCP server for web, news, image, video, and local search with agent-friendly tooling.",
+          "payloadTypes": [
+            "skills",
+            "mcp"
+          ]
+        }
+      }
+    },
+    "emby-mcp": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/emby-mcp-0.1.0.tgz",
+          "sha256": "3ca41f46889f8cc79eff7798a9b287c514f6be3769c6a9d82c518a12132db445",
+          "sizeBytes": 2553,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "Emby media server MCP integration for library discovery, search, playlist management, and player control.",
           "payloadTypes": [
             "skills",
             "mcp"
