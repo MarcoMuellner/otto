@@ -5,6 +5,9 @@ export const eodEvidenceSourceKindSchema = z.enum([
   "command_audit",
   "job_run",
   "interactive_context",
+  "inbound_message",
+  "outbound_message",
+  "session_activity",
 ])
 
 export const eodEvidenceSignalGroupSchema = z.enum([
@@ -12,6 +15,8 @@ export const eodEvidenceSignalGroupSchema = z.enum([
   "commands",
   "jobs",
   "interactive_context",
+  "interactive_messages",
+  "sessions",
 ])
 
 export const eodEvidenceEntrySchema = z.object({

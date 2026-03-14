@@ -15,7 +15,7 @@ System task id: `system-daily-eod-learning`
 ## What Runs Each Night
 
 - Scheduler target is local midnight in the configured timezone.
-- Runtime aggregates evidence from sessions and task runs in the previous 24h.
+- Runtime aggregates evidence from all sessions and task runs in the previous 24h.
 - Each learning item is evaluated with confidence + contradiction policy.
 - Qualified items are auto-applied to memory/journal.
 - High-confidence reversible improvements can queue follow-up tasks.
@@ -42,6 +42,20 @@ System task id: `system-daily-eod-learning`
 - Confidence `0.6 - 0.79`: apply memory/journal only.
 - Confidence `< 0.6`: persist as candidate without auto-apply.
 - Conflicting signals are persisted for audit and never auto-applied.
+
+## Session Coverage Rules
+
+- EOD must represent every session that appears in the 24h window.
+- Session presence is computed from:
+  - inbound Telegram messages (`messages_in.session_id`)
+  - interactive context events (`interactive_context_events.source_session_id`)
+  - background/scheduled run sessions
+    (`job_run_sessions.session_id` joined by run start window)
+- Message excerpts are included directly in evidence
+  (trimmed + deterministic per-session caps)
+  so the run can reason over concrete conversational content.
+- Even when excerpt caps are reached, each session still gets a dedicated `session_activity`
+  evidence row so no active session is silently omitted.
 
 ## Manual Trigger (CLI)
 
