@@ -422,4 +422,13 @@ export const SQL_MIGRATIONS: SqlMigration[] = [
            watchdog_mute_until = COALESCE(watchdog_mute_until, NULL)`,
     ],
   },
+  {
+    id: "022_message_window_indexes",
+    statements: [
+      `CREATE INDEX IF NOT EXISTS idx_messages_in_received_session
+       ON messages_in (received_at DESC, session_id, id DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_messages_out_created_chat
+       ON messages_out (created_at DESC, chat_id, id DESC)`,
+    ],
+  },
 ]

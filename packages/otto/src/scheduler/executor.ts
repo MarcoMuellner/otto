@@ -237,6 +237,20 @@ type TaskExecutionEngineDependencies = {
     }) => void
     markClosed: (runId: string, closedAt: number, closeErrorMessage: string | null) => void
     setPromptProvenance?: (runId: string, promptProvenanceJson: string | null) => void
+    listByRunStartedWindow?: (
+      windowStart: number,
+      windowEnd: number,
+      limit?: number
+    ) => Array<{
+      runId: string
+      jobId: string
+      sessionId: string
+      createdAt: number
+      closedAt: number | null
+      closeErrorMessage: string | null
+      promptProvenanceJson?: string | null
+      runStartedAt: number
+    }>
   }
   sessionBindingsRepository: {
     getByBindingKey: (bindingKey: string) => { sessionId: string } | null
@@ -264,6 +278,41 @@ type TaskExecutionEngineDependencies = {
       createdAt: number
       updatedAt: number
     }) => "enqueued" | "duplicate"
+    listByCreatedWindow?: (
+      windowStart: number,
+      windowEnd: number,
+      limit?: number
+    ) => Array<{
+      id: string
+      dedupeKey: string | null
+      chatId: number
+      kind: "text" | "document" | "photo"
+      content: string
+      priority: "low" | "normal" | "high" | "critical"
+      status: "queued" | "sent" | "failed" | "cancelled"
+      attemptCount: number
+      sentAt: number | null
+      failedAt: number | null
+      errorMessage: string | null
+      createdAt: number
+      updatedAt: number
+    }>
+  }
+  inboundMessagesRepository?: {
+    listByReceivedWindow?: (
+      windowStart: number,
+      windowEnd: number,
+      limit?: number
+    ) => Array<{
+      id: string
+      sourceMessageId: string
+      chatId: number
+      userId: number | null
+      content: string | null
+      receivedAt: number
+      sessionId: string | null
+      createdAt: number
+    }>
   }
   sessionGateway: OpencodeSessionGateway
   defaultWatchdogChatId: number | null
@@ -1295,6 +1344,24 @@ const executeEodLearningTask = async (input: {
         windowStartedAt,
         windowEndedAt
       ) ?? []
+    const jobRunSessions =
+      input.dependencies.jobRunSessionsRepository.listByRunStartedWindow?.(
+        windowStartedAt,
+        windowEndedAt,
+        2_000
+      ) ?? []
+    const inboundMessages =
+      input.dependencies.inboundMessagesRepository?.listByReceivedWindow?.(
+        windowStartedAt,
+        windowEndedAt,
+        4_000
+      ) ?? []
+    const outboundMessages =
+      input.dependencies.outboundMessagesRepository.listByCreatedWindow?.(
+        windowStartedAt,
+        windowEndedAt,
+        4_000
+      ) ?? []
 
     const evidenceBundle = aggregateEodEvidenceBundle({
       windowStartedAt,
@@ -1302,8 +1369,26 @@ const executeEodLearningTask = async (input: {
       taskAudit,
       commandAudit,
       jobRuns,
+      jobRunSessions,
       interactiveContextEvents,
+      inboundMessages,
+      outboundMessages,
+      resolveSessionIdByChatId: input.dependencies.sessionBindingsRepository
+        .getSessionIdByTelegramChatId
+        ? (chatId) =>
+            input.dependencies.sessionBindingsRepository.getSessionIdByTelegramChatId?.(chatId) ??
+            null
+        : undefined,
     })
+    const sessionCoverageCount = evidenceBundle.evidence.filter(
+      (entry) => entry.sourceKind === "session_activity"
+    ).length
+    const inboundEvidenceCount = evidenceBundle.evidence.filter(
+      (entry) => entry.sourceKind === "inbound_message"
+    ).length
+    const outboundEvidenceCount = evidenceBundle.evidence.filter(
+      (entry) => entry.sourceKind === "outbound_message"
+    ).length
 
     const baseConfig = await loadTaskRuntimeBaseConfig(input.dependencies.ottoHome)
     let profile = undefined
@@ -1708,6 +1793,9 @@ const executeEodLearningTask = async (input: {
         followUpScheduledCount,
         followUpSkippedCount,
         followUpFailedCount,
+        sessionCoverageCount,
+        inboundEvidenceCount,
+        outboundEvidenceCount,
       },
       items: persistedItems,
     })

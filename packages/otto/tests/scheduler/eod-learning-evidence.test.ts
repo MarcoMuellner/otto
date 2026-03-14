@@ -66,15 +66,17 @@ describe("eod-learning evidence aggregation", () => {
     // Assert
     expect(result.evidence.map((entry) => entry.id)).toEqual([
       "interactive_context:ctx-2",
+      "session_activity:sess-1",
       "command_audit:command-1",
       "job_run:run-5",
       "task_audit:task-2",
     ])
     expect(result.evidence[0]?.trace.reference).toBe("interactive_context_events:ctx-2")
-    expect(result.evidence[1]?.trace.reference).toBe("command_audit_log:command-1")
-    expect(result.evidence[2]?.trace.reference).toBe("job_runs:run-5")
-    expect(result.evidence[3]?.trace.reference).toBe("task_audit_log:task-2")
-    expect(result.independentSignalCount).toBe(4)
+    expect(result.evidence[1]?.trace.reference).toBe("session:sess-1")
+    expect(result.evidence[2]?.trace.reference).toBe("command_audit_log:command-1")
+    expect(result.evidence[3]?.trace.reference).toBe("job_runs:run-5")
+    expect(result.evidence[4]?.trace.reference).toBe("task_audit_log:task-2")
+    expect(result.independentSignalCount).toBe(5)
   })
 
   it("deduplicates repeated source rows deterministically", () => {
@@ -182,10 +184,11 @@ describe("eod-learning evidence aggregation", () => {
       "commands",
       "interactive_context",
       "jobs",
+      "sessions",
       "tasks",
     ])
-    expect(result.groupedSignals.map((group) => group.evidenceCount)).toEqual([1, 1, 1, 1])
-    expect(result.independentSignalCount).toBe(4)
+    expect(result.groupedSignals.map((group) => group.evidenceCount)).toEqual([1, 1, 1, 1, 1])
+    expect(result.independentSignalCount).toBe(5)
   })
 
   it("returns an empty bundle for empty or noisy windows without throwing", () => {
@@ -217,5 +220,93 @@ describe("eod-learning evidence aggregation", () => {
     expect(result.evidence).toEqual([])
     expect(result.groupedSignals).toEqual([])
     expect(result.independentSignalCount).toBe(0)
+  })
+
+  it("represents every discovered session and caps message excerpts deterministically", () => {
+    // Arrange
+    const inboundMessages = Array.from({ length: 8 }, (_, index) => ({
+      id: `in-${index + 1}`,
+      sourceMessageId: `source-${index + 1}`,
+      chatId: 1,
+      userId: 10,
+      content: `Inbound ${index + 1}`,
+      receivedAt: 1_900 - index,
+      sessionId: "sess-a",
+      createdAt: 1_900 - index,
+    }))
+    const outboundMessages = Array.from({ length: 8 }, (_, index) => ({
+      id: `out-${index + 1}`,
+      dedupeKey: null,
+      chatId: 1,
+      kind: "text" as const,
+      content: `Outbound ${index + 1}`,
+      priority: "normal" as const,
+      status: "sent" as const,
+      attemptCount: 1,
+      sentAt: 1_800 - index,
+      failedAt: null,
+      errorMessage: null,
+      createdAt: 1_800 - index,
+      updatedAt: 1_800 - index,
+    }))
+
+    // Act
+    const result = aggregateEodEvidenceBundle({
+      windowStartedAt: 1_000,
+      windowEndedAt: 2_000,
+      taskAudit: [],
+      commandAudit: [],
+      jobRuns: [],
+      jobRunSessions: [
+        {
+          runId: "run-1",
+          jobId: "job-1",
+          sessionId: "sess-c",
+          createdAt: 1_700,
+          closedAt: 1_710,
+          closeErrorMessage: null,
+          promptProvenanceJson: null,
+          runStartedAt: 1_695,
+        },
+      ],
+      interactiveContextEvents: [
+        {
+          id: "ctx-1",
+          sourceSessionId: "sess-b",
+          outboundMessageId: "msg-1",
+          sourceLane: "internal_api",
+          sourceKind: "background_milestone",
+          sourceRef: null,
+          content: "milestone",
+          deliveryStatus: "sent",
+          deliveryStatusDetail: null,
+          errorMessage: null,
+          createdAt: 1_600,
+          updatedAt: 1_600,
+        },
+      ],
+      inboundMessages,
+      outboundMessages,
+      resolveSessionIdByChatId: (chatId) => (chatId === 1 ? "sess-a" : null),
+    })
+
+    // Assert
+    const inboundEvidence = result.evidence.filter(
+      (entry) => entry.sourceKind === "inbound_message"
+    )
+    const outboundEvidence = result.evidence.filter(
+      (entry) => entry.sourceKind === "outbound_message"
+    )
+    const sessionEvidence = result.evidence.filter(
+      (entry) => entry.sourceKind === "session_activity"
+    )
+
+    expect(inboundEvidence).toHaveLength(6)
+    expect(outboundEvidence).toHaveLength(6)
+    expect(sessionEvidence.map((entry) => entry.sourceId).sort()).toEqual([
+      "sess-a",
+      "sess-b",
+      "sess-c",
+    ])
   })
 })

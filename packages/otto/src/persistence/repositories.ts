@@ -30,6 +30,17 @@ export type InboundMessageRecord = {
   createdAt: number
 }
 
+export type InboundMessageWindowRecord = {
+  id: string
+  sourceMessageId: string
+  chatId: number
+  userId: number | null
+  content: string | null
+  receivedAt: number
+  sessionId: string | null
+  createdAt: number
+}
+
 export type VoiceInboundStatus = "accepted" | "rejected" | "transcribed" | "failed"
 
 export type VoiceInboundMessageRecord = {
@@ -65,6 +76,22 @@ export type OutboundMessageRecord = {
   status: OutboundMessageStatus
   attemptCount: number
   nextAttemptAt: number | null
+  sentAt: number | null
+  failedAt: number | null
+  errorMessage: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export type OutboundMessageWindowRecord = {
+  id: string
+  dedupeKey: string | null
+  chatId: number
+  kind: OutboundMessageKind
+  content: string
+  priority: MessagePriority
+  status: OutboundMessageStatus
+  attemptCount: number
   sentAt: number | null
   failedAt: number | null
   errorMessage: string | null
@@ -136,6 +163,17 @@ export type JobRunSessionRecord = {
   closedAt: number | null
   closeErrorMessage: string | null
   promptProvenanceJson?: string | null
+}
+
+export type JobRunSessionWindowRecord = {
+  runId: string
+  jobId: string
+  sessionId: string
+  createdAt: number
+  closedAt: number | null
+  closeErrorMessage: string | null
+  promptProvenanceJson?: string | null
+  runStartedAt: number
 }
 
 export type FailedJobRunRecord = {
@@ -439,12 +477,41 @@ export const createInboundMessagesRepository = (database: DatabaseSync) => {
     `INSERT INTO messages_in
       (id, source_message_id, chat_id, user_id, content, received_at, session_id, created_at)
      VALUES
-      (@id, @sourceMessageId, @chatId, @userId, @content, @receivedAt, @sessionId, @createdAt)`
+       (@id, @sourceMessageId, @chatId, @userId, @content, @receivedAt, @sessionId, @createdAt)`
+  )
+
+  const listByReceivedWindowStatement = database.prepare(
+    `SELECT
+      id,
+      source_message_id as sourceMessageId,
+      chat_id as chatId,
+      user_id as userId,
+      content,
+      received_at as receivedAt,
+      session_id as sessionId,
+      created_at as createdAt
+     FROM messages_in
+     WHERE received_at >= ?
+       AND received_at < ?
+     ORDER BY received_at DESC, id DESC
+     LIMIT ?`
   )
 
   return {
     insert: (record: InboundMessageRecord): void => {
       insertStatement.run(record)
+    },
+    listByReceivedWindow: (
+      windowStart: number,
+      windowEnd: number,
+      limit = 2_000
+    ): InboundMessageWindowRecord[] => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 2_000
+      return listByReceivedWindowStatement.all(
+        windowStart,
+        windowEnd,
+        normalizedLimit
+      ) as InboundMessageWindowRecord[]
     },
   }
 }
@@ -702,6 +769,28 @@ export const createOutboundMessagesRepository = (database: DatabaseSync) => {
      WHERE id = ?`
   )
 
+  const listByCreatedWindowStatement = database.prepare(
+    `SELECT
+      id,
+      dedupe_key as dedupeKey,
+      chat_id as chatId,
+      kind,
+      content,
+      priority,
+      status,
+      attempt_count as attemptCount,
+      sent_at as sentAt,
+      failed_at as failedAt,
+      error_message as errorMessage,
+      created_at as createdAt,
+      updated_at as updatedAt
+     FROM messages_out
+     WHERE created_at >= ?
+       AND created_at < ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`
+  )
+
   return {
     enqueueOrIgnoreDedupe: (record: OutboundMessageRecord): "enqueued" | "duplicate" => {
       try {
@@ -740,6 +829,18 @@ export const createOutboundMessagesRepository = (database: DatabaseSync) => {
       timestamp = Date.now()
     ): void => {
       markFailedStatement.run(attemptCount, timestamp, errorMessage, timestamp, id)
+    },
+    listByCreatedWindow: (
+      windowStart: number,
+      windowEnd: number,
+      limit = 2_000
+    ): OutboundMessageWindowRecord[] => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 2_000
+      return listByCreatedWindowStatement.all(
+        windowStart,
+        windowEnd,
+        normalizedLimit
+      ) as OutboundMessageWindowRecord[]
     },
   }
 }
@@ -1642,6 +1743,24 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
      WHERE run_id = ?`
   )
 
+  const listByRunStartedWindowStatement = database.prepare(
+    `SELECT
+      s.run_id as runId,
+      s.job_id as jobId,
+      s.session_id as sessionId,
+      s.created_at as createdAt,
+      s.closed_at as closedAt,
+      s.close_error_message as closeErrorMessage,
+      s.prompt_provenance_json as promptProvenanceJson,
+      r.started_at as runStartedAt
+     FROM job_run_sessions s
+     JOIN job_runs r ON r.id = s.run_id
+     WHERE r.started_at >= ?
+       AND r.started_at < ?
+     ORDER BY r.started_at DESC, s.run_id DESC
+     LIMIT ?`
+  )
+
   return {
     insert: (record: {
       runId: string
@@ -1679,6 +1798,18 @@ export const createJobRunSessionsRepository = (database: DatabaseSync) => {
     },
     setPromptProvenance: (runId: string, promptProvenanceJson: string | null): void => {
       setPromptProvenanceStatement.run(promptProvenanceJson, runId)
+    },
+    listByRunStartedWindow: (
+      windowStart: number,
+      windowEnd: number,
+      limit = 2_000
+    ): JobRunSessionWindowRecord[] => {
+      const normalizedLimit = Number.isInteger(limit) ? Math.max(1, limit) : 2_000
+      return listByRunStartedWindowStatement.all(
+        windowStart,
+        windowEnd,
+        normalizedLimit
+      ) as JobRunSessionWindowRecord[]
     },
   }
 }
