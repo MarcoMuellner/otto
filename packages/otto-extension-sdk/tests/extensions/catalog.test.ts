@@ -1,4 +1,6 @@
 import path from "node:path";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -78,6 +80,104 @@ describe("extension catalog validation", () => {
     expect(
       result.issues.some((issue) => issue.code === "manifest.parse_error"),
     ).toBe(true);
+  });
+
+  it("reports missing hook script paths", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(
+      path.join(tmpdir(), "otto-sdk-hook-catalog-"),
+    );
+    try {
+      const catalogRoot = path.join(tempRoot, "extensions");
+      const extensionRoot = path.join(catalogRoot, "hook-test");
+      await mkdir(extensionRoot, { recursive: true });
+      await writeFile(
+        path.join(extensionRoot, "manifest.jsonc"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "hook-test",
+            name: "Hook Test",
+            version: "0.1.0",
+            description: "hook test extension",
+            payload: {
+              hooks: {
+                install: {
+                  all: "scripts/install.sh",
+                },
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+
+      // Act
+      const result = await validateExtensionCatalog(catalogRoot);
+
+      // Assert
+      expect(result.ok).toBe(false);
+      expect(
+        result.issues.some(
+          (issue) =>
+            issue.code === "payload.path_missing" &&
+            issue.field === "payload.hooks.install.all",
+        ),
+      ).toBe(true);
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports invalid hook paths that are absolute", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(
+      path.join(tmpdir(), "otto-sdk-hook-catalog-"),
+    );
+    try {
+      const catalogRoot = path.join(tempRoot, "extensions");
+      const extensionRoot = path.join(catalogRoot, "hook-test");
+      await mkdir(extensionRoot, { recursive: true });
+      await writeFile(
+        path.join(extensionRoot, "manifest.jsonc"),
+        `${JSON.stringify(
+          {
+            schemaVersion: 1,
+            id: "hook-test",
+            name: "Hook Test",
+            version: "0.1.0",
+            description: "hook test extension",
+            payload: {
+              hooks: {
+                install: {
+                  all: "/tmp/install.sh",
+                },
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+
+      // Act
+      const result = await validateExtensionCatalog(catalogRoot);
+
+      // Assert
+      expect(result.ok).toBe(false);
+      expect(
+        result.issues.some(
+          (issue) =>
+            issue.code === "payload.path_invalid" &&
+            issue.field === "payload.hooks.install.all",
+        ),
+      ).toBe(true);
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
   });
 });
 

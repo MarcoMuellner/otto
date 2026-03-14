@@ -28,6 +28,19 @@ type RegistryIndex = {
 type PublishOptions = {
   description?: string
   toolDependencies?: Record<string, string>
+  hooks?: {
+    install?: {
+      all?: string
+      darwin?: string
+      linux?: string
+    }
+    update?: {
+      all?: string
+      darwin?: string
+      linux?: string
+    }
+    scripts?: Record<string, string>
+  }
 }
 
 export type RegistryHarness = {
@@ -92,6 +105,22 @@ const ensureExtensionSource = async (
     )}\n`,
     "utf8"
   )
+
+  if (options?.hooks?.scripts) {
+    for (const [relativePath, scriptSource] of Object.entries(options.hooks.scripts)) {
+      const targetPath = path.join(extensionRoot, relativePath)
+      await mkdir(path.dirname(targetPath), { recursive: true })
+      await writeFile(targetPath, scriptSource, "utf8")
+    }
+  }
+
+  const hookPayload = options?.hooks
+    ? {
+        ...(options.hooks.install ? { install: options.hooks.install } : {}),
+        ...(options.hooks.update ? { update: options.hooks.update } : {}),
+      }
+    : undefined
+
   await writeFile(
     path.join(extensionRoot, "manifest.jsonc"),
     `${JSON.stringify(
@@ -114,6 +143,7 @@ const ensureExtensionSource = async (
           mcp: {
             file: "mcp.jsonc",
           },
+          ...(hookPayload ? { hooks: hookPayload } : {}),
         },
       },
       null,
@@ -218,7 +248,9 @@ export const createRegistryHarness = async (rootDirectory: string): Promise<Regi
       sha256: checksum,
       sizeBytes,
       description,
-      payloadTypes: ["tools", "skills", "mcp"],
+      payloadTypes: options?.hooks
+        ? ["tools", "skills", "mcp", "hooks"]
+        : ["tools", "skills", "mcp"],
     }
     existing.latest =
       Object.keys(existing.versions).sort((left, right) => semverCompare(right, left))[0] ?? version

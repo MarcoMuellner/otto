@@ -108,6 +108,11 @@ export const runExtensionCliCommand = async (
       streams.stdout.log(
         `Installed and activated ${result.id}@${result.installedVersion} ${mode}`.trim()
       )
+      for (const warning of result.hookWarnings) {
+        streams.stdout.log(
+          `Warning: ${warning.hook} hook soft-failed for ${result.id}@${result.installedVersion} (${warning.reason})`
+        )
+      }
       if (result.prunedVersions.length > 0) {
         streams.stdout.log(`Pruned older versions: ${result.prunedVersions.join(", ")}`)
       }
@@ -128,6 +133,11 @@ export const runExtensionCliCommand = async (
 
         for (const result of results) {
           streams.stdout.log(`Updated and activated ${result.id}@${result.installedVersion}`)
+          for (const warning of result.hookWarnings) {
+            streams.stdout.log(
+              `Warning: ${warning.hook} hook soft-failed for ${result.id}@${result.installedVersion} (${warning.reason})`
+            )
+          }
         }
         return 0
       }
@@ -139,6 +149,11 @@ export const runExtensionCliCommand = async (
 
       const result = await updateExtension(context, extensionId)
       streams.stdout.log(`Updated and activated ${result.id}@${result.installedVersion}`)
+      for (const warning of result.hookWarnings) {
+        streams.stdout.log(
+          `Warning: ${warning.hook} hook soft-failed for ${result.id}@${result.installedVersion} (${warning.reason})`
+        )
+      }
       if (result.prunedVersions.length > 0) {
         streams.stdout.log(`Pruned older versions: ${result.prunedVersions.join(", ")}`)
       }

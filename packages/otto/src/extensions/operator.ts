@@ -1,4 +1,5 @@
 import path from "node:path"
+import { spawn } from "node:child_process"
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises"
 
 import semver from "semver"
@@ -180,6 +181,158 @@ type DependencySource = {
   extensionId: string
   extensionVersion: string
   packageJsonPath: string
+}
+
+type ExtensionHookName = "install" | "update"
+
+type ExtensionHookWarning = {
+  hook: ExtensionHookName
+  scriptPath: string
+  reason: string
+}
+
+const resolveHookPathForCurrentPlatform = (
+  manifest: ExtensionManifest,
+  hook: ExtensionHookName
+): string | null => {
+  const target = manifest.payload.hooks?.[hook]
+  if (!target) {
+    return null
+  }
+
+  if (process.platform === "darwin" && target.darwin) {
+    return target.darwin
+  }
+
+  if (process.platform === "linux" && target.linux) {
+    return target.linux
+  }
+
+  return target.all ?? null
+}
+
+const resolveHookScriptPath = (
+  extensionStorePath: string,
+  manifest: ExtensionManifest,
+  hook: ExtensionHookName
+): string | null => {
+  const relativePath = resolveHookPathForCurrentPlatform(manifest, hook)
+  if (!relativePath) {
+    return null
+  }
+
+  if (path.isAbsolute(relativePath)) {
+    throw new Error(
+      `Invalid ${hook} hook path for '${manifest.id}@${manifest.version}': absolute paths are not allowed`
+    )
+  }
+
+  const resolvedRoot = path.resolve(extensionStorePath)
+  const resolvedScriptPath = path.resolve(extensionStorePath, relativePath)
+  const isWithinStoreRoot =
+    resolvedScriptPath === resolvedRoot ||
+    resolvedScriptPath.startsWith(`${resolvedRoot}${path.sep}`)
+  if (!isWithinStoreRoot) {
+    throw new Error(
+      `Invalid ${hook} hook path for '${manifest.id}@${manifest.version}': path escapes extension directory`
+    )
+  }
+
+  return resolvedScriptPath
+}
+
+const executeExtensionHook = async (input: {
+  ottoHome: string
+  extensionStorePath: string
+  manifest: ExtensionManifest
+  hook: ExtensionHookName
+  previousVersion: string | null
+}): Promise<ExtensionHookWarning | null> => {
+  let scriptPath: string | null
+  try {
+    scriptPath = resolveHookScriptPath(input.extensionStorePath, input.manifest, input.hook)
+  } catch (error) {
+    const err = error as Error
+    return {
+      hook: input.hook,
+      scriptPath: "<invalid-hook-path>",
+      reason: err.message,
+    }
+  }
+
+  if (!scriptPath) {
+    return null
+  }
+
+  const execution = await new Promise<
+    { ok: true } | { ok: false; reason: string; stdout: string; stderr: string }
+  >((resolve) => {
+    const child = spawn("bash", [scriptPath], {
+      cwd: input.extensionStorePath,
+      env: {
+        ...process.env,
+        OTTO_HOME: input.ottoHome,
+        OTTO_EXTENSION_ID: input.manifest.id,
+        OTTO_EXTENSION_VERSION: input.manifest.version,
+        OTTO_EXTENSION_PREVIOUS_VERSION: input.previousVersion ?? "",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+
+    let stdout = ""
+    let stderr = ""
+
+    child.stdout?.on("data", (chunk) => {
+      stdout += String(chunk)
+    })
+
+    child.stderr?.on("data", (chunk) => {
+      stderr += String(chunk)
+    })
+
+    child.on("error", (error) => {
+      resolve({
+        ok: false,
+        reason: `spawn failed: ${error.message}`,
+        stdout,
+        stderr,
+      })
+    })
+
+    child.on("close", (code, signal) => {
+      if (code === 0) {
+        resolve({ ok: true })
+        return
+      }
+
+      const statusReason =
+        typeof code === "number"
+          ? `exit code ${code}`
+          : signal
+            ? `terminated by signal ${signal}`
+            : "unknown process termination"
+      resolve({
+        ok: false,
+        reason: statusReason,
+        stdout,
+        stderr,
+      })
+    })
+  })
+
+  if (execution.ok) {
+    return null
+  }
+
+  const stderrTail = execution.stderr.trim()
+  const stdoutTail = execution.stdout.trim()
+  const detail = stderrTail || stdoutTail
+
+  return {
+    hook: input.hook,
+    scriptPath,
+    reason: detail ? `${execution.reason}: ${detail}` : execution.reason,
+  }
 }
 
 const resolveRelativeToolPackageJsonPath = (manifest: ExtensionManifest): string | null => {
@@ -476,6 +629,7 @@ export type ExtensionInstallResult = {
   installedVersion: string
   prunedVersions: string[]
   wasAlreadyInstalled: boolean
+  hookWarnings: ExtensionHookWarning[]
 }
 
 export type ExtensionRemoveResult = {
@@ -555,10 +709,43 @@ export const installExtension = async (
   const existingVersions = existing?.installedVersions ?? []
   const previousInstalledVersion = resolveLatestVersion(existingVersions)
   const targetAlreadyInstalled = existingVersions.includes(selected.version)
+  const isFirstInstall = existingVersions.length === 0
+  const hookWarnings: ExtensionHookWarning[] = []
 
   const pruneCandidates = existingVersions.filter((version) => version !== selected.version)
+  const replacingExistingRuntime =
+    previousInstalledVersion !== null && previousInstalledVersion !== selected.version
 
-  if (previousInstalledVersion && previousInstalledVersion !== selected.version) {
+  const paths = resolveExtensionPersistencePaths(context.ottoHome)
+  const targetPath = path.join(paths.storeRoot, selected.id, selected.version)
+  await rm(targetPath, { recursive: true, force: true })
+  await installRegistryArchiveToPath(selected, targetPath)
+
+  const installedManifest = await loadManifest(path.join(targetPath, "manifest.jsonc"))
+  const hookToRun: ExtensionHookName | null = isFirstInstall
+    ? "install"
+    : previousInstalledVersion && previousInstalledVersion !== selected.version
+      ? "update"
+      : null
+  if (hookToRun) {
+    const warning = await executeExtensionHook({
+      ottoHome: context.ottoHome,
+      extensionStorePath: targetPath,
+      manifest: installedManifest,
+      hook: hookToRun,
+      previousVersion: previousInstalledVersion,
+    })
+    if (warning) {
+      hookWarnings.push(warning)
+    }
+  }
+
+  await assertOpencodeToolsPackageJsonResolvable(
+    context.ottoHome,
+    new Map([[selected.id, selected.version]])
+  )
+
+  if (replacingExistingRuntime && previousInstalledVersion) {
     await removeRuntimeFootprintForExtension(
       context.ottoHome,
       selected.id,
@@ -566,20 +753,10 @@ export const installExtension = async (
     )
   }
 
-  const paths = resolveExtensionPersistencePaths(context.ottoHome)
-  const targetPath = path.join(paths.storeRoot, selected.id, selected.version)
-  await rm(targetPath, { recursive: true, force: true })
-  await installRegistryArchiveToPath(selected, targetPath)
-
-  await assertOpencodeToolsPackageJsonResolvable(
-    context.ottoHome,
-    new Map([[selected.id, selected.version]])
-  )
-
   try {
     await syncRuntimeFootprintForExtension(context.ottoHome, selected.id, selected.version)
   } catch (error) {
-    if (previousInstalledVersion && previousInstalledVersion !== selected.version) {
+    if (replacingExistingRuntime && previousInstalledVersion) {
       await syncRuntimeFootprintForExtension(
         context.ottoHome,
         selected.id,
@@ -605,6 +782,7 @@ export const installExtension = async (
     installedVersion: selected.version,
     prunedVersions: pruneCandidates,
     wasAlreadyInstalled: targetAlreadyInstalled && pruneCandidates.length === 0,
+    hookWarnings,
   }
 }
 

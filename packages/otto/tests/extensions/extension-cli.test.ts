@@ -84,4 +84,53 @@ describe("extension cli", () => {
     expect(exitCode).toBe(1)
     expect(errors[0]).toContain("Unknown extension command")
   })
+
+  it("prints warning when extension hook soft-fails", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+
+    const ottoHome = path.join(tempRoot, ".otto")
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+    await harness.publishExtensionVersion("calendar", "1.0.0", {
+      hooks: {
+        install: {
+          all: "scripts/install.sh",
+        },
+        scripts: {
+          "scripts/install.sh": [
+            "#!/usr/bin/env bash",
+            'echo "install hook failed" >&2',
+            "exit 2",
+          ].join("\n"),
+        },
+      },
+    })
+
+    const outputs: string[] = []
+    const errors: string[] = []
+    const streams = {
+      stdout: {
+        log: (value?: unknown) => outputs.push(String(value ?? "")),
+      },
+      stderr: {
+        error: (value?: unknown) => errors.push(String(value ?? "")),
+      },
+    }
+
+    const env = {
+      OTTO_HOME: ottoHome,
+      OTTO_EXTENSION_REGISTRY_URL: harness.registryUrl,
+    }
+
+    // Act
+    const installCode = await runExtensionCliCommand(["install", "calendar"], streams, env)
+
+    // Assert
+    expect(installCode).toBe(0)
+    expect(errors).toEqual([])
+    expect(outputs.join("\n")).toContain("Installed and activated calendar@1.0.0")
+    expect(outputs.join("\n")).toContain("Warning: install hook soft-failed")
+  })
 })

@@ -9,6 +9,13 @@
     "otto": ">=0.1.0",
     "node": ">=22",
   },
+  "requirements": {
+    "binaries": ["bash", "git", "uv"],
+    "env": [],
+    "files": [
+      "integrations/emby-mcp/Emby.MCP/.env",
+    ],
+  },
   "payload": {
     "mcp": {
       "file": "mcp.jsonc",
@@ -16,14 +23,14 @@
     "skills": {
       "path": "skills",
     },
-  },
-  "requirements": {
-    "binaries": ["bash", "uv"],
-    "env": [],
-    "files": [
-      "integrations/emby-mcp/Emby.MCP/emby_mcp_server.py",
-      "integrations/emby-mcp/Emby.MCP/.env",
-    ],
+    "hooks": {
+      "install": {
+        "all": "scripts/install.sh",
+      },
+      "update": {
+        "all": "scripts/update.sh",
+      },
+    },
   },
   "dependencies": [],
 }

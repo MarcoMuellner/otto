@@ -257,4 +257,165 @@ describe("extension operator service", () => {
       readFile(path.join(ottoHome, ".opencode", "package.json"), "utf8")
     ).resolves.toContain('"@opencode-ai/plugin": "1.2.20"')
   })
+
+  it("runs install hook only on first install", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
+    const ottoHome = path.join(tempRoot, ".otto")
+    await harness.publishExtensionVersion("calendar", "1.0.0", {
+      hooks: {
+        install: {
+          all: "scripts/install.sh",
+        },
+        scripts: {
+          "scripts/install.sh": [
+            "#!/usr/bin/env bash",
+            "set -e",
+            'mkdir -p "$OTTO_HOME/markers"',
+            'printf "%s\\n" "$OTTO_EXTENSION_VERSION" >> "$OTTO_HOME/markers/install.log"',
+          ].join("\n"),
+        },
+      },
+    })
+
+    // Act
+    const first = await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    const second = await installExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
+
+    // Assert
+    expect(first.hookWarnings).toEqual([])
+    expect(second.hookWarnings).toEqual([])
+    await expect(readFile(path.join(ottoHome, "markers", "install.log"), "utf8")).resolves.toBe(
+      "1.0.0\n"
+    )
+  })
+
+  it("runs update hook when extension version changes", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
+    const ottoHome = path.join(tempRoot, ".otto")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    await harness.publishExtensionVersion("calendar", "1.1.0", {
+      hooks: {
+        update: {
+          all: "scripts/update.sh",
+        },
+        scripts: {
+          "scripts/update.sh": [
+            "#!/usr/bin/env bash",
+            "set -e",
+            'mkdir -p "$OTTO_HOME/markers"',
+            'printf "%s->%s\\n" "$OTTO_EXTENSION_PREVIOUS_VERSION" "$OTTO_EXTENSION_VERSION" >> "$OTTO_HOME/markers/update.log"',
+          ].join("\n"),
+        },
+      },
+    })
+
+    // Act
+    const updated = await updateExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
+
+    // Assert
+    expect(updated.hookWarnings).toEqual([])
+    await expect(readFile(path.join(ottoHome, "markers", "update.log"), "utf8")).resolves.toBe(
+      "1.0.0->1.1.0\n"
+    )
+  })
+
+  it("soft-fails hook errors and continues install/update", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
+    const ottoHome = path.join(tempRoot, ".otto")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    await harness.publishExtensionVersion("calendar", "1.1.0", {
+      hooks: {
+        update: {
+          all: "scripts/update.sh",
+        },
+        scripts: {
+          "scripts/update.sh": [
+            "#!/usr/bin/env bash",
+            'echo "intentional failure" >&2',
+            "exit 3",
+          ].join("\n"),
+        },
+      },
+    })
+
+    // Act
+    const updated = await updateExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
+
+    // Assert
+    expect(updated.installedVersion).toBe("1.1.0")
+    expect(updated.hookWarnings).toHaveLength(1)
+    expect(updated.hookWarnings[0]).toMatchObject({
+      hook: "update",
+      scriptPath: expect.stringContaining("scripts/update.sh"),
+      reason: expect.stringContaining("intentional failure"),
+    })
+
+    const repository = createExtensionStateRepository(ottoHome)
+    const installed = await repository.listInstalledExtensions()
+    expect(installed[0]?.activeVersion).toBe("1.1.0")
+  })
+
+  it("soft-fails invalid hook paths and still updates extension", async () => {
+    // Arrange
+    const tempRoot = await mkdtemp(TEMP_PREFIX)
+    cleanupPaths.push(tempRoot)
+    const harness = await createRegistryHarness(tempRoot)
+    cleanupHarnesses.push(harness)
+
+    const ottoHome = path.join(tempRoot, ".otto")
+    await harness.publishExtensionVersion("calendar", "1.0.0")
+    await installExtension({ ottoHome, registryUrl: harness.registryUrl }, "calendar")
+    await harness.publishExtensionVersion("calendar", "1.1.0", {
+      hooks: {
+        update: {
+          all: "../../outside.sh",
+        },
+      },
+    })
+
+    // Act
+    const updated = await updateExtension(
+      { ottoHome, registryUrl: harness.registryUrl },
+      "calendar"
+    )
+
+    // Assert
+    expect(updated.installedVersion).toBe("1.1.0")
+    expect(updated.hookWarnings).toHaveLength(1)
+    expect(updated.hookWarnings[0]).toMatchObject({
+      hook: "update",
+      scriptPath: "<invalid-hook-path>",
+      reason: expect.stringContaining("path escapes extension directory"),
+    })
+
+    const repository = createExtensionStateRepository(ottoHome)
+    const installed = await repository.listInstalledExtensions()
+    expect(installed[0]?.activeVersion).toBe("1.1.0")
+  })
 })

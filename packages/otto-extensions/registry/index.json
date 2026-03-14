@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-03-14T11:07:21.518Z",
+  "generatedAt": "2026-03-14T11:21:47.238Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -45,8 +45,8 @@
       "versions": {
         "0.1.0": {
           "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/emby-mcp-0.1.0.tgz",
-          "sha256": "3ca41f46889f8cc79eff7798a9b287c514f6be3769c6a9d82c518a12132db445",
-          "sizeBytes": 2553,
+          "sha256": "d2835e6d89e0d0f23b217fab326a68239da638a4f1d2d19e68187a0651b6fd83",
+          "sizeBytes": 3263,
           "compatibility": {
             "otto": ">=0.1.0",
             "node": ">=22"
@@ -54,7 +54,8 @@
           "description": "Emby media server MCP integration for library discovery, search, playlist management, and player control.",
           "payloadTypes": [
             "skills",
-            "mcp"
+            "mcp",
+            "hooks"
           ]
         }
       }
