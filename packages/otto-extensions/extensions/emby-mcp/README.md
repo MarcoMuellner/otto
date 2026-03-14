@@ -18,6 +18,7 @@ The extension uses lifecycle hooks:
 
 - first install runs `scripts/install.sh` and clones/syncs Emby.MCP into `~/.otto/integrations/emby-mcp/Emby.MCP`
 - updates run `scripts/update.sh` and pull/sync Emby.MCP
+- hooks install/sync with `uv --python 3.13` to avoid upstream build breakage on Python 3.14
 
 You can still set up manually if you prefer.
 
@@ -27,7 +28,7 @@ Manual setup (optional):
 mkdir -p ~/.otto/integrations/emby-mcp
 git clone https://github.com/angeltek/Emby.MCP ~/.otto/integrations/emby-mcp/Emby.MCP
 cd ~/.otto/integrations/emby-mcp/Emby.MCP
-uv sync --link-mode=copy
+uv sync --python 3.13 --link-mode=copy
 ```
 
 Update `.env` in the Emby checkout with your real values:
@@ -65,4 +66,4 @@ ottoctl restart
 - If `uv` is missing, install it and ensure it is on PATH.
 - If `git` is missing, install it and ensure it is on PATH.
 - If server auth fails, verify Emby credentials and URL in the `.env` file.
-- If Emby.MCP dependencies changed upstream, run `uv sync --link-mode=copy` in the Emby checkout.
+- If Emby.MCP dependencies changed upstream, run `uv sync --python 3.13 --link-mode=copy` in the Emby checkout.

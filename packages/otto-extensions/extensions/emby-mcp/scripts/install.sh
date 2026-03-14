@@ -17,7 +17,8 @@ if [ ! -d "${repo_root}/.git" ]; then
 fi
 
 cd "${repo_root}"
-uv sync --link-mode=copy
+uv python install 3.13
+uv sync --python 3.13 --link-mode=copy
 
 if [ ! -f ".env" ]; then
   cat > ".env" <<'EOF'

@@ -16,4 +16,5 @@ fi
 
 git -C "${repo_root}" pull --ff-only
 cd "${repo_root}"
-uv sync --link-mode=copy
+uv python install 3.13
+uv sync --python 3.13 --link-mode=copy

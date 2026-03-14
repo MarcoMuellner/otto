@@ -18,6 +18,12 @@ type CliStreams = {
 
 type ExtensionCliEnvironment = NodeJS.ProcessEnv
 
+type ProgressReporter = {
+  update: (message: string) => void
+  succeed: () => void
+  fail: () => void
+}
+
 const usage = `Usage: extension-cli <command> [options]
 
 Commands:
@@ -55,6 +61,59 @@ const printList = (
     const status = installed.upToDate ? "up-to-date" : "update-available"
     const latest = installed.latestCatalogVersion ?? "n/a"
     stdout.log(`- ${installed.id}@${installed.version} latest=${latest} ${status}`)
+  }
+}
+
+const spinnerFrames = ["|", "/", "-", "\\"]
+
+const createProgressReporter = (
+  label: string,
+  streams: CliStreams,
+  environment: ExtensionCliEnvironment
+): ProgressReporter => {
+  const interactive =
+    streams.stdout === console && process.stdout.isTTY && environment.CI !== "true"
+  if (!interactive) {
+    return {
+      update: () => {},
+      succeed: () => {},
+      fail: () => {},
+    }
+  }
+
+  let frameIndex = 0
+  let latestMessage = "starting"
+  let renderedLength = 0
+
+  const render = () => {
+    const frame = spinnerFrames[frameIndex % spinnerFrames.length] ?? "|"
+    frameIndex += 1
+    const text = `${frame} ${label}: ${latestMessage}`
+    const padding = renderedLength > text.length ? " ".repeat(renderedLength - text.length) : ""
+    process.stdout.write(`\r${text}${padding}`)
+    renderedLength = text.length
+  }
+
+  render()
+  const timer = setInterval(render, 90)
+
+  const clearLine = () => {
+    clearInterval(timer)
+    const blank = renderedLength > 0 ? " ".repeat(renderedLength) : ""
+    process.stdout.write(`\r${blank}\r`)
+  }
+
+  return {
+    update: (message: string) => {
+      latestMessage = message
+      render()
+    },
+    succeed: () => {
+      clearLine()
+    },
+    fail: () => {
+      clearLine()
+    },
   }
 }
 
@@ -103,7 +162,22 @@ export const runExtensionCliCommand = async (
         throw new Error("Usage: extension-cli install <id>[@version]")
       }
 
-      const result = await installExtension(context, target)
+      const progress = createProgressReporter(`Installing ${target}`, streams, environment)
+      let result: Awaited<ReturnType<typeof installExtension>>
+      try {
+        result = await installExtension(
+          {
+            ...context,
+            onProgress: (message) => progress.update(message),
+          },
+          target
+        )
+        progress.succeed()
+      } catch (error) {
+        progress.fail()
+        throw error
+      }
+
       const mode = result.wasAlreadyInstalled ? "(already installed)" : ""
       streams.stdout.log(
         `Installed and activated ${result.id}@${result.installedVersion} ${mode}`.trim()
@@ -125,7 +199,19 @@ export const runExtensionCliCommand = async (
           throw new Error("Usage: extension-cli update --all")
         }
 
-        const results = await updateAllExtensions(context)
+        const progress = createProgressReporter("Updating all extensions", streams, environment)
+        let results: Awaited<ReturnType<typeof updateAllExtensions>>
+        try {
+          results = await updateAllExtensions({
+            ...context,
+            onProgress: (message) => progress.update(message),
+          })
+          progress.succeed()
+        } catch (error) {
+          progress.fail()
+          throw error
+        }
+
         if (results.length === 0) {
           streams.stdout.log("No installed extensions to update")
           return 0
@@ -147,7 +233,22 @@ export const runExtensionCliCommand = async (
         throw new Error("Usage: extension-cli update <id>")
       }
 
-      const result = await updateExtension(context, extensionId)
+      const progress = createProgressReporter(`Updating ${extensionId}`, streams, environment)
+      let result: Awaited<ReturnType<typeof updateExtension>>
+      try {
+        result = await updateExtension(
+          {
+            ...context,
+            onProgress: (message) => progress.update(message),
+          },
+          extensionId
+        )
+        progress.succeed()
+      } catch (error) {
+        progress.fail()
+        throw error
+      }
+
       streams.stdout.log(`Updated and activated ${result.id}@${result.installedVersion}`)
       for (const warning of result.hookWarnings) {
         streams.stdout.log(

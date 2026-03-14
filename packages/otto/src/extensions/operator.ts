@@ -640,6 +640,7 @@ export type ExtensionRemoveResult = {
 type ExtensionOperatorContext = {
   ottoHome: string
   registryUrl: string
+  onProgress?: (message: string) => void
 }
 
 /**
@@ -696,11 +697,15 @@ export const installExtension = async (
   context: ExtensionOperatorContext,
   target: string
 ): Promise<ExtensionInstallResult> => {
+  context.onProgress?.("Preparing extension directories")
   await ensureExtensionPersistenceDirectories(context.ottoHome)
 
+  context.onProgress?.("Resolving extension target")
   const parsed = parseTargetSpecifier(target)
+  context.onProgress?.(`Fetching registry metadata for ${parsed.id}`)
   const index = await fetchExtensionRegistryIndex(context.registryUrl)
   const selected = resolveRegistryEntry(index, parsed.id, parsed.version)
+  context.onProgress?.(`Selected ${selected.id}@${selected.version}`)
 
   const repository = createExtensionStateRepository(context.ottoHome)
   const existing = (await repository.listInstalledExtensions()).find(
@@ -718,6 +723,7 @@ export const installExtension = async (
 
   const paths = resolveExtensionPersistencePaths(context.ottoHome)
   const targetPath = path.join(paths.storeRoot, selected.id, selected.version)
+  context.onProgress?.("Downloading and unpacking extension artifact")
   await rm(targetPath, { recursive: true, force: true })
   await installRegistryArchiveToPath(selected, targetPath)
 
@@ -728,6 +734,7 @@ export const installExtension = async (
       ? "update"
       : null
   if (hookToRun) {
+    context.onProgress?.(`Running ${hookToRun} hook`)
     const warning = await executeExtensionHook({
       ottoHome: context.ottoHome,
       extensionStorePath: targetPath,
@@ -740,12 +747,16 @@ export const installExtension = async (
     }
   }
 
+  context.onProgress?.("Validating tool dependency compatibility")
   await assertOpencodeToolsPackageJsonResolvable(
     context.ottoHome,
     new Map([[selected.id, selected.version]])
   )
 
   if (replacingExistingRuntime && previousInstalledVersion) {
+    context.onProgress?.(
+      `Removing runtime footprint for ${selected.id}@${previousInstalledVersion}`
+    )
     await removeRuntimeFootprintForExtension(
       context.ottoHome,
       selected.id,
@@ -754,6 +765,7 @@ export const installExtension = async (
   }
 
   try {
+    context.onProgress?.(`Syncing runtime footprint for ${selected.id}@${selected.version}`)
     await syncRuntimeFootprintForExtension(context.ottoHome, selected.id, selected.version)
   } catch (error) {
     if (replacingExistingRuntime && previousInstalledVersion) {
@@ -767,14 +779,17 @@ export const installExtension = async (
     throw error
   }
 
+  context.onProgress?.("Persisting extension state")
   await repository.recordInstalledVersion(selected.id, selected.version)
   await repository.setActiveVersion(selected.id, selected.version)
 
   for (const candidate of pruneCandidates) {
+    context.onProgress?.(`Pruning ${selected.id}@${candidate}`)
     await removeStoreVersionIfPresent(context.ottoHome, selected.id, candidate)
     await repository.removeInstalledVersion(selected.id, candidate)
   }
 
+  context.onProgress?.("Refreshing aggregated OpenCode tool dependencies")
   await syncOpencodeToolsPackageJson(context.ottoHome)
 
   return {
@@ -811,6 +826,7 @@ export const updateExtension = async (
 export const updateAllExtensions = async (
   context: ExtensionOperatorContext
 ): Promise<ExtensionInstallResult[]> => {
+  context.onProgress?.("Preparing extension directories")
   await ensureExtensionPersistenceDirectories(context.ottoHome)
   const repository = createExtensionStateRepository(context.ottoHome)
   const installed = await repository.listInstalledExtensions()
@@ -820,6 +836,7 @@ export const updateAllExtensions = async (
 
   const results: ExtensionInstallResult[] = []
   for (const id of ids) {
+    context.onProgress?.(`Updating ${id}`)
     results.push(await updateExtension(context, id))
   }
 
