@@ -28,7 +28,7 @@ const artifactBaseUrl =
 
 const toPayloadTypes = (manifest) => {
   const payload = manifest.payload ?? {};
-  return ["tools", "skills", "mcp", "overlays"].filter(
+  return ["tools", "skills", "mcp", "overlays", "hooks"].filter(
     (key) => payload[key] !== undefined,
   );
 };

@@ -20,6 +20,10 @@ Extension commands manage extension lifecycle in local Otto extension storage.
 - `install`/`update` activate extension tools and skills into `~/.otto/.opencode`.
 - `install`/`update` prune older installed versions per extension id.
 - `disable` removes active extension footprint from runtime/state.
+- Extensions can declare optional setup hooks in `payload.hooks`.
+- `payload.hooks.install` runs only on first install for an extension id.
+- `payload.hooks.update` runs only when installed version changes.
+- Hook failures are soft-fail: Otto logs a warning and continues install/update.
 
 ## Examples
 
@@ -38,6 +42,10 @@ ottoctl extension remove opencode-terminal@0.1.0
 - `opencode-terminal` installs a terminal-operations skill for OpenCode itself.
 - After install, verify `~/.otto/.opencode/skills/opencode-terminal/SKILL.md` exists.
 - If Otto is already running, restart it so skill discovery refreshes.
+
+- `emby-mcp` installs the Emby MCP server wiring plus an Emby operations skill.
+- After install, verify `~/.otto/opencode.jsonc` has `mcp.emby`.
+- Verify `~/.otto/.opencode/skills/emby-mcp-ops/SKILL.md` exists.
 
 ## Failure Modes
 

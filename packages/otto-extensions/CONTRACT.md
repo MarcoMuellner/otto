@@ -50,6 +50,14 @@ Payload sections:
 - `payload.mcp.file`: relative path to MCP JSON/JSONC fragment
 - `payload.overlays.opencode`: OpenCode config overlay file path
 - `payload.overlays.taskConfig`: task-config overlay file path
+- `payload.hooks.install`: optional setup hook script mapping (`all`, `darwin`, `linux`)
+- `payload.hooks.update`: optional update hook script mapping (`all`, `darwin`, `linux`)
+
+Hook semantics:
+
+- `install` hook runs only on first install for an extension id.
+- `update` hook runs when an existing installed version changes to a different version.
+- Hook failures are soft-fail: install/update continues and extension activation is not blocked.
 
 ## Validation Rules
 
@@ -61,6 +69,8 @@ The catalog validator enforces:
 4. Referenced payload paths exist.
 5. Duplicate `id@version` combinations are rejected.
 6. Dependency references must point to known extension ids.
+7. Hook mappings must declare at least one target path (`all`, `darwin`, or `linux`).
+8. Hook paths must be relative and stay inside the extension directory.
 
 ## Validator Usage
 
@@ -105,6 +115,7 @@ Common issue codes:
 - `manifest.schema_error`
 - `manifest.id_mismatch`
 - `payload.path_missing`
+- `payload.path_invalid`
 - `catalog.duplicate_id_version`
 - `dependency.unknown_extension`
 - `catalog.extension_not_found`

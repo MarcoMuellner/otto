@@ -49,13 +49,56 @@ const extensionManifestSchema = z
             taskConfig: z.string().trim().min(1).optional(),
           })
           .optional(),
+        hooks: z
+          .object({
+            install: z
+              .object({
+                all: z.string().trim().min(1).optional(),
+                darwin: z.string().trim().min(1).optional(),
+                linux: z.string().trim().min(1).optional(),
+              })
+              .superRefine((hook, context) => {
+                if (hook.all || hook.darwin || hook.linux) {
+                  return;
+                }
+
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message:
+                    "Install hook requires at least one target path (all, darwin, linux)",
+                  path: [],
+                });
+              })
+              .optional(),
+            update: z
+              .object({
+                all: z.string().trim().min(1).optional(),
+                darwin: z.string().trim().min(1).optional(),
+                linux: z.string().trim().min(1).optional(),
+              })
+              .superRefine((hook, context) => {
+                if (hook.all || hook.darwin || hook.linux) {
+                  return;
+                }
+
+                context.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message:
+                    "Update hook requires at least one target path (all, darwin, linux)",
+                  path: [],
+                });
+              })
+              .optional(),
+          })
+          .optional(),
       })
       .superRefine((payload, context) => {
         if (
           !payload.tools &&
           !payload.skills &&
           !payload.mcp &&
-          !payload.overlays
+          !payload.overlays &&
+          !payload.hooks
         ) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
@@ -324,6 +367,57 @@ const addMissingPathIssueIfNeeded = async (
   );
 };
 
+const addInvalidPathIssueIfNeeded = (
+  issues: ExtensionValidationIssue[],
+  parsed: ParsedManifest,
+  field: string,
+  relativePath: string,
+  hint: string,
+): boolean => {
+  if (path.isAbsolute(relativePath)) {
+    issues.push(
+      createIssue({
+        severity: "error",
+        code: "payload.path_invalid",
+        extension: {
+          id: parsed.manifest?.id ?? parsed.directoryName,
+          version: parsed.manifest?.version ?? null,
+        },
+        path: parsed.manifestPath,
+        field,
+        message: `Referenced path must be relative: ${relativePath}`,
+        hint,
+      }),
+    );
+    return true;
+  }
+
+  const resolvedRoot = path.resolve(parsed.directoryPath);
+  const resolvedPath = path.resolve(parsed.directoryPath, relativePath);
+  const insideDirectory =
+    resolvedPath === resolvedRoot ||
+    resolvedPath.startsWith(`${resolvedRoot}${path.sep}`);
+  if (insideDirectory) {
+    return false;
+  }
+
+  issues.push(
+    createIssue({
+      severity: "error",
+      code: "payload.path_invalid",
+      extension: {
+        id: parsed.manifest?.id ?? parsed.directoryName,
+        version: parsed.manifest?.version ?? null,
+      },
+      path: parsed.manifestPath,
+      field,
+      message: `Referenced path escapes extension directory: ${relativePath}`,
+      hint,
+    }),
+  );
+  return true;
+};
+
 const derivePayloadTypes = (manifest: ExtensionManifest): string[] => {
   const result: string[] = [];
 
@@ -338,6 +432,9 @@ const derivePayloadTypes = (manifest: ExtensionManifest): string[] => {
   }
   if (manifest.payload.overlays) {
     result.push("overlays");
+  }
+  if (manifest.payload.hooks) {
+    result.push("hooks");
   }
 
   return result;
@@ -460,6 +557,126 @@ export const validateExtensionCatalog = async (
         parsed.manifest.payload.overlays.taskConfig,
         "Create the task config overlay file or update payload.overlays.taskConfig",
       );
+    }
+
+    if (parsed.manifest.payload.hooks?.install?.all) {
+      const hasInvalidPath = addInvalidPathIssueIfNeeded(
+        issues,
+        parsed,
+        "payload.hooks.install.all",
+        parsed.manifest.payload.hooks.install.all,
+        "Use a relative path that stays inside the extension directory",
+      );
+
+      if (!hasInvalidPath) {
+        await addMissingPathIssueIfNeeded(
+          issues,
+          parsed,
+          "payload.hooks.install.all",
+          parsed.manifest.payload.hooks.install.all,
+          "Create the install hook script or update payload.hooks.install.all",
+        );
+      }
+    }
+
+    if (parsed.manifest.payload.hooks?.install?.darwin) {
+      const hasInvalidPath = addInvalidPathIssueIfNeeded(
+        issues,
+        parsed,
+        "payload.hooks.install.darwin",
+        parsed.manifest.payload.hooks.install.darwin,
+        "Use a relative path that stays inside the extension directory",
+      );
+
+      if (!hasInvalidPath) {
+        await addMissingPathIssueIfNeeded(
+          issues,
+          parsed,
+          "payload.hooks.install.darwin",
+          parsed.manifest.payload.hooks.install.darwin,
+          "Create the install hook script or update payload.hooks.install.darwin",
+        );
+      }
+    }
+
+    if (parsed.manifest.payload.hooks?.install?.linux) {
+      const hasInvalidPath = addInvalidPathIssueIfNeeded(
+        issues,
+        parsed,
+        "payload.hooks.install.linux",
+        parsed.manifest.payload.hooks.install.linux,
+        "Use a relative path that stays inside the extension directory",
+      );
+
+      if (!hasInvalidPath) {
+        await addMissingPathIssueIfNeeded(
+          issues,
+          parsed,
+          "payload.hooks.install.linux",
+          parsed.manifest.payload.hooks.install.linux,
+          "Create the install hook script or update payload.hooks.install.linux",
+        );
+      }
+    }
+
+    if (parsed.manifest.payload.hooks?.update?.all) {
+      const hasInvalidPath = addInvalidPathIssueIfNeeded(
+        issues,
+        parsed,
+        "payload.hooks.update.all",
+        parsed.manifest.payload.hooks.update.all,
+        "Use a relative path that stays inside the extension directory",
+      );
+
+      if (!hasInvalidPath) {
+        await addMissingPathIssueIfNeeded(
+          issues,
+          parsed,
+          "payload.hooks.update.all",
+          parsed.manifest.payload.hooks.update.all,
+          "Create the update hook script or update payload.hooks.update.all",
+        );
+      }
+    }
+
+    if (parsed.manifest.payload.hooks?.update?.darwin) {
+      const hasInvalidPath = addInvalidPathIssueIfNeeded(
+        issues,
+        parsed,
+        "payload.hooks.update.darwin",
+        parsed.manifest.payload.hooks.update.darwin,
+        "Use a relative path that stays inside the extension directory",
+      );
+
+      if (!hasInvalidPath) {
+        await addMissingPathIssueIfNeeded(
+          issues,
+          parsed,
+          "payload.hooks.update.darwin",
+          parsed.manifest.payload.hooks.update.darwin,
+          "Create the update hook script or update payload.hooks.update.darwin",
+        );
+      }
+    }
+
+    if (parsed.manifest.payload.hooks?.update?.linux) {
+      const hasInvalidPath = addInvalidPathIssueIfNeeded(
+        issues,
+        parsed,
+        "payload.hooks.update.linux",
+        parsed.manifest.payload.hooks.update.linux,
+        "Use a relative path that stays inside the extension directory",
+      );
+
+      if (!hasInvalidPath) {
+        await addMissingPathIssueIfNeeded(
+          issues,
+          parsed,
+          "payload.hooks.update.linux",
+          parsed.manifest.payload.hooks.update.linux,
+          "Create the update hook script or update payload.hooks.update.linux",
+        );
+      }
     }
 
     entries.push({
