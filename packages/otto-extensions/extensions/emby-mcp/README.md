@@ -19,6 +19,7 @@ The extension uses lifecycle hooks:
 - first install runs `scripts/install.sh` and clones/syncs Emby.MCP into `~/.otto/integrations/emby-mcp/Emby.MCP`
 - updates run `scripts/update.sh` and pull/sync Emby.MCP
 - hooks install/sync with `uv --python 3.13` to avoid upstream build breakage on Python 3.14
+- hooks also apply a compatibility patch for current upstream token auth wiring in `lib_emby_functions.py`
 
 You can still set up manually if you prefer.
 
@@ -66,4 +67,5 @@ ottoctl restart
 - If `uv` is missing, install it and ensure it is on PATH.
 - If `git` is missing, install it and ensure it is on PATH.
 - If server auth fails, verify Emby credentials and URL in the `.env` file.
+- If login succeeds but library loading returns 401, rerun install/update so the auth compatibility patch is applied.
 - If Emby.MCP dependencies changed upstream, run `uv sync --python 3.13 --link-mode=copy` in the Emby checkout.
