@@ -1,0 +1,11 @@
+{
+  "radarr-sonarr": {
+    "type": "local",
+    "command": [
+      "bash",
+      "-lc",
+      "cd \"${HOME}/.otto/integrations/radarr-sonarr-mcp/mcp_services_radarr_sonarr\" && set -a && [ -f ./.env ] && . ./.env && set +a && uv run python radarr_sonarr_mcp/server.py"
+    ],
+    "enabled": true
+  }
+}

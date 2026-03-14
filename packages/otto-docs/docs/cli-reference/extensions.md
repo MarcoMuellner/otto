@@ -47,6 +47,11 @@ ottoctl extension remove opencode-terminal@0.1.0
 - After install, verify `~/.otto/opencode.jsonc` has `mcp.emby`.
 - Verify `~/.otto/.opencode/skills/emby-mcp-ops/SKILL.md` exists.
 
+- `radarr-sonarr-mcp` installs Radarr/Sonarr MCP server wiring plus an
+  operations skill.
+- After install, verify `~/.otto/opencode.jsonc` has `mcp.radarr-sonarr`.
+- Verify `~/.otto/.opencode/skills/radarr-sonarr-mcp-ops/SKILL.md` exists.
+
 ## Failure Modes
 
 - Unknown extension subcommands fail with non-zero exit.

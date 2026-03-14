@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "radarr-sonarr-mcp",
+  "name": "Radarr Sonarr MCP",
+  "version": "0.1.0",
+  "description": "Radarr and Sonarr MCP integration for media library lookup and filtering tools.",
+  "tags": ["mcp", "radarr", "sonarr", "media", "tv", "movies"],
+  "compatibility": {
+    "otto": ">=0.1.0",
+    "node": ">=22"
+  },
+  "payload": {
+    "mcp": {
+      "file": "mcp.jsonc"
+    },
+    "skills": {
+      "path": "skills"
+    },
+    "hooks": {
+      "install": {
+        "all": "scripts/install.sh"
+      },
+      "update": {
+        "all": "scripts/update.sh"
+      }
+    }
+  },
+  "requirements": {
+    "binaries": ["bash", "git", "uv"],
+    "env": [],
+    "files": ["integrations/radarr-sonarr-mcp/mcp_services_radarr_sonarr/.env"]
+  },
+  "dependencies": []
+}

@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-03-14T12:22:20.253Z",
+  "generatedAt": "2026-03-14T13:09:24.011Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -186,6 +186,26 @@
           "payloadTypes": [
             "skills",
             "mcp"
+          ]
+        }
+      }
+    },
+    "radarr-sonarr-mcp": {
+      "latest": "0.1.0",
+      "versions": {
+        "0.1.0": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/radarr-sonarr-mcp-0.1.0.tgz",
+          "sha256": "1a6f021ea14af2fec86a30ab2a12a7ab50b857f6a14ef839bc9188bdf1825e50",
+          "sizeBytes": 3201,
+          "compatibility": {
+            "otto": ">=0.1.0",
+            "node": ">=22"
+          },
+          "description": "Radarr and Sonarr MCP integration for media library lookup and filtering tools.",
+          "payloadTypes": [
+            "skills",
+            "mcp",
+            "hooks"
           ]
         }
       }
