@@ -45,6 +45,13 @@ This is the Otto personal assistant workspace.
 - To update watchdog alert writing behavior, call `set_watchdog_prompt` with full markdown content.
 - These tools target `prompts/layers/surface-watchdog.md` (user-owned override), not system-owned files.
 
+## Prompt File Controls
+
+- To inspect prompt files across user/system ownership, call `list_prompt_files`.
+- To read a specific prompt file, call `get_prompt_file` with `source` and `path`.
+- To update any user-owned prompt file, call `set_prompt_file` with full markdown content.
+- `set_prompt_file` requires explicit user confirmation before execution.
+
 ## Watchdog Alert Mute Controls
 
 - Use `set_notification_policy` to manage watchdog alerts from any interactive lane.

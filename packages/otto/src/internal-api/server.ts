@@ -142,6 +142,13 @@ type InternalApiServerDependencies = {
   }
   nonInteractiveContextCaptureService?: NonInteractiveContextCaptureService
   promptManagement?: {
+    listPromptFiles?: () => Promise<
+      Array<{
+        source: "system" | "user"
+        relativePath: string
+        editable: boolean
+      }>
+    >
     readPromptFile: (input: {
       source: "system" | "user"
       relativePath: string
@@ -269,6 +276,28 @@ const setNotificationProfileApiSchema = z
     lane: executionLaneSchema,
   })
   .extend(notificationProfileUpdateSchema.shape)
+
+const promptFileSourceSchema = z.enum(["system", "user"])
+
+const listPromptFilesApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+})
+
+const getPromptFileApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  source: promptFileSourceSchema,
+  path: z.string().trim().min(1),
+})
+
+const setPromptFileApiSchema = z.object({
+  lane: executionLaneSchema.optional().default("interactive"),
+  source: z.literal("user").optional().default("user"),
+  path: z.string().trim().min(1),
+  content: z
+    .string()
+    .min(1)
+    .refine((value) => value.trim().length > 0, "content must not be blank"),
+})
 
 const getWatchdogPromptApiSchema = z.object({
   lane: executionLaneSchema.optional().default("interactive"),
@@ -1195,6 +1224,55 @@ export const buildInternalApiServer = (
         200: { description: "Updated notification profile", schema: genericObjectResponseSchema },
         400: { description: "Invalid request", schema: validationErrorResponseSchema },
         401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/prompts/files/list",
+      tags: ["Tools"],
+      summary: "List managed prompt files",
+      security: internalSecurity,
+      requestBody: { schema: listPromptFilesApiSchema },
+      responses: {
+        200: { description: "Prompt file list", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/prompts/file/get",
+      tags: ["Tools"],
+      summary: "Get managed prompt file",
+      security: internalSecurity,
+      requestBody: { schema: getPromptFileApiSchema },
+      responses: {
+        200: { description: "Prompt file content", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Forbidden", schema: genericObjectResponseSchema },
+        404: { description: "Not found", schema: genericObjectResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
+        500: { description: "Internal error", schema: internalErrorResponseSchema },
+      },
+    },
+    {
+      method: "post",
+      path: "/internal/tools/prompts/file/set",
+      tags: ["Tools"],
+      summary: "Set managed prompt file",
+      security: internalSecurity,
+      requestBody: { schema: setPromptFileApiSchema },
+      responses: {
+        200: { description: "Prompt file updated", schema: genericObjectResponseSchema },
+        400: { description: "Invalid request", schema: validationErrorResponseSchema },
+        401: { description: "Unauthorized", schema: unauthorizedResponseSchema },
+        403: { description: "Forbidden", schema: genericObjectResponseSchema },
+        404: { description: "Not found", schema: genericObjectResponseSchema },
+        503: { description: "Service unavailable", schema: serviceUnavailableResponseSchema },
         500: { description: "Internal error", schema: internalErrorResponseSchema },
       },
     },
@@ -2576,6 +2654,208 @@ export const buildInternalApiServer = (
         { error: err.message },
         "Internal API notification profile set failed"
       )
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/prompts/files/list", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    if (!dependencies.promptManagement?.listPromptFiles) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = listPromptFilesApiSchema.parse(request.body)
+      const files = await dependencies.promptManagement.listPromptFiles()
+
+      writeCommandAudit(dependencies, {
+        command: "list_prompt_files",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          count: files.length,
+        }),
+      })
+
+      return reply.code(200).send({ files })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "list_prompt_files",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "list_prompt_files",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API prompt file list failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/prompts/file/get", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    if (!dependencies.promptManagement?.readPromptFile) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = getPromptFileApiSchema.parse(request.body)
+      const file = await dependencies.promptManagement.readPromptFile({
+        source: payload.source,
+        relativePath: payload.path,
+      })
+
+      writeCommandAudit(dependencies, {
+        command: "get_prompt_file",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          source: payload.source,
+          path: payload.path,
+          length: file.content.length,
+        }),
+      })
+
+      return reply.code(200).send({
+        source: payload.source,
+        path: payload.path,
+        content: file.content,
+      })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "get_prompt_file",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof PromptFileAccessError) {
+        const failure = resolvePromptFileErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "get_prompt_file",
+          lane: null,
+          status: "failed",
+          errorMessage: error.code,
+        })
+        return reply.code(failure.statusCode).send({ error: error.code, message: error.message })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "get_prompt_file",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API prompt file get failed")
+      return reply.code(500).send({ error: "internal_error" })
+    }
+  })
+
+  app.post("/internal/tools/prompts/file/set", async (request, reply) => {
+    const authorization = request.headers.authorization
+    const token = extractBearerToken(authorization)
+
+    if (!token || token !== dependencies.config.token) {
+      dependencies.logger.warn(
+        { hasAuthorization: Boolean(authorization) },
+        "Internal API denied request"
+      )
+      return reply.code(401).send({ error: "unauthorized" })
+    }
+
+    if (!dependencies.promptManagement?.writePromptFile) {
+      return reply.code(503).send({ error: "service_unavailable" })
+    }
+
+    try {
+      const payload = setPromptFileApiSchema.parse(request.body)
+      const writeResult = await dependencies.promptManagement.writePromptFile({
+        source: payload.source,
+        relativePath: payload.path,
+        content: payload.content,
+      })
+
+      writeCommandAudit(dependencies, {
+        command: "set_prompt_file",
+        lane: payload.lane,
+        status: "success",
+        metadataJson: JSON.stringify({
+          source: payload.source,
+          path: payload.path,
+          updatedAt: writeResult.updatedAt,
+          length: payload.content.length,
+        }),
+      })
+
+      return reply.code(200).send({
+        status: "updated",
+        source: payload.source,
+        path: payload.path,
+        updatedAt: writeResult.updatedAt,
+      })
+    } catch (error) {
+      if (error instanceof ZodError) {
+        writeCommandAudit(dependencies, {
+          command: "set_prompt_file",
+          lane: null,
+          status: "failed",
+          errorMessage: "invalid_request",
+        })
+        return reply.code(400).send({ error: "invalid_request", details: error.issues })
+      }
+
+      if (error instanceof PromptFileAccessError) {
+        const failure = resolvePromptFileErrorResponse(error)
+        writeCommandAudit(dependencies, {
+          command: "set_prompt_file",
+          lane: null,
+          status: "failed",
+          errorMessage: error.code,
+        })
+        return reply.code(failure.statusCode).send({ error: error.code, message: error.message })
+      }
+
+      const err = error as Error
+      writeCommandAudit(dependencies, {
+        command: "set_prompt_file",
+        lane: null,
+        status: "failed",
+        errorMessage: err.message,
+      })
+      dependencies.logger.error({ error: err.message }, "Internal API prompt file set failed")
       return reply.code(500).send({ error: "internal_error" })
     }
   })
