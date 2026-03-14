@@ -29,6 +29,7 @@
         "websearch": "allow",
         "todoread": "allow",
         "todowrite": "allow",
+        "set_prompt_file": "ask",
         "external_directory": "allow",
         "memory_*": "allow",
       },

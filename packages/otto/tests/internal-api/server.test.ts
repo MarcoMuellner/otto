@@ -444,6 +444,11 @@ describe("buildInternalApiServer", () => {
     expect(openApi.paths["/internal/tools/docs/search"]?.post?.responses?.["200"]).toBeTruthy()
     expect(openApi.paths["/internal/tools/docs/open"]?.post?.responses?.["200"]).toBeTruthy()
     expect(
+      openApi.paths["/internal/tools/prompts/files/list"]?.post?.responses?.["200"]
+    ).toBeTruthy()
+    expect(openApi.paths["/internal/tools/prompts/file/get"]?.post?.responses?.["200"]).toBeTruthy()
+    expect(openApi.paths["/internal/tools/prompts/file/set"]?.post?.responses?.["200"]).toBeTruthy()
+    expect(
       openApi.paths["/internal/tools/eod-learning/list"]?.post?.responses?.["200"]
     ).toBeTruthy()
     expect(
@@ -2332,6 +2337,209 @@ describe("buildInternalApiServer", () => {
     expect(promptManagement.readPromptFile).toHaveBeenCalledWith({
       source: "user",
       relativePath: "layers/surface-watchdog.md",
+    })
+
+    await app.close()
+  })
+
+  it("lists managed prompt files via internal tool route", async () => {
+    // Arrange
+    const promptManagement = {
+      listPromptFiles: vi.fn(async () => [
+        {
+          source: "user" as const,
+          relativePath: "layers/surface-telegram.md",
+          editable: true,
+        },
+        {
+          source: "system" as const,
+          relativePath: "layers/core-persona.md",
+          editable: false,
+        },
+      ]),
+      readPromptFile: vi.fn(async () => ({ content: "unused" })),
+      writePromptFile: vi.fn(async () => ({ updatedAt: Date.now() })),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      promptManagement,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/prompts/files/list",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      files: [
+        {
+          source: "user",
+          relativePath: "layers/surface-telegram.md",
+          editable: true,
+        },
+        {
+          source: "system",
+          relativePath: "layers/core-persona.md",
+          editable: false,
+        },
+      ],
+    })
+
+    await app.close()
+  })
+
+  it("reads managed prompt file via internal tool route", async () => {
+    // Arrange
+    const promptManagement = {
+      listPromptFiles: vi.fn(async () => []),
+      readPromptFile: vi.fn(async () => ({ content: "# User prompt\ncontent\n" })),
+      writePromptFile: vi.fn(async () => ({ updatedAt: Date.now() })),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      promptManagement,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/prompts/file/get",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        source: "user",
+        path: "layers/surface-telegram.md",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      source: "user",
+      path: "layers/surface-telegram.md",
+      content: "# User prompt\ncontent\n",
+    })
+    expect(promptManagement.readPromptFile).toHaveBeenCalledWith({
+      source: "user",
+      relativePath: "layers/surface-telegram.md",
+    })
+
+    await app.close()
+  })
+
+  it("writes managed prompt file via internal tool route", async () => {
+    // Arrange
+    const promptManagement = {
+      listPromptFiles: vi.fn(async () => []),
+      readPromptFile: vi.fn(async () => ({ content: "unused" })),
+      writePromptFile: vi.fn(async () => ({ updatedAt: 456_789 })),
+    }
+
+    const app = buildInternalApiServer({
+      logger: createLoggerStub(),
+      config: {
+        host: "127.0.0.1",
+        port: 4180,
+        token: "secret",
+        tokenPath: "/tmp/token",
+        baseUrl: "http://127.0.0.1:4180",
+      },
+      outboundMessagesRepository: {
+        enqueueOrIgnoreDedupe: vi.fn<OutboundMessageEnqueueRepository["enqueueOrIgnoreDedupe"]>(
+          () => "enqueued"
+        ),
+      },
+      sessionBindingsRepository: {
+        getTelegramChatIdBySessionId: vi.fn(() => null),
+      },
+      jobRunSessionsRepository: createJobRunSessionsRepositoryStub(),
+      jobsRepository: createJobsRepositoryStub(),
+      taskAuditRepository: createTaskAuditRepositoryStub(),
+      commandAuditRepository: createCommandAuditRepositoryStub(),
+      userProfileRepository: createUserProfileRepositoryStub(),
+      promptManagement,
+    })
+
+    // Act
+    const response = await app.inject({
+      method: "POST",
+      url: "/internal/tools/prompts/file/set",
+      headers: {
+        authorization: "Bearer secret",
+      },
+      payload: {
+        lane: "interactive",
+        source: "user",
+        path: "layers/surface-telegram.md",
+        content: "# Updated\nnew content",
+      },
+    })
+
+    // Assert
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      status: "updated",
+      source: "user",
+      path: "layers/surface-telegram.md",
+      updatedAt: 456_789,
+    })
+    expect(promptManagement.writePromptFile).toHaveBeenCalledWith({
+      source: "user",
+      relativePath: "layers/surface-telegram.md",
+      content: "# Updated\nnew content",
     })
 
     await app.close()

@@ -212,6 +212,9 @@ export const runServe = async (logger: Logger, homeDirectory?: string): Promise<
       commandAuditRepository,
       nonInteractiveContextCaptureService,
       promptManagement: {
+        listPromptFiles: async () => {
+          return await listManagedPromptFiles({ ottoHome: config.ottoHome })
+        },
         readPromptFile: async (input) => {
           return await readManagedPromptFile({
             ottoHome: config.ottoHome,

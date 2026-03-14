@@ -72,6 +72,8 @@ Otto is a self-hosted personal assistant foundation built with Node.js, TypeScri
 - Docs service URL override for internal docs tools (optional): `OTTO_DOCS_SERVICE_URL` (for example `http://127.0.0.1:4174`)
 - Internal docs tools available to OpenCode runtime: `docs_search` and `docs_open`
   - `docs_open` auto-fetches live self-awareness data when opening `/live` and handles bearer auth automatically.
+- Prompt file tools available to OpenCode runtime: `list_prompt_files`, `get_prompt_file`, and `set_prompt_file`
+  - `set_prompt_file` writes only user-owned prompt files and is configured for explicit confirmation.
 - Journal config tools available to OpenCode runtime: `get_journal_config` and `set_journal_tags`
   - `set_journal_tags` defaults to merge mode and supports `replace` when a full reset is needed.
 

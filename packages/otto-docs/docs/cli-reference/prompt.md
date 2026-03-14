@@ -18,6 +18,13 @@ description: Open interactive prompt picker and edit user-owned prompt files saf
 - At runtime, matching user layer files are appended after system layer files
   (`system + user`).
 
+## Internal Tools
+
+- OpenCode runtime tools can list/read/write managed prompt files through
+  internal APIs.
+- Prompt writes from tools require explicit confirmation.
+- Write operations are restricted to user-owned prompt files under `~/.otto/prompts`.
+
 ## Prompt Paths
 
 - System prompts: `~/.otto/system-prompts`
