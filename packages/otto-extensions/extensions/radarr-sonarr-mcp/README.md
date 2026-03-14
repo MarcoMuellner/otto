@@ -21,6 +21,7 @@ The extension uses lifecycle hooks:
   `~/.otto/integrations/radarr-sonarr-mcp/mcp_services_radarr_sonarr`
 - updates run `scripts/update.sh` and pull/sync upstream
 - hooks install/sync with `uv --python 3.13`
+- hooks apply upstream compatibility patches for current development branch
 
 ## Configure
 
@@ -64,5 +65,7 @@ ottoctl restart
 
 - If startup fails, verify `.env` has valid `RADARR_API_KEY` and `SONARR_API_KEY`.
 - Verify Radarr/Sonarr are reachable from the Otto host on configured ports.
+- If startup fails after an upstream update, run `ottoctl extension update radarr-sonarr-mcp`
+  to re-apply compatibility patches.
 - If upstream dependencies changed, run
   `uv sync --python 3.13 --link-mode=copy` in the integration checkout.
