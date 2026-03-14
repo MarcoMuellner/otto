@@ -44,7 +44,8 @@ ottoctl extension remove opencode-terminal@0.1.0
 - If Otto is already running, restart it so skill discovery refreshes.
 
 - `emby-mcp` installs the Emby MCP server wiring plus an Emby operations skill.
-- After install, verify `~/.otto/opencode.jsonc` has `mcp.emby` and `~/.otto/.opencode/skills/emby-mcp-ops/SKILL.md` exists.
+- After install, verify `~/.otto/opencode.jsonc` has `mcp.emby`.
+- Verify `~/.otto/.opencode/skills/emby-mcp-ops/SKILL.md` exists.
 
 ## Failure Modes
 
