@@ -1050,56 +1050,47 @@ export default function ChatRoute() {
         </Card>
       ) : null}
 
-      <div
-        className={`fixed inset-0 z-50 md:hidden ${
-          isThreadsDrawerOpen ? "pointer-events-auto" : "pointer-events-none"
-        }`}
-        aria-hidden={!isThreadsDrawerOpen}
-      >
-        <button
-          type="button"
-          aria-label="Close threads panel"
-          className={`absolute inset-0 bg-[rgba(20,20,20,0.36)] transition-opacity ${
-            isThreadsDrawerOpen ? "opacity-100" : "opacity-0"
-          }`}
-          onClick={() => setIsThreadsDrawerOpen(false)}
-        />
-        <aside
-          className={`relative flex h-full w-[86%] max-w-[320px] flex-col border-r border-[rgba(26,26,26,0.12)] bg-[rgba(250,250,250,0.96)] shadow-2xl backdrop-blur transition-transform duration-200 ${
-            isThreadsDrawerOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-        >
-          <div className="flex items-center justify-between border-b border-[rgba(26,26,26,0.1)] px-3 py-3">
-            <div>
-              <p className="m-0 font-mono text-[10px] tracking-[0.1em] text-[#7b7b7b] uppercase">
-                Chat Sessions
-              </p>
-              <p className="m-0 mt-0.5 text-lg font-medium text-[#1a1a1a]">Threads</p>
+      {isThreadsDrawerOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            aria-label="Close threads panel"
+            className="absolute inset-0 bg-[rgba(20,20,20,0.36)]"
+            onClick={() => setIsThreadsDrawerOpen(false)}
+          />
+          <aside className="relative flex h-full w-[86%] max-w-[320px] flex-col border-r border-[rgba(26,26,26,0.12)] bg-[rgba(250,250,250,0.96)] shadow-2xl backdrop-blur">
+            <div className="flex items-center justify-between border-b border-[rgba(26,26,26,0.1)] px-3 py-3">
+              <div>
+                <p className="m-0 font-mono text-[10px] tracking-[0.1em] text-[#7b7b7b] uppercase">
+                  Chat Sessions
+                </p>
+                <p className="m-0 mt-0.5 text-lg font-medium text-[#1a1a1a]">Threads</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 px-3"
+                onClick={() => setIsThreadsDrawerOpen(false)}
+              >
+                Close
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 px-3"
-              onClick={() => setIsThreadsDrawerOpen(false)}
-            >
-              Close
-            </Button>
-          </div>
-          <div className="border-b border-[rgba(26,26,26,0.08)] px-3 py-2.5">
-            <Switch
-              checked={showNonInteractiveThreads}
-              onCheckedChange={setShowNonInteractiveThreads}
-              label="Show non-interactive"
-              description={threadFilterDescription}
-              size="compact"
-              className="w-full"
-            />
-          </div>
-          <div className="hide-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
-            {threadsListContent}
-          </div>
-        </aside>
-      </div>
+            <div className="border-b border-[rgba(26,26,26,0.08)] px-3 py-2.5">
+              <Switch
+                checked={showNonInteractiveThreads}
+                onCheckedChange={setShowNonInteractiveThreads}
+                label="Show non-interactive"
+                description={threadFilterDescription}
+                size="compact"
+                className="w-full"
+              />
+            </div>
+            <div className="hide-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
+              {threadsListContent}
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-[320px_minmax(0,1fr)] md:gap-4">
         <Card className="hidden h-full min-h-0 flex-col overflow-hidden md:flex">

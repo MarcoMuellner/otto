@@ -27,7 +27,7 @@ export default function AppRoot() {
         <Meta />
         <Links />
       </head>
-      <body className="relative h-screen w-screen selection:bg-[rgba(26,26,26,0.1)] selection:text-[#1a1a1a]">
+      <body className="relative min-h-screen w-full selection:bg-[rgba(26,26,26,0.1)] selection:text-[#1a1a1a]">
         <Outlet />
         <Toaster />
         <ScrollRestoration />

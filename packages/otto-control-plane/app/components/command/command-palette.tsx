@@ -236,13 +236,12 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
     }
   }
 
+  if (!isOpen) {
+    return null
+  }
+
   return (
-    <div
-      className={`fixed inset-0 z-50 flex items-end px-0 transition-opacity duration-200 md:items-start md:justify-center md:px-4 md:pt-[20vh] ${
-        isOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-      }`}
-      aria-hidden={!isOpen}
-    >
+    <div className="fixed inset-0 z-50 flex items-end px-0 md:items-start md:justify-center md:px-4 md:pt-[20vh]">
       <button
         type="button"
         aria-label="Close command palette"
@@ -250,11 +249,7 @@ export const CommandPalette = ({ isOpen, onClose }: CommandPaletteProps) => {
         onClick={onClose}
       />
 
-      <section
-        className={`relative flex h-dvh w-full flex-col overflow-hidden rounded-none border border-[rgba(26,26,26,0.08)] bg-white shadow-2xl transition-transform duration-300 md:mx-auto md:h-auto md:max-h-[75vh] md:max-w-xl md:rounded-2xl ${
-          isOpen ? "translate-y-0 md:scale-100" : "translate-y-full md:scale-95"
-        }`}
-      >
+      <section className="relative flex h-dvh w-full flex-col overflow-hidden rounded-none border border-[rgba(26,26,26,0.08)] bg-white shadow-2xl md:mx-auto md:h-auto md:max-h-[75vh] md:max-w-xl md:rounded-2xl">
         <div className="sticky top-0 z-10 flex items-center border-b border-[rgba(26,26,26,0.08)] bg-white px-3 py-3 md:px-4 md:py-4">
           <span className="mr-3 text-[#888888]" aria-hidden="true">
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

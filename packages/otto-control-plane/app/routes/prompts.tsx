@@ -375,7 +375,7 @@ export default function PromptsRoute() {
   }
 
   return (
-    <section className="mx-auto flex h-[calc(100dvh-5rem)] w-full max-w-6xl flex-col px-2 pb-4 pt-2 max-[720px]:h-[calc(100dvh-4.6rem)]">
+    <section className="mx-auto flex min-h-[calc(100dvh-5rem)] w-full max-w-6xl flex-col px-2 pb-4 pt-2 max-[720px]:min-h-[calc(100dvh-4.6rem)]">
       <header className="mb-3 flex items-end justify-between gap-2 border-b border-[rgba(26,26,26,0.08)] pb-3">
         <div>
           <p className="mb-1 font-mono text-[11px] tracking-[0.16em] text-[#888888] uppercase">
@@ -402,7 +402,7 @@ export default function PromptsRoute() {
         </Card>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
         <Card className="flex min-h-0 flex-col overflow-hidden">
           <CardHeader className="pb-2">
             <CardTitle>Files</CardTitle>

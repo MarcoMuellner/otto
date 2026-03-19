@@ -85,10 +85,10 @@ export default function LayoutRoute() {
 
   return (
     <main
-      className={`relative flex overflow-hidden ${
+      className={`relative flex ${
         isChatRoute
-          ? "h-dvh justify-stretch px-2 py-3 max-[720px]:px-2 max-[720px]:py-2"
-          : "min-h-dvh justify-center px-5 py-8 max-[720px]:px-3.5 max-[720px]:py-[18px]"
+          ? "h-dvh justify-stretch overflow-hidden px-2 py-3 max-[720px]:px-2 max-[720px]:py-2"
+          : "min-h-dvh justify-center overflow-x-hidden px-5 py-8 max-[720px]:px-3.5 max-[720px]:py-[18px]"
       }`}
     >
       <AmbientRings />
