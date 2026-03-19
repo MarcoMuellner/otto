@@ -535,6 +535,7 @@ export default function ChatRoute() {
   const [showTraceEvents, setShowTraceEvents] = useState(false)
   const [isThreadsDrawerOpen, setIsThreadsDrawerOpen] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(false)
+  const [isComposerFocused, setIsComposerFocused] = useState(false)
   const [keyboardInset, setKeyboardInset] = useState(0)
   const [messageLoadError, setMessageLoadError] = useState<string | null>(
     data.status === "error" ? data.message : null
@@ -559,7 +560,7 @@ export default function ChatRoute() {
   }, [])
 
   useEffect(() => {
-    if (!isMobileViewport) {
+    if (!isMobileViewport || !isComposerFocused) {
       setKeyboardInset(0)
       return
     }
@@ -583,7 +584,21 @@ export default function ChatRoute() {
       viewport.removeEventListener("resize", update)
       viewport.removeEventListener("scroll", update)
     }
-  }, [isMobileViewport])
+  }, [isComposerFocused, isMobileViewport])
+
+  useEffect(() => {
+    if (!isMobileViewport || !isComposerFocused) {
+      return
+    }
+
+    const raf = window.requestAnimationFrame(() => {
+      scrollMessagesToBottom()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(raf)
+    }
+  }, [isComposerFocused, isMobileViewport, keyboardInset])
 
   const selectedThread = useMemo(() => {
     if (!selectedThreadId) {
@@ -996,8 +1011,7 @@ export default function ChatRoute() {
 
   const composerMobileStyle = isMobileViewport
     ? {
-        transform: `translateY(-${keyboardInset}px)`,
-        marginBottom: "calc(env(safe-area-inset-bottom) + 2px)",
+        marginBottom: `calc(env(safe-area-inset-bottom) + ${keyboardInset}px + 2px)`,
       }
     : undefined
 
@@ -1283,7 +1297,7 @@ export default function ChatRoute() {
 
               <form
                 onSubmit={handleSubmit}
-                className="grid gap-2 rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(255,255,255,0.94)] p-2.5 shadow-sm transition-transform duration-150"
+                className="grid gap-2 rounded-lg border border-[rgba(26,26,26,0.1)] bg-[rgba(255,255,255,0.94)] p-2.5 shadow-sm transition-[margin] duration-150"
                 style={composerMobileStyle}
               >
                 <textarea
@@ -1291,6 +1305,17 @@ export default function ChatRoute() {
                   value={composerText}
                   onChange={(event) => handleComposerChange(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
+                  onFocus={() => {
+                    setIsComposerFocused(true)
+                    shouldAutoScrollRef.current = true
+                    window.requestAnimationFrame(() => {
+                      scrollMessagesToBottom()
+                    })
+                  }}
+                  onBlur={() => {
+                    setIsComposerFocused(false)
+                    setKeyboardInset(0)
+                  }}
                   placeholder="Write a message to Otto..."
                   rows={isMobileViewport ? 2 : 4}
                   className="max-h-[45dvh] min-h-[86px] rounded-lg border border-[rgba(26,26,26,0.14)] bg-white px-3 py-2 text-sm text-[#1a1a1a] md:min-h-[120px]"
