@@ -19,6 +19,8 @@ This directory stores deployable epics and tickets.
 - `epic_013`: Bugfix for scheduler deadlocked session recovery and non-interactive guardrails.
 - `epic_014`: Self-awareness transparency docs platform with public static docs and authenticated live runtime views.
 - `epic_015`: Channel abstraction with Telegram + Slack full-parity runtime contracts.
+- `epic_016`: Daily EOD learning run with auto-evolving memory.
+- `epic_017`: Global multi-provider LLM fallback and reliability dashboard.
 
 ## Structure
 
