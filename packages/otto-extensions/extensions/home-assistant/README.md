@@ -19,6 +19,9 @@ This extension adds Home Assistant MCP connectivity and a smart-home operations 
   - `HOME_ASSISTANT_MCP_URL` (for example `http://localhost:8123/api/mcp`)
   - `HOME_ASSISTANT_API_ACCESS_TOKEN` (Home Assistant long-lived access token)
 
+The extension passes this token to Home Assistant as an `Authorization: Bearer ...` header via
+`mcp-proxy`.
+
 If you keep these in `~/.bashrc`, ensure they are exported before starting Otto.
 
 ## Install
@@ -34,6 +37,12 @@ If Otto is already running, restart the service to reload OpenCode config:
 ```bash
 ottoctl stop
 ottoctl start
+```
+
+If the extension is already installed, update it first to pick up the latest MCP command:
+
+```bash
+ottoctl extension update home-assistant
 ```
 
 ## Verify

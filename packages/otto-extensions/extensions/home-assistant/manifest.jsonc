@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "home-assistant",
   "name": "Home Assistant MCP",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Home Assistant MCP server integration for device control and home automations.",
   "tags": ["mcp", "home-assistant", "automation", "smarthome"],
   "compatibility": {

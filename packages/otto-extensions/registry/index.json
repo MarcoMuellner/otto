@@ -1,6 +1,6 @@
 {
   "registryVersion": 1,
-  "generatedAt": "2026-03-14T14:11:08.408Z",
+  "generatedAt": "2026-03-21T14:49:04.653Z",
   "extensions": {
     "anylist": {
       "latest": "0.1.0",
@@ -80,12 +80,12 @@
       }
     },
     "home-assistant": {
-      "latest": "0.1.0",
+      "latest": "0.1.1",
       "versions": {
-        "0.1.0": {
-          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/home-assistant-0.1.0.tgz",
-          "sha256": "1800874f66d59f690fa166aa49407388eb954edaea1b67e09eeac575ae062353",
-          "sizeBytes": 1797,
+        "0.1.1": {
+          "archiveUrl": "https://raw.githubusercontent.com/MarcoMuellner/otto/main/packages/otto-extensions/registry/artifacts/home-assistant-0.1.1.tgz",
+          "sha256": "43de0c1aa8089193bac0786dee88315e4bf0442bd3a0ae1e76e2de75bc6155de",
+          "sizeBytes": 2294,
           "compatibility": {
             "otto": ">=0.1.0",
             "node": ">=22"
