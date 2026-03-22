@@ -27,6 +27,8 @@ System task id: `system-daily-eod-learning`
   item outcomes, policy reasons, and follow-up outcomes).
 - The model is prompted to produce a concise human-readable summary and to use
   the operator language when inferable from run context.
+- Digest wording is intentionally operator-first: internal ids, fingerprints,
+  and policy/error codes are omitted from user-facing text.
 - Output is validated as strict JSON (`{"message":"..."}`) before enqueue.
 - If JSON validation fails, Otto retries up to 3 attempts using a repair prompt
   that includes the parse failure reason and invalid output.
@@ -41,6 +43,8 @@ System task id: `system-daily-eod-learning`
   scheduling.
 - Confidence `0.6 - 0.79`: apply memory/journal only.
 - Confidence `< 0.6`: persist as candidate without auto-apply.
+- Explicit user preference candidates can pass with one independent signal when
+  that signal is a direct inbound user message and there is no contradiction.
 - Conflicting signals are persisted for audit and never auto-applied.
 
 ## Session Coverage Rules

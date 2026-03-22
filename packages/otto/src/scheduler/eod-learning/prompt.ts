@@ -6,6 +6,7 @@ const EOD_MAX_CANDIDATES = 10
 
 export const eodLearningCandidateSchema = z.object({
   title: z.string().trim().min(1),
+  candidateKind: z.enum(["general", "user_preference"]).optional().default("general"),
   confidence: z.number().min(0).max(1),
   contradiction: z.boolean().optional().default(false),
   expectedValue: z.number().finite().nullable().optional().default(null),
@@ -78,6 +79,7 @@ export const buildEodLearningCandidatePrompt = (input: {
     '{"candidates":[{"title":"...","confidence":0.0,"contradiction":false,"expectedValue":0.0,"evidenceIds":["..."],"rationale":"...","followUpActions":[{"title":"...","rationale":"...","reversible":true,"expectedValue":0.0,"runAt":null}]}]}',
     "Rules:",
     `- Maximum ${EOD_MAX_CANDIDATES} candidates.`,
+    '- candidateKind must be "user_preference" only when the evidence contains an explicit user preference, instruction, or correction stated by the user; otherwise use "general".',
     "- confidence must be between 0 and 1.",
     "- contradiction must be true when signals materially conflict.",
     "- evidenceIds must reference only ids from the provided evidence list.",

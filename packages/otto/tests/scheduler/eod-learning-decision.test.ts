@@ -228,4 +228,114 @@ describe("eod-learning decision engine", () => {
     ])
     expect(result.map((item) => item.applyEligible)).toEqual([true, true, false])
   })
+
+  it("allows explicit user preference candidates with one direct user signal", () => {
+    // Arrange
+    const evidenceBundle = {
+      windowStartedAt: 1_000,
+      windowEndedAt: 2_000,
+      evidence: [
+        {
+          id: "in-1",
+          sourceKind: "inbound_message",
+          sourceId: "in-1",
+          signalGroup: "interactive_messages",
+          lane: "interactive",
+          occurredAt: 1_100,
+          excerpt: "Please always keep the Geizhals tab open.",
+          trace: {
+            reference: "messages_in:in-1",
+            sourceRef: "session:sess-1",
+          },
+          metadata: {},
+        },
+      ],
+      groupedSignals: [
+        {
+          signalGroup: "interactive_messages",
+          evidenceCount: 1,
+          evidenceIds: ["in-1"],
+          sourceKindCounts: {
+            inbound_message: 1,
+          },
+        },
+      ],
+      independentSignalCount: 1,
+    }
+
+    // Act
+    const result = evaluateEodLearningDecisions({
+      candidates: [
+        {
+          title: "Keep Geizhals tab open",
+          candidateKind: "user_preference",
+          confidence: 0.85,
+          contradiction: false,
+          expectedValue: 0.6,
+          evidenceIds: ["in-1"],
+          rationale: "Explicit user preference",
+        },
+      ],
+      evidenceBundle,
+    })
+
+    // Assert
+    expect(result[0]?.decision).toBe("auto_apply_memory_journal_high_confidence")
+    expect(result[0]?.applyEligible).toBe(true)
+  })
+
+  it("keeps strict signal gate when user-preference candidate lacks direct user evidence", () => {
+    // Arrange
+    const evidenceBundle = {
+      windowStartedAt: 1_000,
+      windowEndedAt: 2_000,
+      evidence: [
+        {
+          id: "e1",
+          sourceKind: "task_audit",
+          sourceId: "t1",
+          signalGroup: "tasks",
+          lane: "scheduled",
+          occurredAt: 1_100,
+          excerpt: "updated task",
+          trace: {
+            reference: "task_audit_log:t1",
+            sourceRef: null,
+          },
+          metadata: {},
+        },
+      ],
+      groupedSignals: [
+        {
+          signalGroup: "tasks",
+          evidenceCount: 1,
+          evidenceIds: ["e1"],
+          sourceKindCounts: {
+            task_audit: 1,
+          },
+        },
+      ],
+      independentSignalCount: 1,
+    }
+
+    // Act
+    const result = evaluateEodLearningDecisions({
+      candidates: [
+        {
+          title: "Keep Geizhals tab open",
+          candidateKind: "user_preference",
+          confidence: 0.9,
+          contradiction: false,
+          expectedValue: 0.6,
+          evidenceIds: ["e1"],
+          rationale: "No direct user evidence present",
+        },
+      ],
+      evidenceBundle,
+    })
+
+    // Assert
+    expect(result[0]?.decision).toBe("skipped_insufficient_signals")
+    expect(result[0]?.applyEligible).toBe(false)
+  })
 })

@@ -4,6 +4,7 @@ import type { EodLearningCandidate } from "./prompt.js"
 const HIGH_CONFIDENCE_THRESHOLD = 0.8
 const MEDIUM_CONFIDENCE_THRESHOLD = 0.6
 const MIN_INDEPENDENT_SIGNALS = 2
+const MIN_USER_PREFERENCE_SIGNALS = 1
 
 export type EodDecision =
   | "auto_apply_memory_journal_high_confidence"
@@ -56,7 +57,16 @@ export const evaluateEodLearningDecisions = (input: {
         )
     )
 
-    const hasIndependentSignals = independentSignals.length >= MIN_INDEPENDENT_SIGNALS
+    const hasDirectUserSignal = referencedEvidenceIds.some(
+      (evidenceId) => evidenceById.get(evidenceId)?.sourceKind === "inbound_message"
+    )
+    const isUserPreferenceCandidate = candidate.candidateKind === "user_preference"
+    const minSignalRequirement =
+      isUserPreferenceCandidate && hasDirectUserSignal
+        ? MIN_USER_PREFERENCE_SIGNALS
+        : MIN_INDEPENDENT_SIGNALS
+
+    const hasIndependentSignals = independentSignals.length >= minSignalRequirement
     const contradiction = candidate.contradiction
 
     if (contradiction) {

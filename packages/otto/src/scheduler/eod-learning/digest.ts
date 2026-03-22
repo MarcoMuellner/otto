@@ -160,7 +160,7 @@ const extractScheduledFollowUps = (items: EodLearningItemArtifacts[]): string[] 
 
       const metadata = parseJsonRecord(action.metadataJson)
       const proposalTitle = readString(metadata, "proposalTitle")
-      proposals.push(proposalTitle ?? action.detail ?? "scheduled follow-up")
+      proposals.push(proposalTitle ?? "scheduled follow-up")
     }
   }
 
@@ -171,10 +171,12 @@ const countSkippedReasons = (
   items: EodLearningItemArtifacts[]
 ): {
   contradiction: number
+  insufficientSignals: number
   noDurableUpdate: number
   other: number
 } => {
   let contradiction = 0
+  let insufficientSignals = 0
   let noDurableUpdate = 0
   let other = 0
 
@@ -190,6 +192,11 @@ const countSkippedReasons = (
       continue
     }
 
+    if (policyReason === "insufficient_independent_signals") {
+      insufficientSignals += 1
+      continue
+    }
+
     if (item.actions[0]?.actionType === "memory_replace" && item.actions[0]?.status === "skipped") {
       noDurableUpdate += 1
       continue
@@ -200,6 +207,7 @@ const countSkippedReasons = (
 
   return {
     contradiction,
+    insufficientSignals,
     noDurableUpdate,
     other,
   }
@@ -212,9 +220,7 @@ const normalizeActionForLlm = (action: EodLearningItemArtifacts["actions"][numbe
     status: action.status,
     detail: trimDetail(action.detail),
     errorMessage: trimDetail(action.errorMessage),
-    reasonCode: readString(metadata, "reasonCode"),
     proposalTitle: readString(metadata, "proposalTitle"),
-    taskId: readString(metadata, "taskId"),
   }
 }
 
@@ -235,7 +241,6 @@ const toDigestInput = (artifacts: EodLearningRunArtifacts) => {
 
   return {
     run: {
-      id: artifacts.run.id,
       status: artifacts.run.status,
       windowStartedAt: artifacts.run.windowStartedAt,
       windowEndedAt: artifacts.run.windowEndedAt,
@@ -283,6 +288,8 @@ export const buildEodLearningDigestInterpretationPrompt = (
     "Rules for message:",
     "- Write in the same language the user appears to use in this run data. If unclear, use English.",
     "- Be clear and practical, not robotic.",
+    "- Do not include internal ids, fingerprints, or policy/error codes.",
+    "- Prefer plain language over technical labels.",
     "- Explain what changed and what did not change.",
     "- Include: outcomes, why items were skipped, and scheduled follow-ups (if any).",
     "- Keep it compact (around 8-14 lines).",
@@ -354,10 +361,36 @@ const resolveHighlights = (items: EodLearningItemArtifacts[]): string[] => {
     return right.item.confidence - left.item.confidence
   })
 
-  return prioritizedItems.slice(0, MAX_HIGHLIGHTS).map((item) => {
-    const confidence = item.item.confidence.toFixed(2)
-    return `  - ${item.item.title} -> ${resolveOutcomeLabel(item)} (c=${confidence})`
-  })
+  return prioritizedItems
+    .slice(0, MAX_HIGHLIGHTS)
+    .map((item) => `  - ${item.item.title}: ${resolveOutcomeLabel(item)}`)
+}
+
+const buildSkippedReasonSummary = (counts: {
+  contradiction: number
+  insufficientSignals: number
+  noDurableUpdate: number
+  other: number
+}): string => {
+  const parts: string[] = []
+  if (counts.contradiction > 0) {
+    parts.push(`${counts.contradiction} conflicting signals`)
+  }
+  if (counts.insufficientSignals > 0) {
+    parts.push(`${counts.insufficientSignals} not enough independent signals`)
+  }
+  if (counts.noDurableUpdate > 0) {
+    parts.push(`${counts.noDurableUpdate} already captured, no durable change`)
+  }
+  if (counts.other > 0) {
+    parts.push(`${counts.other} other policy checks`)
+  }
+
+  if (parts.length === 0) {
+    return "No skips in this run."
+  }
+
+  return parts.join("; ")
 }
 
 /**
@@ -388,17 +421,15 @@ export const buildEodLearningDigestMessage = (artifacts: EodLearningRunArtifacts
   const skippedReasonCounts = countSkippedReasons(items)
 
   return [
-    `EOD learning run ${artifacts.run.id} (${artifacts.run.status})`,
-    `Reviewed ${candidateCount} candidates: ${appliedCount} applied, ${skippedCount} skipped, ${candidateOnlyCount} candidate-only, ${failedApplyCount} failed.`,
+    "EOD learning complete.",
+    `Reviewed ${candidateCount} candidates: ${appliedCount} applied, ${skippedCount} skipped, ${candidateOnlyCount} noted for later, ${failedApplyCount} failed.`,
+    `What changed: ${appliedCount > 0 ? `${appliedCount} memory/journal updates were applied.` : "no memory/journal update was needed."}`,
+    `What stayed unchanged: ${skippedCount > 0 ? "existing rules and preferences stayed as they are for skipped items." : "no existing rule needed to be preserved by policy today."}`,
     ...(skippedCount > 0
-      ? [
-          `Skipped breakdown: ${skippedReasonCounts.contradiction} conflicting evidence, ${skippedReasonCounts.noDurableUpdate} not durable/duplicate, ${skippedReasonCounts.other} other policy gates.`,
-        ]
+      ? [`Why items were skipped: ${buildSkippedReasonSummary(skippedReasonCounts)}.`]
       : []),
-    `Follow-ups: ${followUpScheduledCount} scheduled, ${followUpSkippedCount} skipped, ${followUpFailedCount} failed.`,
-    ...(followUpTitles.length > 0 ? ["Scheduled follow-ups:", ...followUpTitles] : []),
-    ...(highlights.length > 0
-      ? ["Key findings:", ...highlights]
-      : ["Key findings: none in this window."]),
+    `Follow-ups: ${followUpScheduledCount} scheduled, ${followUpSkippedCount} not scheduled, ${followUpFailedCount} failed.`,
+    ...(followUpTitles.length > 0 ? ["Planned follow-ups:", ...followUpTitles] : []),
+    ...(highlights.length > 0 ? ["Top items:", ...highlights] : ["Top items: none."]),
   ].join("\n")
 }

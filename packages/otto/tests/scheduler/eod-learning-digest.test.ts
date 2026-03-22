@@ -35,7 +35,7 @@ const buildRunArtifacts = (
 }
 
 describe("eod-learning digest formatter", () => {
-  it("formats concise success digest with run id, counts, and highlights", () => {
+  it("formats concise success digest with counts and plain-language highlights", () => {
     // Arrange
     const artifacts = buildRunArtifacts(undefined, [
       {
@@ -80,12 +80,14 @@ describe("eod-learning digest formatter", () => {
     const digest = buildEodLearningDigestMessage(artifacts)
 
     // Assert
-    expect(digest).toContain("EOD learning run run-1 (success)")
+    expect(digest).toContain("EOD learning complete.")
     expect(digest).toContain("Reviewed 2 candidates")
     expect(digest).toContain("1 applied")
-    expect(digest).toContain("1 candidate-only")
-    expect(digest).toContain("Follow-ups: 1 scheduled, 0 skipped, 0 failed")
-    expect(digest).toContain("Improve reminder phrasing")
+    expect(digest).toContain("1 noted for later")
+    expect(digest).toContain("Follow-ups: 1 scheduled, 0 not scheduled, 0 failed")
+    expect(digest).toContain("Top items:")
+    expect(digest).toContain("Improve reminder phrasing: applied")
+    expect(digest).not.toContain("run-1")
   })
 
   it("reflects partial-failure outcomes in digest counts", () => {
@@ -162,9 +164,10 @@ describe("eod-learning digest formatter", () => {
     const digest = buildEodLearningDigestMessage(artifacts)
 
     // Assert
-    expect(digest).toContain("EOD learning run run-partial (success)")
-    expect(digest).toContain("1 applied, 1 skipped, 0 candidate-only, 1 failed")
-    expect(digest).toContain("Follow-ups: 1 scheduled, 1 skipped, 1 failed")
+    expect(digest).toContain(
+      "Reviewed 3 candidates: 1 applied, 1 skipped, 0 noted for later, 1 failed"
+    )
+    expect(digest).toContain("Follow-ups: 1 scheduled, 1 not scheduled, 1 failed")
   })
 
   it("formats empty-learning windows without leaking raw payloads", () => {
@@ -187,7 +190,7 @@ describe("eod-learning digest formatter", () => {
 
     // Assert
     expect(digest).toContain("Reviewed 0 candidates")
-    expect(digest).toContain("Key findings: none in this window.")
+    expect(digest).toContain("Top items: none.")
     expect(digest).not.toContain("metadataJson")
   })
 
@@ -261,12 +264,11 @@ describe("eod-learning digest formatter", () => {
     const digest = buildEodLearningDigestMessage(artifacts)
 
     // Assert
-    expect(digest).toContain(
-      "Skipped breakdown: 0 conflicting evidence, 1 not durable/duplicate, 0 other policy gates."
-    )
-    expect(digest).toContain("Scheduled follow-ups:")
+    expect(digest).toContain("Why items were skipped: 1 already captured, no durable change")
+    expect(digest).toContain("Planned follow-ups:")
     expect(digest).toContain("Add strict final-output validator with fallback envelope")
     expect(digest).toContain("not persisted: Skipped as duplicate")
+    expect(digest).not.toContain("task-1")
   })
 
   it("parses structured LLM digest payload", () => {
@@ -294,6 +296,7 @@ describe("eod-learning digest formatter", () => {
     expect(prompt).toContain("Return ONLY valid JSON with this exact shape:")
     expect(prompt).toContain('"message"')
     expect(prompt).toContain('"run"')
-    expect(prompt).toContain('"run-1"')
+    expect(prompt).not.toContain('"run-1"')
+    expect(prompt).toContain("Do not include internal ids")
   })
 })
